@@ -1,0 +1,23 @@
+# Arquivos e pastas do Python
+__pycache__/
+
+# Virtual environments
+venv/
+.venv/
+*.env
+
+# Ferramentas
+.vscode/
+.code-workspace
+
+# Arquivos de dados e bancos locais
+*.pdf
+*.csv
+*.xls
+*.xlsx
+*.parquet
+*.db
+*.sqlite
+
+# Pasta específica do projeto
+Códigos Extras/Documentação/
