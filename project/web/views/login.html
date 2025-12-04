@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ronda - Login</title>
+  <link rel="icon" href="../images/logo_blue.ico" />
+  <link rel="stylesheet" href="../style/login.css" />
+</head>
+<body>
+  <main class="login-wrap" aria-label="Cartão de login">
+    <section class="card">
+      <header class="brand" aria-label="Marca">
+        <div class="logo_blue" aria-hidden="true"><images src="../images/logo_blue.ico" alt="logo_blue" /></div>
+        <div>
+          <h1>Bem-vindo(a)</h1>
+          <p>Entre para continuar</p>
+        </div>
+      </header>
+
+      <!-- ajuste o action se necessário -->
+      <form action="index.html" method="POST" novalidate>
+        <div class="input">
+          <label for="username">Nome de usuário</label>
+          <input type="text" id="username" name="username" required placeholder="Digite seu nome de usuário" autocomplete="username" />
+          <span class="icon" aria-hidden="true">👤</span>
+        </div>
+
+        <div class="input">
+          <label for="senha">Senha</label>
+          <input type="password" id="senha" name="senha" required placeholder="Digite sua senha" autocomplete="current-password" />
+          <button class="reveal" type="button" aria-label="Mostrar/ocultar senha" title="Mostrar/ocultar">Mostrar</button>
+        </div>
+
+        <div class="actions">
+          <div class="row">
+            <label class="remember">
+              <input type="checkbox" name="remember" />
+              Manter conectado
+            </label>
+            <p class="forgot"><a href="#">Esqueceu a senha?</a></p>
+          </div>
+
+          <button type="submit" class="btn-primary">Entrar</button>
+
+          <div class="divider">ou</div>
+
+          <button type="button" class="btn-alt" id="btn-adm" aria-label="Entrar com usuário adm">
+            Entrar como Administrador
+          </button>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <script src="../javascript/login.js"></script>
+</body>
+</html>
