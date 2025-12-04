@@ -1,0 +1,10 @@
+dash>=2.18
+flask>=3.0
+numpy>=1.26
+pandas>=2.2
+plotly>=5.22
+seaborn>=0.13
+pyarrow>=16.0
+matplotlib>=3.8
+flask-caching>=2.3
+python-dateutil>=2.9
