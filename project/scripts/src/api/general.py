@@ -29,10 +29,8 @@ from ..core.repo_global import (
 from ..domain.filters import (
     aplicar_filtro_faixas,
     aplicar_filtro_por_area,
-    resolver_areas_viajantes,
-    filtrar_por_periodo,
+    filtrar_base,
     slug,
-    startswith_any,
 )
 from ..domain.periods import (
     LT_MONTHS, LT_MARKS,
@@ -193,52 +191,6 @@ def register(app):
             return [], {'faixa': None, 'timestamp': 0}
 
         return faixa_atual, ultimo_clique
-
-    def filtrar_base(afastados, viajam, area_selecionada, subarea_selecionada, periodo_idx, faixas):
-        # 1) período
-        dt_ini, dt_fim = periodo_limites(periodo_idx)
-        df_filtrado = (filtrar_por_periodo(df_semana_merged, dt_ini, dt_fim)).copy()
-
-        # 2) QUADRO ELEGÍVEL: só quem tem vínculo que sobrepõe o período
-        adm_cache, dem_cache = carregar_adm_dem_cache()
-        if not df_filtrado.empty:
-            cad_unique = df_filtrado['Cadastro'].astype(str).unique()
-            elegiveis = []
-            for cad in cad_unique:
-                adm = adm_cache.get(str(cad), None)
-                dem = dem_cache.get(str(cad), None)
-                if sobrepoe_periodo(adm, dem, pd.Timestamp(dt_ini), pd.Timestamp(dt_fim)):
-                    elegiveis.append(str(cad))
-            df_filtrado = df_filtrado[df_filtrado['Cadastro'].astype(str).isin(set(elegiveis))]
-
-        # 3) afastados
-        if afastados == 'right' and 'Afastado' in df_filtrado.columns:
-            df_filtrado = df_filtrado[df_filtrado['Afastado'] != 'Sim']
-
-        # 4) viajam (respeita herança)
-        if viajam == 'right':
-            areas_prefixos, herancas_prefixos = resolver_areas_viajantes(her)
-
-            mask_area = False
-            mask_her = False
-
-            if 'Area' in df_filtrado.columns:
-                mask_area = df_filtrado['Area'].apply(lambda a: startswith_any(a, areas_prefixos))
-
-            if 'Heranca' in df_filtrado.columns and len(herancas_prefixos) > 0:
-                mask_her = df_filtrado['Heranca'].apply(lambda h: startswith_any(h, herancas_prefixos))
-
-            if isinstance(mask_area, pd.Series) and isinstance(mask_her, pd.Series):
-                df_filtrado = df_filtrado[~(mask_area | mask_her)]
-            elif isinstance(mask_area, pd.Series):
-                df_filtrado = df_filtrado[~mask_area]
-            elif isinstance(mask_her, pd.Series):
-                df_filtrado = df_filtrado[~mask_her]
-
-        # 5) área/subárea
-        df_filtrado = aplicar_filtro_por_area(df_filtrado, area_selecionada, subarea_selecionada, her)
-
-        return df_filtrado
 
     @app.callback(
         Output('tabela-detalhada-colaboradores', 'children'),
@@ -804,4 +756,3 @@ def register(app):
         ])
 
         return tabela_resumo_area
-
