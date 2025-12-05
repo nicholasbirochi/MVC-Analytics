@@ -13,14 +13,13 @@ from __future__ import annotations
 from dash import Dash
 from flask_caching import Cache
 
-from .core.config import CacheSettings, configure_runtime
+from .core.config import configure_runtime
 from .api.router import register_all
 from .ui.layout import LAYOUT
+from .domain.cache_utils import CacheOptions, as_dict
 
 
 configure_runtime()
-
-cache_settings = CacheSettings()
 
 app = Dash(
     __name__,
@@ -28,10 +27,8 @@ app = Dash(
     prevent_initial_callbacks="initial_duplicate",
 )
 
-cache = Cache(app.server, config={
-    "CACHE_TYPE": cache_settings.cache_type,
-    "CACHE_DEFAULT_TIMEOUT": cache_settings.default_timeout,
-})
+cache_options = CacheOptions()
+cache = Cache(app.server, config=as_dict(cache_options))
 cache.init_app(app.server)
 
 app.layout = LAYOUT

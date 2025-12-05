@@ -15,14 +15,8 @@ import pandas as pd
 from dash import html
 
 from ..core import repo_global as repo
+from ..domain.gptw import (ARROW_UP, ARROW_DOWN, ARROW_NONE, COLOR_UP, COLOR_DOWN, COLOR_NONE)
 
-
-ARROW_UP = "▲"
-ARROW_DOWN = "▼"
-ARROW_NONE = "–"
-COLOR_UP = "#0a7f3f"
-COLOR_DOWN = "#b00020"
-COLOR_NONE = "#999999"
 
 
 def _fmt(valor) -> str:
