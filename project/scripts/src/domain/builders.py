@@ -18,6 +18,79 @@ from ..core import repo_global as repo
 from .filters import normalizar_str
 
 
+def build_df_count_por_semana(df_semana_merged: pd.DataFrame) -> pd.DataFrame:
+    """Conta presenca por dia da semana (heatmap geral)."""
+    if "Dia Semana" in df_semana_merged.columns:
+        out = (
+            df_semana_merged.groupby(
+                [
+                    "Cadastro",
+                    "Nome",
+                    "Area",
+                    "Departamento",
+                    "Heranca",
+                    "Cargo Especifico",
+                    "Afastado",
+                ]
+            )["Dia Semana"]
+            .value_counts()
+            .reset_index()
+        )
+        out.columns = [
+            "Cadastro",
+            "Nome",
+            "Area",
+            "Departamento",
+            "Heranca",
+            "Cargo Especifico",
+            "Afastado",
+            "Dia Semana",
+            "Contagem Presença",
+        ]
+        return out
+    return pd.DataFrame(
+        columns=[
+            "Cadastro",
+            "Nome",
+            "Area",
+            "Departamento",
+            "Heranca",
+            "Cargo Especifico",
+            "Afastado",
+            "Dia Semana",
+            "Contagem Presença",
+        ]
+    )
+
+
+def build_her(df_semana_merged: pd.DataFrame) -> pd.DataFrame:
+    """Construtor da tabela de heranca de areas para dropdowns."""
+    if df_semana_merged is None or df_semana_merged.empty:
+        return pd.DataFrame(columns=["Area", "Departamento", "Heranca"])
+    return (
+        df_semana_merged[["Area", "Departamento", "Heranca"]]
+        .drop_duplicates()
+        .sort_values("Area")
+    )
+
+
+def build_dropdown_options(her_df: pd.DataFrame) -> list[dict]:
+    """Opcoes de area/subarea para os filtros iniciais."""
+    if her_df is None or her_df.empty:
+        return [{"label": "Geral (todas as areas)", "value": "GERAL"}]
+    base = [
+        {
+            "label": "Geral (todas as areas)",
+            "value": "GERAL",
+        }
+    ]
+    opts = [
+        {"label": f"{row['Area']} {row['Departamento']}", "value": row["Area"]}
+        for _, row in her_df.iterrows()
+    ]
+    return base + opts
+
+
 def get_area(pathname: str | None) -> tuple[str | None, str | None]:
     if not pathname or "/area/" not in pathname:
         return None, None
