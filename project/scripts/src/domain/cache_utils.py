@@ -3,14 +3,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..core.config import DEFAULT_CACHE_TIMEOUT
+from ..core.config import DEFAULT_CACHE_TIMEOUT, get_settings
 
 
 @dataclass
 class CacheOptions:
     """Opções de cache simples (mantém compatibilidade com Flask-Caching)."""
     cache_type: str = "SimpleCache"
-    default_timeout: int = DEFAULT_CACHE_TIMEOUT
+    default_timeout: int = get_settings().cache_ttl or DEFAULT_CACHE_TIMEOUT
 
 
 def as_dict(opts: CacheOptions) -> dict:

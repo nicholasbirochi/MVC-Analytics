@@ -16,7 +16,9 @@ from typing import Iterable, Sequence
 import pandas as pd
 
 from ..core.config import AREAS_FORA
-from .periods import LT_MONTHS
+from ..core import repo_global as repo
+from .periods import LT_MONTHS, periodo_limites
+from .tenure import carregar_adm_dem_cache, sobrepoe_periodo
 
 
 def normaliza_str(value: object) -> str:
@@ -149,3 +151,62 @@ def normalizar_str(texto: str) -> str:
 
 def slug(texto: str) -> str:
     return str(texto).replace(" ", "_").replace("/", "-")
+
+
+def filtrar_base(
+    afastados: str,
+    viajam: str,
+    area_selecionada: str | None,
+    subarea_selecionada: str | None,
+    periodo_idx,
+    faixas,
+    df_semana_merged: pd.DataFrame | None = None,
+    her_df: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Filtra df_semana_merged aplicando periodo, elegibilidade, afastados/viajam e area."""
+    df_semana_merged = df_semana_merged if df_semana_merged is not None else repo.df_semana_merged
+    her_df = her_df if her_df is not None else getattr(repo, "her", pd.DataFrame())
+
+    dt_ini, dt_fim = periodo_limites(periodo_idx)
+    df_filtrado = filtrar_por_periodo(df_semana_merged, dt_ini, dt_fim).copy()
+
+    adm_cache, dem_cache = carregar_adm_dem_cache(
+        repo.df_afastados if hasattr(repo, "df_afastados") else None,
+        repo.df_departamentos if hasattr(repo, "df_departamentos") else None,
+        df_semana_merged,
+    )
+
+    if not df_filtrado.empty:
+        cad_unique = df_filtrado["Cadastro"].astype(str).unique()
+        elegiveis: list[str] = []
+        for cad in cad_unique:
+            adm = adm_cache.get(str(cad), None)
+            dem = dem_cache.get(str(cad), None)
+            if sobrepoe_periodo(adm, dem, pd.Timestamp(dt_ini), pd.Timestamp(dt_fim)):
+                elegiveis.append(str(cad))
+        df_filtrado = df_filtrado[df_filtrado["Cadastro"].astype(str).isin(set(elegiveis))]
+
+    if afastados == "right" and "Afastado" in df_filtrado.columns:
+        df_filtrado = df_filtrado[df_filtrado["Afastado"] != "Sim"]
+
+    if viajam == "right":
+        areas_prefixos, herancas_prefixos = resolver_areas_viajantes(her_df)
+
+        mask_area = False
+        mask_her = False
+
+        if "Area" in df_filtrado.columns:
+            mask_area = df_filtrado["Area"].apply(lambda a: startswith_any(a, areas_prefixos))
+
+        if "Heranca" in df_filtrado.columns and len(herancas_prefixos) > 0:
+            mask_her = df_filtrado["Heranca"].apply(lambda h: startswith_any(h, herancas_prefixos))
+
+        if isinstance(mask_area, pd.Series) and isinstance(mask_her, pd.Series):
+            df_filtrado = df_filtrado[~(mask_area | mask_her)]
+        elif isinstance(mask_area, pd.Series):
+            df_filtrado = df_filtrado[~mask_area]
+        elif isinstance(mask_her, pd.Series):
+            df_filtrado = df_filtrado[~mask_her]
+
+    df_filtrado = aplicar_filtro_por_area(df_filtrado, area_selecionada, subarea_selecionada, her_df)
+    return df_filtrado

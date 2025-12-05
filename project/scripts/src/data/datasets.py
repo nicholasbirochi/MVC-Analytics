@@ -1,80 +1,184 @@
 """datasets.py
 
 Carregamento de DataFrames a partir de arquivos Parquet com cache interno.
-
-Projeto: Dashboard presencialidade — Volkswagen do Brasil
-Padronização:
-- Tipagem adiantada: `from __future__ import annotations`
-- Logger de módulo: `logging.getLogger(__name__)`
-- Docstrings estilo Google (Args/Returns/Raises)
-- Linhas <= 100 colunas quando possível
 """
 from __future__ import annotations
 
-
 from functools import lru_cache
+from pathlib import Path
 from typing import Callable
 
 import pandas as pd
 
-from ..config import (
+from ..core.config import (
     AFASTADOS_PARQUET,
     ALMOCO_PARQUET,
     DATAS_PARQUET,
     DEPARTAMENTOS_PARQUET,
     GPTW_PARQUET,
+    HEADCOUNT_PARQUET,
     SEMANA_PARQUET,
+    Settings,
+    get_settings,
 )
 
-ParquetLoader = Callable[[str | bytes], pd.DataFrame]
+ParquetLoader = Callable[[str | bytes | Path], pd.DataFrame]
 
 
-def _read_parquet(path: str | bytes) -> pd.DataFrame:
+def _read_parquet(path: str | bytes | Path) -> pd.DataFrame:
     return pd.read_parquet(path)
 
 
-def _load(path: str | bytes, reader: ParquetLoader = _read_parquet) -> pd.DataFrame:
+def _normalize_cadastro(df: pd.DataFrame) -> pd.DataFrame:
+    if "Cadastro" in df.columns:
+        df["Cadastro"] = df["Cadastro"].astype(str)
+    return df
+
+
+def _normalize_data(df: pd.DataFrame, column: str = "Data") -> pd.DataFrame:
+    if column in df.columns:
+        df[column] = pd.to_datetime(df[column], errors="coerce")
+    return df
+
+
+def _normalize_semana(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    _normalize_cadastro(df)
+    _normalize_data(df, "Data")
+
+    if "Dia Semana" not in df.columns and "Data" in df.columns:
+        dias = {
+            0: "Segunda",
+            1: "Terca",
+            2: "Quarta",
+            3: "Quinta",
+            4: "Sexta",
+            5: "Sabado",
+            6: "Domingo",
+        }
+        df["Dia Semana"] = df["Data"].dt.weekday.map(dias)
+
+    if "Cargo" not in df.columns and "Cargo Especifico" in df.columns:
+        df = df.assign(Cargo=df["Cargo Especifico"])
+
+    return df
+
+
+def _normalize_datas(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    _normalize_cadastro(df)
+    _normalize_data(df, "Data")
+    return df
+
+
+def _normalize_departamentos(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    _normalize_cadastro(df)
+    return df
+
+
+def _normalize_afastados(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    _normalize_cadastro(df)
+    return df
+
+
+def _normalize_gptw(df: pd.DataFrame) -> pd.DataFrame:
+    return df.copy()
+
+
+def _normalize_almoco(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    _normalize_cadastro(df)
+    _normalize_data(df, "Data")
+    return df
+
+
+def _load(
+    path: str | bytes | Path,
+    reader: ParquetLoader = _read_parquet,
+) -> pd.DataFrame:
     df = reader(path)
     return df.copy() if isinstance(df, pd.DataFrame) else df
 
 
 @lru_cache(maxsize=None)
-def load_departamentos(reader: ParquetLoader = _read_parquet) -> pd.DataFrame:
-    return _load(str(DEPARTAMENTOS_PARQUET), reader)
+def load_df_departamentos(
+    settings: Settings | None = None,
+    reader: ParquetLoader = _read_parquet,
+) -> pd.DataFrame:
+    settings = settings or get_settings()
+    return _normalize_departamentos(_load(settings.pasta_departamentos, reader))
 
 
 @lru_cache(maxsize=None)
-def load_datas(reader: ParquetLoader = _read_parquet) -> pd.DataFrame:
-    return _load(str(DATAS_PARQUET), reader)
+def load_df_datas(
+    settings: Settings | None = None,
+    reader: ParquetLoader = _read_parquet,
+) -> pd.DataFrame:
+    settings = settings or get_settings()
+    return _normalize_datas(_load(settings.caminho_datas, reader))
 
 
 @lru_cache(maxsize=None)
-def load_semana(reader: ParquetLoader = _read_parquet) -> pd.DataFrame:
-    return _load(str(SEMANA_PARQUET), reader)
+def load_df_semana(
+    settings: Settings | None = None,
+    reader: ParquetLoader = _read_parquet,
+) -> pd.DataFrame:
+    settings = settings or get_settings()
+    return _normalize_semana(_load(settings.caminho_semana, reader))
 
 
 @lru_cache(maxsize=None)
-def load_afastados(reader: ParquetLoader = _read_parquet) -> pd.DataFrame:
-    return _load(str(AFASTADOS_PARQUET), reader)
+def load_df_afastados(
+    settings: Settings | None = None,
+    reader: ParquetLoader = _read_parquet,
+) -> pd.DataFrame:
+    settings = settings or get_settings()
+    return _normalize_afastados(_load(settings.pasta_afastados, reader))
 
 
 @lru_cache(maxsize=None)
-def load_gptw(reader: ParquetLoader = _read_parquet) -> pd.DataFrame:
-    return _load(str(GPTW_PARQUET), reader)
+def load_df_gptw(
+    settings: Settings | None = None,
+    reader: ParquetLoader = _read_parquet,
+) -> pd.DataFrame:
+    settings = settings or get_settings()
+    return _normalize_gptw(_load(settings.caminho_gptw, reader))
 
 
 @lru_cache(maxsize=None)
-def load_almoco(reader: ParquetLoader = _read_parquet) -> pd.DataFrame:
-    return _load(str(ALMOCO_PARQUET), reader)
+def load_df_almoco(
+    settings: Settings | None = None,
+    reader: ParquetLoader = _read_parquet,
+) -> pd.DataFrame:
+    settings = settings or get_settings()
+    return _normalize_almoco(_load(settings.caminho_almoco, reader))
 
 
-def load_all() -> dict[str, pd.DataFrame]:
+@lru_cache(maxsize=None)
+def load_df_headcount(
+    settings: Settings | None = None,
+    reader: ParquetLoader = _read_parquet,
+) -> pd.DataFrame:
+    settings = settings or get_settings()
+    if HEADCOUNT_PARQUET is None:
+        return pd.DataFrame()
+    path = settings.caminho_headcount or HEADCOUNT_PARQUET
+    if not path:
+        return pd.DataFrame()
+    return _load(path, reader)
+
+
+def load_all(settings: Settings | None = None) -> dict[str, pd.DataFrame]:
     """Carrega todos os DataFrames necessarios para o app."""
+    settings = settings or get_settings()
     return {
-        "df_departamentos": load_departamentos(),
-        "df_datas": load_datas(),
-        "df_semana_merged": load_semana(),
-        "df_afastados": load_afastados(),
-        "df_gptw": load_gptw(),
-        "df_almoco": load_almoco(),
+        "df_departamentos": load_df_departamentos(settings),
+        "df_datas": load_df_datas(settings),
+        "df_semana_merged": load_df_semana(settings),
+        "df_afastados": load_df_afastados(settings),
+        "df_gptw": load_df_gptw(settings),
+        "df_almoco": load_df_almoco(settings),
+        "df_headcount": load_df_headcount(settings),
     }
