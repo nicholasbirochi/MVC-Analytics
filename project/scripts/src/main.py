@@ -13,30 +13,35 @@ from __future__ import annotations
 from dash import Dash
 from flask_caching import Cache
 
-from .core.config import configure_runtime
 from .api.router import register_all
-from .ui.layout import LAYOUT
+from .core.config import SETTINGS, configure_runtime, validate_data_files
 from .domain.cache_utils import CacheOptions, as_dict
+from .ui.layout import LAYOUT
 
 
-configure_runtime()
+def create_app() -> Dash:
+    """Factory principal do aplicativo Dash/Flask."""
+    configure_runtime(SETTINGS)
+    validate_data_files(settings=SETTINGS)
 
-app = Dash(
-    __name__,
-    suppress_callback_exceptions=True,
-    prevent_initial_callbacks="initial_duplicate",
-)
+    app = Dash(
+        __name__,
+        suppress_callback_exceptions=True,
+        prevent_initial_callbacks="initial_duplicate",
+    )
 
-cache_options = CacheOptions()
-cache = Cache(app.server, config=as_dict(cache_options))
-cache.init_app(app.server)
+    cache_options = CacheOptions()
+    cache = Cache(app.server, config=as_dict(cache_options))
+    cache.init_app(app.server)
 
-app.layout = LAYOUT
+    app.layout = LAYOUT
+    register_all(app)
+    return app
 
-register_all(app)
 
+app = create_app()
 server = app.server
 
 
 if __name__ == "__main__":
-    app.run(debug=False, port=8050)
+    app.run(debug=SETTINGS.debug, port=SETTINGS.port)
