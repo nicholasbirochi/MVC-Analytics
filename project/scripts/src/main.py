@@ -14,7 +14,7 @@ from dash import Dash
 from flask_caching import Cache
 
 from .core.config import CacheSettings, configure_runtime
-from .api import register_all
+from .api.router import register_all
 from .ui.layout import LAYOUT
 
 
