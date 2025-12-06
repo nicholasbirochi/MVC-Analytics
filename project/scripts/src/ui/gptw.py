@@ -44,9 +44,14 @@ def _arrow(curr, prox):
     return ARROW_NONE, COLOR_NONE
 
 
-def _listar_subareas(area_label: str, anos_ord: list[int]) -> list[str]:
-    her_df = repo.her
-    df_gptw = repo.df_gptw
+def _listar_subareas(
+    area_label: str,
+    anos_ord: list[int],
+    her_df: pd.DataFrame | None = None,
+    df_gptw: pd.DataFrame | None = None,
+) -> list[str]:
+    her_df = her_df if her_df is not None else getattr(repo, "her", None)
+    df_gptw = df_gptw if df_gptw is not None else getattr(repo, "df_gptw", None)
 
     subareas: list[str] = []
     if isinstance(her_df, pd.DataFrame) and {"Area", "Heranca"}.issubset(her_df.columns):
@@ -80,6 +85,8 @@ def mini_tabela_gptw(
     area_label: str | None,
     anos: tuple[int, ...] = (2023, 2024, 2025),
     incluir_macro: bool = True,
+    df_gptw: pd.DataFrame | None = None,
+    her_df: pd.DataFrame | None = None,
 ):
     wrapper_style = {
         "marginLeft": "auto",
@@ -132,7 +139,7 @@ def mini_tabela_gptw(
         )
         return html.Div(tabela, style=wrapper_style)
 
-    df = repo.df_gptw
+    df = df_gptw if df_gptw is not None else getattr(repo, "df_gptw", None)
     if df is None or getattr(df, "empty", True):
         tabela = html.Table(
             [
@@ -206,7 +213,7 @@ def mini_tabela_gptw(
     piv.index = piv.index.astype(str).str.strip()
     alvo = str(area_label).strip()
 
-    subareas = _listar_subareas(alvo, anos_ord)
+    subareas = _listar_subareas(alvo, anos_ord, her_df=her_df, df_gptw=df)
     linhas: list[str] = []
     if incluir_macro:
         linhas.append(alvo)
@@ -271,13 +278,21 @@ def _gptw_rows_apenas(
 
 def gptw_tabela_empilhada(
     areas: list[str] | None,
-    anos=(2023, 2024, 2025),
+    anos: tuple[int, ...] = (2023, 2024, 2025),
+    df_gptw: pd.DataFrame | None = None,
+    her_df: pd.DataFrame | None = None,
 ):
     if not areas:
         return html.Div("Nenhuma área selecionada.", style={"textAlign": "center"})
     blocos = [
         html.Div(
-            mini_tabela_gptw(area, anos=anos, incluir_macro=True),
+            mini_tabela_gptw(
+                area,
+                anos=anos,
+                incluir_macro=True,
+                df_gptw=df_gptw,
+                her_df=her_df,
+            ),
             style={"margin": "8px 0"},
         )
         for area in areas
@@ -285,5 +300,13 @@ def gptw_tabela_empilhada(
     return html.Div(blocos, style={"display": "flex", "flexDirection": "column"})
 
 
-def mini_tabelas_gptw_multi(areas: list[str] | None):
-    return gptw_tabela_empilhada(areas)
+def mini_tabelas_gptw_multi(
+    areas: list[str] | None,
+    df_gptw: pd.DataFrame | None = None,
+    her_df: pd.DataFrame | None = None,
+):
+    return gptw_tabela_empilhada(
+        areas,
+        df_gptw=df_gptw,
+        her_df=her_df,
+    )
