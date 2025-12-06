@@ -17,7 +17,7 @@ import numpy as np
 import plotly.graph_objects as go
 
 from ..core.repo_global import df_datas, df_semana_merged, df_gptw, her
-from ..ui.gptw import mini_tabela_gptw, gptw_tabela_empilhada, mini_tabelas_gptw_multi
+from ..ui.gptw import gptw_tabela_empilhada
 from ..ui.theme import ESTILO_EXIBIR, ESTILO_OCULTO
 
 
@@ -32,7 +32,7 @@ def register(app):
     )
     def renderizar_tabela_gptw(areas):
         # quando nada selecionado, retorna vazio (Div)
-        return gptw_tabela_empilhada(areas)
+        return gptw_tabela_empilhada(areas, df_gptw=df_gptw, her_df=her)
 
     def add_calendar_stack(
         fig, semanas,
@@ -118,173 +118,6 @@ def register(app):
         )
         return fig
 
-    def _collapse_areas_selection(sel_list: list[str], her_df: pd.DataFrame) -> list[str]:
-        """
-        Remove subáreas quando a área macro (mãe) já estiver na seleção.
-        Considera colunas 'Area' e 'Heranca' se disponíveis, caso contrário, usa prefixo.
-        """
-        sel_list = [str(a).strip() for a in (sel_list or [])]
-        if not sel_list:
-            return []
-
-        sel_set = set(sel_list)
-        to_remove = set()
-
-        # Caso 1: não há DataFrame de herança válido → só compara prefixos
-        if not isinstance(her_df, pd.DataFrame) or her_df.empty or not {'Area','Heranca'}.issubset(her_df.columns):
-            for a in sel_set:
-                for b in sel_set:
-                    if a != b and str(b).startswith(str(a)):
-                        to_remove.add(b)
-            return sorted(sel_set - to_remove)
-
-        # Caso 2: há herança — respeita cadeia mãe-filha
-        tmp = her_df[['Area','Heranca']].dropna().drop_duplicates()
-        H = dict(zip(tmp['Area'].astype(str), tmp['Heranca'].astype(str)))
-
-        for a in sel_set:
-            for b in sel_set:
-                if a == b:
-                    continue
-
-                # É filha direta ou descendente da mesma herança
-                is_prefix = str(b).startswith(str(a))
-                mesma_linhagem = (H.get(b) == H.get(a)) or (H.get(b) == a)
-                if is_prefix and (mesma_linhagem or a in H.get(b, '')):
-                    to_remove.add(b)
-
-        # Se mãe foi selecionada, remove filhas
-        # (ex: 'Comercial' selecionada → remove 'Comercial - SP', 'Comercial - RJ')
-        return sorted(sel_set - to_remove)
-
-    def _gptw_rows_apenas(area_label: str | None, anos=(2023, 2024, 2025), incluir_macro=True):
-        td = {'padding':'4px 8px','border':'1px solid #bbb','textAlign':'center','fontFamily':'VW Text'}
-        td_first = {**td, 'fontWeight':'bold', 'fontSize':'20px'}
-        ARROW_UP, ARROW_DOWN, ARROW_NONE = '▲', '▼', '—'
-        color_up, color_down, color_none = '#0a7f3f', '#b00020', '#999'
-        arrow_style_base = {'marginLeft':'6px', 'fontSize':'12px', 'opacity':0.9}
-
-        anos_ord = list(anos)
-        anos_str_ord = [str(a) for a in anos_ord]
-
-        def _fmt(v):
-            if pd.isna(v): return '—'
-            try:
-                v = float(v); return str(int(v)) if v.is_integer() else f'{v:.1f}'
-            except Exception:
-                return str(v)
-
-        def _arrow(curr, prox):
-            if curr is None or prox is None or pd.isna(curr) or pd.isna(prox):
-                return (ARROW_NONE, color_none)
-            try:
-                c = float(curr); p = float(prox)
-            except Exception:
-                return (ARROW_NONE, color_none)
-            if c > p:   return (ARROW_UP, color_up)
-            if c < p:   return (ARROW_DOWN, color_down)
-            return (ARROW_NONE, color_none)
-
-        if not area_label:
-            return []
-
-        df = globals().get('df_gptw', None)
-        if df is None or getattr(df, 'empty', True):
-            return [html.Tr([html.Td(area_label, style={**td_first, 'textAlign':'left'})] +
-                            [html.Td('—', style=td_first) for _ in anos_ord])]
-
-        df = df.copy()
-        area_col = 'Área' if 'Área' in df.columns else ('Area' if 'Area' in df.columns else None)
-        if area_col is None:
-            return [html.Tr([html.Td("df_gptw sem coluna Área/Area", style=td_first)])]
-
-        is_largo = set(anos_str_ord).issubset(set(df.columns))
-        if is_largo:
-            cols = [area_col] + anos_str_ord
-            tmp = df[cols].copy()
-            for c in anos_str_ord: tmp[c] = pd.to_numeric(tmp[c], errors='coerce')
-            piv = (tmp.groupby(area_col)[anos_str_ord].mean())
-            piv.columns = [int(c) for c in piv.columns]
-            piv = piv.reindex(columns=anos_ord)
-        else:
-            cand_nota = ['Nota','nota','Score','Pontuação','Pontuacao','Índice','Indice','Valor','Value']
-            nota_col = next((c for c in cand_nota if c in df.columns), None)
-            if 'Ano' not in df.columns or nota_col is None:
-                return [html.Tr([html.Td("df_gptw precisa de 'Ano' e 'Nota/Score/Pontuação'", style=td_first)])]
-            df['Ano'] = pd.to_numeric(df['Ano'], errors='coerce')
-            df[nota_col] = pd.to_numeric(df[nota_col], errors='coerce')
-            piv = (df.groupby([area_col, 'Ano'])[nota_col].mean().unstack('Ano'))
-            piv = piv.reindex(columns=anos_ord)
-
-        piv.index = piv.index.astype(str).str.strip()
-        alvo = str(area_label).strip()
-
-        # subáreas por herança (se houver) ou por prefixo
-        subareas = []
-        her_df = globals().get('her', None)
-        if isinstance(her_df, pd.DataFrame) and {'Area','Heranca'}.issubset(her_df.columns):
-            her_df = her_df.copy()
-            her_df['Area'] = her_df['Area'].astype(str).str.strip()
-            herancas = her_df.loc[her_df['Area'].eq(alvo), 'Heranca'].dropna().unique()
-            cand = her_df[her_df['Area'].str.startswith(alvo) & her_df['Area'].ne(alvo)]
-            if len(herancas) > 0:
-                cand = cand[cand['Heranca'].isin(herancas)]
-            subareas = cand['Area'].dropna().unique().tolist()
-        if not subareas:
-            all_areas = piv.index.tolist()
-            subareas = [a for a in all_areas if a != alvo and a.startswith(alvo)]
-
-        def _akey(a):
-            toks = [t.strip() for t in str(a).replace('/', '-').split('-') if t.strip()]
-            return (len(toks), tuple(toks))
-
-        linhas = []
-        if incluir_macro: linhas.append(alvo)
-        linhas.extend(sorted(subareas, key=_akey))
-        if not linhas: linhas = [alvo]
-
-        body_rows = []
-        for idx, area_nome in enumerate(linhas):
-            row = piv.loc[area_nome] if area_nome in piv.index else pd.Series(index=anos_ord, dtype=float)
-            td_this = td_first if idx == 0 else td
-            tds = [html.Td(area_nome, style={**td_this, 'textAlign':'left'})]
-            for j, a in enumerate(anos_ord):
-                val = row.get(a) if isinstance(row, pd.Series) else None
-                prox_val = row.get(anos_ord[j-1]) if j > 0 else None
-                val_txt = _fmt(val)
-                sym, color = _arrow(val, prox_val)
-                kids = [html.Span(val_txt)]
-                if val_txt != '—':
-                    kids.append(html.Span(sym, style={**arrow_style_base, 'color': color}))
-                tds.append(html.Td(kids, style=td_this))
-            body_rows.append(html.Tr(tds))
-        return body_rows
-
-    def gptw_tabela_empilhada(areas: list[str] | None, anos=(2023, 2024, 2025)):
-        if not areas:
-            return html.Div()
-
-        her_df = globals().get('her', pd.DataFrame())
-        areas_final = _collapse_areas_selection(areas, her_df)
-
-        # agrega linhas de todas as áreas (macro + subáreas)
-        all_rows = []
-        for a in areas_final:
-            all_rows.extend(_gptw_rows_apenas(a, anos=anos, incluir_macro=True))
-
-        # cabeçalho (título) uma única vez
-        anos_ord = list(anos)
-        th = {'padding':'4px 8px','border':'1px solid #bbb','backgroundColor':'#f5f5f5',
-              'fontWeight':'bold','textAlign':'center','fontFamily':'VW Text', 'fontSize':'30px'}
-        thead = html.Thead(html.Tr([html.Th('Área', style=th)] + [html.Th(str(a), style=th) for a in anos_ord]))
-
-        tabela = html.Table([thead, html.Tbody(all_rows)], style={
-            'borderCollapse':'collapse','fontSize':'13px',
-            'boxShadow':'0px 2px 6px rgba(0,0,0,0.10)',
-            'maxWidth':'720px','width':'100%'
-        })
-        return html.Div(tabela, style={'display':'flex','justifyContent':'center'})
-
     def aplicar_tags(fig, semanas, tags, dash='dot', width=4):
         """
         Desenha vlines pontilhadas e títulos no topo (paper y=1) para cada tag.
@@ -319,23 +152,6 @@ def register(app):
                     bgcolor='rgba(255,255,255,0.6)'
                 )
         return fig
-
-    def mini_tabelas_gptw_multi(areas: list[str] | None):
-        if not areas:
-            return html.Div()  # nada selecionado => não mostra
-
-        # uma tabela por área, em coluna única e centralizada
-        blocos = [html.Div(mini_tabela_gptw(a), style={'margin':'8px 0'}) for a in areas]
-        return html.Div(
-            blocos,
-            style={
-                'display':'flex',
-                'flexDirection':'column',
-                'alignItems':'center',     # CENTRALIZA
-                'justifyContent':'center',
-                'gap':'8px'
-            }
-        )
 
     def _fmt_hex(c):
         """Normaliza para #RRGGBB; retorna None se inválido."""
