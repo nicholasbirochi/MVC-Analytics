@@ -16,6 +16,7 @@ from typing import Iterable
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.colors import sample_colorscale
 
 from ..domain.copresenca import calcular_ordem_heatmap
 from ..domain.tenure import carregar_adm_dem_cache, tempo_de_casa_str
@@ -83,6 +84,201 @@ def _heatmap_colorscale():
         [0.60, "#9effd0"],
         [1.00, "#267951"],
     ]
+
+
+def _construir_encontros_exec_men(df_full: pd.DataFrame) -> pd.DataFrame:
+    """Cria pares (Data, Exec, Men) com co-presença na mesma planta/dia."""
+    if df_full is None or df_full.empty:
+        return pd.DataFrame(columns=["Data", "Exec", "Men"])
+
+    df = df_full.copy()
+    df["Data"] = pd.to_datetime(df["Data"], errors="coerce").dt.normalize()
+    df = df.dropna(subset=["Data"])
+    if df.empty:
+        return pd.DataFrame(columns=["Data", "Exec", "Men"])
+
+    if "Planta" in df.columns:
+        df["Planta"] = df["Planta"].apply(_normalizar_planta_cell)
+    else:
+        df["Planta"] = [frozenset()] * len(df)
+
+    df["Cadastro"] = df["Cadastro"].astype(str)
+    df["Cargo"] = df["Cargo"].astype(str).str.upper().str[:1]
+
+    pares: list[tuple[pd.Timestamp, str, str]] = []
+    for (dia, planta), grupo in df.groupby(["Data", "Planta"]):
+        if not planta:
+            continue
+        execs = grupo.loc[grupo["Cargo"].eq("E"), "Cadastro"].unique().tolist()
+        mens = grupo.loc[~grupo["Cargo"].eq("E"), "Cadastro"].unique().tolist()
+        if not execs or not mens:
+            continue
+        for e in execs:
+            for m in mens:
+                pares.append((dia, e, m))
+
+    return pd.DataFrame(pares, columns=["Data", "Exec", "Men"])
+
+
+def _metricas_rel_exec_men(df_full: pd.DataFrame):
+    """Calcula métricas para radar: encontros, pessoas únicas, dias, semanas, recência (28d)."""
+    pares = _construir_encontros_exec_men(df_full)
+    if pares.empty:
+        vazio = pd.DataFrame(columns=["Exec", "encontros", "pessoas_unicas", "dias", "semanas", "recencia"])
+        vazio_m = pd.DataFrame(columns=["Men", "encontros", "pessoas_unicas", "dias", "semanas", "recencia"])
+        return vazio, vazio_m, pd.DataFrame(columns=["Data", "encontros_semana"])
+
+    pares["Semana"] = pares["Data"].dt.to_period("W").apply(lambda p: p.start_time)
+
+    e_grp = pares.groupby("Exec")
+    exec_df = pd.DataFrame(
+        {
+            "Exec": e_grp.size().index,
+            "encontros": e_grp.size().values,
+            "pessoas_unicas": e_grp["Men"].nunique().values,
+            "dias": e_grp["Data"].nunique().values,
+            "semanas": e_grp["Semana"].nunique().values,
+            "recencia": e_grp.apply(
+                lambda g: g.loc[g["Data"] >= (pares["Data"].max() - pd.Timedelta(days=28))].shape[0]
+            ).values,
+        }
+    )
+
+    m_grp = pares.groupby("Men")
+    men_df = pd.DataFrame(
+        {
+            "Men": m_grp.size().index,
+            "encontros": m_grp.size().values,
+            "pessoas_unicas": m_grp["Exec"].nunique().values,
+            "dias": m_grp["Data"].nunique().values,
+            "semanas": m_grp["Semana"].nunique().values,
+            "recencia": m_grp.apply(
+                lambda g: g.loc[g["Data"] >= (pares["Data"].max() - pd.Timedelta(days=28))].shape[0]
+            ).values,
+        }
+    )
+
+    serie_sem = pares.groupby("Semana").size().reset_index(name="encontros_semana")
+    return exec_df, men_df, serie_sem
+
+
+def _radar_from_metrics(df: pd.DataFrame, titulo: str, label_col: str, top_n: int = 5) -> go.Figure:
+    """Cria um radar (pentágono) com 5 eixos para top_n entidades com cores graduais."""
+    fig = go.Figure()
+
+    if df is None or df.empty:
+        fig.add_annotation(
+            text="Sem dados suficientes para montar a teia.",
+            showarrow=False,
+            font={"size": 14},
+            x=0.5,
+            y=0.5,
+            xref="paper",
+            yref="paper",
+        )
+        fig.update_layout(
+            title={"text": titulo, "font": {"family": "VW Text", "size": 22}},
+            height=440,
+            margin=dict(l=50, r=40, t=70, b=40),
+            polar=dict(
+                radialaxis=dict(range=[0, 100], gridcolor="rgba(0,0,0,0.18)", tickfont=dict(size=11)),
+                angularaxis=dict(gridcolor="rgba(0,0,0,0.18)", tickfont=dict(size=12)),
+            ),
+            showlegend=False,
+        )
+        return fig
+
+    metrics = ["encontros", "pessoas_unicas", "dias", "semanas", "recencia"]
+    categorias = ["Interações", "Pessoas únicas", "Dias ativos", "Semanas ativas", "Recência (28d)"]
+    df = df.copy().sort_values("encontros", ascending=False).head(top_n)
+
+    for m in metrics:
+        vmax = df[m].max() or 1
+        df[f"{m}_norm"] = (df[m] / vmax) * 100.0
+
+    colorscale = _heatmap_colorscale()
+    for _, row in df.iterrows():
+        valores_norm = [row[f"{m}_norm"] for m in metrics]
+        valores_raw = [row[m] for m in metrics]
+        media_norm = float(np.nanmean(valores_norm)) if len(valores_norm) else 0.0
+        color = sample_colorscale(colorscale, media_norm / 100 if media_norm else 0)[0]
+
+        hover_text = (
+            f"<b>{row[label_col]}</b><br>"
+            f"Interações: {valores_raw[0]:.0f}<br>"
+            f"Pessoas únicas: {valores_raw[1]:.0f}<br>"
+            f"Dias ativos: {valores_raw[2]:.0f}<br>"
+            f"Semanas ativas: {valores_raw[3]:.0f}<br>"
+            f"Recência (28d): {valores_raw[4]:.0f}"
+        )
+
+        fig.add_trace(
+            go.Scatterpolar(
+                r=valores_norm + [valores_norm[0]],
+                theta=categorias + [categorias[0]],
+                name=str(row[label_col]),
+                fill="toself",
+                fillcolor=color,
+                line=dict(color="rgba(16, 29, 61, 0.8)", width=1),
+                marker=dict(color=color),
+                hovertemplate=hover_text + "<extra></extra>",
+            )
+        )
+
+    fig.add_trace(
+        go.Scatterpolar(
+            r=[0, 0],
+            theta=[categorias[0], categorias[0]],
+            mode="markers",
+            marker=dict(
+                size=0.1,
+                color=[0, 100],
+                colorscale=colorscale,
+                cmin=0,
+                cmax=100,
+                showscale=True,
+                colorbar=dict(
+                    title="Intensidade",
+                    ticksuffix="%",
+                    len=0.6,
+                    y=0.5,
+                ),
+            ),
+            hoverinfo="skip",
+            showlegend=False,
+        )
+    )
+
+    fig.update_layout(
+        title={"text": titulo, "font": {"family": "VW Text", "size": 22}},
+        height=480,
+        margin=dict(l=60, r=60, t=80, b=40),
+        polar=dict(
+            radialaxis=dict(
+                range=[0, 100],
+                gridcolor="rgba(0,0,0,0.18)",
+                showline=True,
+                linewidth=1,
+                tickfont=dict(size=11),
+            ),
+            angularaxis=dict(
+                gridcolor="rgba(0,0,0,0.15)",
+                tickfont=dict(size=12),
+            ),
+        ),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.2, x=0.5, xanchor="center"),
+    )
+    return fig
+
+
+def grafico_pentagono_rel_exec(df_full: pd.DataFrame, titulo: str) -> go.Figure:
+    exec_df, _, _ = _metricas_rel_exec_men(df_full)
+    return _radar_from_metrics(exec_df.rename(columns={"Exec": "Label"}), titulo, "Label", top_n=5)
+
+
+def grafico_pentagono_rel_men(df_full: pd.DataFrame, titulo: str) -> go.Figure:
+    _, men_df, _ = _metricas_rel_exec_men(df_full)
+    return _radar_from_metrics(men_df.rename(columns={"Men": "Label"}), titulo, "Label", top_n=5)
 
 
 def grafico_heatmap_encontros_men(
@@ -225,15 +421,16 @@ def grafico_heatmap_encontros_men(
             zmax=100,
             text=text,
             texttemplate="%{text}",
-            hovertemplate=(
-                "<b>%{customdata[1]}</b> x <b>%{customdata[0]}</b><br>"
-                f"{hover_title}: %{{z:.1f}}%<extra></extra>"
-            ),
-            showscale=False,
-            hoverongaps=False,
-            hoverlabel=dict(bgcolor="white", font=dict(color="black")),
-        )
+        hovertemplate=(
+            "<b>%{customdata[1]}</b> x <b>%{customdata[0]}</b><br>"
+            f"{hover_title}: %{{z:.1f}}%<extra></extra>"
+        ),
+        showscale=True,
+        colorbar=dict(title="Presença (%)", ticksuffix="%", len=0.82, thickness=14),
+        hoverongaps=False,
+        hoverlabel=dict(bgcolor="white", font=dict(color="black")),
     )
+)
 
     linhas = max(len(y_labels), 1)
     altura = max(460, 40 + 22 * max(linhas, 10))
@@ -392,15 +589,16 @@ def grafico_heatmap_encontros_exec(
             zmax=100,
             text=text,
             texttemplate="%{text}",
-            hovertemplate=(
-                "<b>%{customdata[1]}</b> x <b>%{customdata[0]}</b><br>"
-                f"{hover_title}: %{{z:.1f}}%<extra></extra>"
-            ),
-            showscale=False,
-            hoverongaps=False,
-            hoverlabel=dict(bgcolor="white", font=dict(color="black")),
-        )
+        hovertemplate=(
+            "<b>%{customdata[1]}</b> x <b>%{customdata[0]}</b><br>"
+            f"{hover_title}: %{{z:.1f}}%<extra></extra>"
+        ),
+        showscale=True,
+        colorbar=dict(title="Presença (%)", ticksuffix="%", len=0.82, thickness=14),
+        hoverongaps=False,
+        hoverlabel=dict(bgcolor="white", font=dict(color="black")),
     )
+)
 
     linhas = max(len(y_labels), 1)
     altura = max(520, 40 + 22 * max(linhas, 10))

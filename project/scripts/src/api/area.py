@@ -12,7 +12,7 @@ Padronização:
 """
 from __future__ import annotations
 
-from dash import Input, Output, State, dcc, html, no_update
+from dash import Input, Output, State, callback_context, dcc, html, no_update
 import pandas as pd
 
 from ..core.repo_global import (
@@ -26,6 +26,8 @@ from ..domain.builders import (
     build_dataframe_diario_area,
     build_dataframe_almoco_area,
     cache_key,
+    get_area,
+    is_valid,
 )
 from ..domain.periods import (
     LT_MONTHS, LT_MARKS,
@@ -36,11 +38,38 @@ from ..domain.filters import slug
 from ..ui.figures import (
     grafico_heatmap_encontros_men,
     grafico_heatmap_encontros_exec,
+    grafico_pentagono_rel_exec,
 )
+from ..ui.gptw import mini_tabela_gptw
 from ..ui.theme import ESTILO_EXIBIR, ESTILO_OCULTO, aplicar_tema_pb
 
 estilo_exibir = ESTILO_EXIBIR
 estilo_oculto = ESTILO_OCULTO
+
+
+def areas_toggle_ui():
+    """Toggle simples para alternar Teia (radar) e Heatmap."""
+    return html.Div(
+        [
+            dcc.Store(id="areas_vis_state", data="teia"),
+            html.Button(
+                "Modo: Teia (teia pentagonal)",
+                id="areas_vis_btn",
+                n_clicks=0,
+                style={
+                    "fontFamily": "VW Text",
+                    "fontWeight": "bold",
+                    "padding": "10px 16px",
+                    "borderRadius": "20px",
+                    "border": "1px solid #b0b0b0",
+                    "backgroundColor": "#f2f2f2",
+                    "cursor": "pointer",
+                    "boxShadow": "0 2px 4px rgba(0,0,0,0.10)",
+                },
+            ),
+        ],
+        style={"display": "flex", "alignItems": "center", "gap": "10px"},
+    )
 
 
 def register(app):
@@ -71,10 +100,11 @@ def register(app):
             Input('afastados-toggle-area', 'value'),
             Input('viajam-toggle-area', 'value'),
             Input('periodo-slider-area', 'value'),
-            Input('url','search')
+            Input('url','search'),
+            Input('areas_vis_state','data')
         ]
     )
-    def callback_unificado(area_base, subarea_sel, cenario, afastados_area, viajam_area, slider_val_state, search):
+    def callback_unificado(area_base, subarea_sel, cenario, afastados_area, viajam_area, slider_val_state, search, areas_vis_state):
         from urllib.parse import parse_qs
         qs = parse_qs((search or '').lstrip('?'))
         modo = (qs.get('modo', ['geral'])[0] or 'geral').lower()
@@ -130,7 +160,7 @@ def register(app):
         # --- Criação do texto do período ---
         m0, y0 = dt_ini.month_name('pt_BR').capitalize(), dt_ini.year
         m1, y1 = dt_fim.month_name('pt_BR').capitalize(), dt_fim.year
-        periodo_txt_out = f""
+        periodo_txt_out = periodo
         periodo = f"{m0}/{y0} a {m1}/{y1}"
         periodo_data_out = [i0, i1] if not is_almoco else None
 
@@ -219,10 +249,32 @@ def register(app):
         fig_men_out = no_update
         fig_exec_out = no_update
 
+        vis_mode = (areas_vis_state or "teia")
+        if isinstance(vis_mode, str):
+            vis_mode = vis_mode.lower()
+        else:
+            vis_mode = "teia"
+
         if precisa_df:
-            # aplica o tema antes de retornar
-            fig_men_full = aplicar_tema_pb((grafico_heatmap_encontros_men(df_full, titulo_men, validar_mesma_planta=True)), so_y_boxplot=False, grade=True)
-            fig_exec_full = aplicar_tema_pb((grafico_heatmap_encontros_exec(df_full, titulo_exec, validar_mesma_planta=True)), so_y_boxplot=False, grade=False, clean=True)
+            if vis_mode == "heatmap":
+                fig_men_full = aplicar_tema_pb(
+                    grafico_heatmap_encontros_men(df_full, titulo_men, validar_mesma_planta=True),
+                    so_y_boxplot=False,
+                    grade=True,
+                )
+            else:
+                titulo_teia = f"Teia de Relacionamento (Top 5 executivos) ({periodo})"
+                fig_men_full = grafico_pentagono_rel_exec(df_full, titulo_teia)
+
+            fig_exec_full = aplicar_tema_pb(
+                grafico_heatmap_encontros_exec(df_full, titulo_exec, validar_mesma_planta=True),
+                so_y_boxplot=False,
+                grade=False,
+                clean=False,
+            )
+
+            fig_men_full.update_layout(uirevision="area-vis-men")
+            fig_exec_full.update_layout(uirevision="area-vis-exec")
 
             fig_men_out = fig_men_full
             fig_exec_out = fig_exec_full
@@ -505,6 +557,10 @@ def register(app):
                 'flexWrap': 'wrap'
             }),
 
+            html.Div(
+                areas_toggle_ui(),
+                style={'display': 'flex', 'justifyContent': 'center', 'margin': '4px 0 12px'}
+            ),
             # ===================== FILTROS E GRÁFICOS =====================
             filtros_div,
 
@@ -539,3 +595,19 @@ def register(app):
         })
 
         return conteudo, {'display':'block'}, {'display':'none'}, no_update
+
+    @app.callback(
+        Output('areas_vis_state', 'data'),
+        Output('areas_vis_btn', 'children'),
+        Input('areas_vis_btn', 'n_clicks'),
+        State('areas_vis_state', 'data'),
+        prevent_initial_call=False
+    )
+    def _toggle_areas_vis(n_clicks, current):
+        current = (current or "teia").lower()
+        next_state = current if (n_clicks or 0) == 0 else ("heatmap" if current == "teia" else "teia")
+        label = (
+            "Modo: Teia (teia pentagonal)" if next_state == "teia"
+            else "Modo: Heatmap (detalhe)"
+        )
+        return next_state, label
