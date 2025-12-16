@@ -39,6 +39,9 @@ from ..ui.figures import (
     grafico_heatmap_encontros_men,
     grafico_heatmap_encontros_exec,
     grafico_pentagono_rel_exec,
+    grafico_pentagonos_rel_exec_multiplos,
+    grafico_rede_encontros_exec,
+    _sanitize_object_columns,
 )
 from ..ui.gptw import mini_tabela_gptw
 from ..ui.theme import ESTILO_EXIBIR, ESTILO_OCULTO, aplicar_tema_pb
@@ -53,7 +56,7 @@ def areas_toggle_ui():
         [
             dcc.Store(id="areas_vis_state", data="teia"),
             html.Button(
-                "Modo: Teia (teia pentagonal)",
+                "Modo: Teia (rede)",
                 id="areas_vis_btn",
                 n_clicks=0,
                 style={
@@ -68,7 +71,7 @@ def areas_toggle_ui():
                 },
             ),
         ],
-        style={"display": "flex", "alignItems": "center", "gap": "10px"},
+        style={"display": "flex", "alignItems": "center", "gap": "14px"},
     )
 
 
@@ -160,8 +163,8 @@ def register(app):
         # --- Criação do texto do período ---
         m0, y0 = dt_ini.month_name('pt_BR').capitalize(), dt_ini.year
         m1, y1 = dt_fim.month_name('pt_BR').capitalize(), dt_fim.year
-        periodo_txt_out = periodo
         periodo = f"{m0}/{y0} a {m1}/{y1}"
+        periodo_txt_out = periodo
         periodo_data_out = [i0, i1] if not is_almoco else None
 
         # -------------------- 2) SUBÁREA (options + manter seleção) -------------
@@ -205,7 +208,7 @@ def register(app):
             callback_unificado._df_cache = {}
         cache_map = callback_unificado._df_cache
 
-        precisa_df = bool(area_base) and (mudou_area_ou_sub or mudou_periodo or mudou_filtros or (trig == 'initial') or (df_key not in cache_map))
+        precisa_df = bool(area_base) and (mudou_area_ou_sub or mudou_periodo or mudou_filtros or (trig in ('initial', 'areas_vis_state')) or (df_key not in cache_map))
 
         if precisa_df:
             if is_almoco:
@@ -254,24 +257,40 @@ def register(app):
             vis_mode = vis_mode.lower()
         else:
             vis_mode = "teia"
+        if vis_mode == "teia":
+            vis_mode = "network"
 
         if precisa_df:
-            if vis_mode == "heatmap":
+            if vis_mode == "network":
+                try:
+                    df_net = _sanitize_object_columns(df_full)
+
+                    fig_men_full = grafico_pentagonos_rel_exec_multiplos(df_net, titulo_men, max_exec=999)
+                    fig_exec_full = grafico_rede_encontros_exec(df_net, titulo_exec, validar_mesma_planta=True)
+                except Exception:
+                    fig_men_full = aplicar_tema_pb(
+                        grafico_heatmap_encontros_men(df_full, titulo_men, validar_mesma_planta=True),
+                        so_y_boxplot=False,
+                        grade=True,
+                    )
+                    fig_exec_full = aplicar_tema_pb(
+                        grafico_heatmap_encontros_exec(df_full, titulo_exec, validar_mesma_planta=True),
+                        so_y_boxplot=False,
+                        grade=False,
+                        clean=False,
+                    )
+            else:
                 fig_men_full = aplicar_tema_pb(
                     grafico_heatmap_encontros_men(df_full, titulo_men, validar_mesma_planta=True),
                     so_y_boxplot=False,
                     grade=True,
                 )
-            else:
-                titulo_teia = f"Teia de Relacionamento (Top 5 executivos) ({periodo})"
-                fig_men_full = grafico_pentagono_rel_exec(df_full, titulo_teia)
-
-            fig_exec_full = aplicar_tema_pb(
-                grafico_heatmap_encontros_exec(df_full, titulo_exec, validar_mesma_planta=True),
-                so_y_boxplot=False,
-                grade=False,
-                clean=False,
-            )
+                fig_exec_full = aplicar_tema_pb(
+                    grafico_heatmap_encontros_exec(df_full, titulo_exec, validar_mesma_planta=True),
+                    so_y_boxplot=False,
+                    grade=False,
+                    clean=False,
+                )
 
             fig_men_full.update_layout(uirevision="area-vis-men")
             fig_exec_full.update_layout(uirevision="area-vis-exec")
@@ -328,7 +347,7 @@ def register(app):
         # ======= BARRA DE FILTROS (mesmo conteúdo, mas pode ficar oculta no modo almoço) =======
         filter_block_style = {
             'flex':'1','padding':'16px','boxSizing':'border-box','backgroundColor':"#e0e0e0",
-            'borderRadius':'16px','margin':'10px','boxShadow':'0px 3px 6px rgba(0,0,0,0.1)',
+            'borderRadius':'16px','margin':'14px','boxShadow':'0px 3px 6px rgba(0,0,0,0.1)',
             'display':'flex','flexWrap':'wrap','alignItems':'flex-start','gap':'24px'
         }
         if is_almoco:
@@ -470,7 +489,7 @@ def register(app):
                     'justifyContent': 'flex-start',
                     'flex': '0 0 260px',
                     'maxWidth': '30%',
-                    'marginLeft': '10px',           # margem igual à da direita
+                    'marginLeft': '14px',           # margem igual à da direita
                 }),
 
                 # ---- Título centralizado ----
@@ -493,7 +512,7 @@ def register(app):
                 html.Div(
                     mini_tabela_gptw(subarea or area),
                     style={
-                        'marginRight': '10px',
+                        'marginRight': '14px',
                         'flex': '0 0 260px',
                         'maxWidth': '30%'
                     }
@@ -505,7 +524,7 @@ def register(app):
                 'justifyContent': 'space-between',
                 'flexWrap': 'wrap',
                 'gap': '12px',
-                'margin': '10px',
+                'margin': '14px',
                 'position': 'relative'
             }),
 
@@ -568,10 +587,10 @@ def register(app):
                 id='periodo-texto-area',
                 style={
                     'textAlign': 'center',
-                    'marginTop': '4px',
-                    'marginBottom': '10px'
-                }
-            ),
+                'marginTop': '4px',
+                'marginBottom': '14px'
+            }
+        ),
 
             dcc.Loading(
                 id='loading-area-men',
@@ -590,7 +609,7 @@ def register(app):
 
         ],
         style={
-            'padding': '10px',
+            'padding': '14px',
             'backgroundColor': 'white'
         })
 
@@ -604,10 +623,12 @@ def register(app):
         prevent_initial_call=False
     )
     def _toggle_areas_vis(n_clicks, current):
-        current = (current or "teia").lower()
-        next_state = current if (n_clicks or 0) == 0 else ("heatmap" if current == "teia" else "teia")
+        current = (current or "network").lower()
+        if current == "teia":
+            current = "network"
+        next_state = current if (n_clicks or 0) == 0 else ("heatmap" if current == "network" else "network")
         label = (
-            "Modo: Teia (teia pentagonal)" if next_state == "teia"
+            "Modo: Teia (rede)" if next_state == "network"
             else "Modo: Heatmap (detalhe)"
         )
         return next_state, label
