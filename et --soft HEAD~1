@@ -1,0 +1,37 @@
+[33ma382db7[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmaster[m[33m)[m Updating the unified project notebook, the ETL notebook, the readme file, and removing unnecessary files.
+[33mbd47162[m Updating the unified project notebook, the ETL notebook, the readme file, and removing unnecessary files.
+[33m7fe3f73[m Integrate dynamic area network mode
+[33mde2305b[m chore(notebooks): atualiza materiais auxiliares
+[33mb9af65c[m feat(charts): integrar teia e heatmap na aba area
+[33mfbb017a[m feat(charts): reforca teia e heatmaps no unificado
+[33m9b956cd[m Update Projeto unificado notebook
+[33m67b263d[m Reuse shared GPTW UI helpers in relacionamento controller
+[33md354c32[m Parameterize GPTW UI helpers for data inputs
+[33m85d2440[m Use settings-aware app factory and validate data files
+[33m00be052[m Update Projeto unificado notebook
+[33mb82dcdc[m Reuse domain filter logic in general controller
+[33m410d934[m Add settings loader and normalize dataset layer
+[33maf43c6f[m refactor: use shared cache utils and gptw constants
+[33me33aea3[m feat: align MVC structure with unified layout
+[33mf90c764[m feat: mirror notebook data info in MVC sample
+[33ma355d3e[m feat: structure MVC layer and CLI runner
+[33mccc6e5f[m feat: add sample runner to mirror unified notebook
+[33m129525a[m style: enforce VW Text font across web
+[33m73f1923[m refactor: centralize notebook styles and comments
+[33m7c2b64a[m Revert "refactor: collapse unified notebook into single cell"
+[33mf11a01f[m refactor: collapse unified notebook into single cell
+[33me456d54[m refactor: simplify unified notebook
+[33ma750738[m chore: add domain package init
+[33m888d143[m docs: document dashboard and data prep notebooks
+[33m3691343[m test: add baseline coverage for domain logic
+[33m9a2e41f[m chore: add dev tooling and lint config
+[33m1c40405[m feat: add web shell and login flow
+[33m8550621[m feat: expose Dash application entrypoint
+[33mc8f89bc[m feat: implement dashboard callbacks
+[33mbaeb257[m feat: create UI components and layout
+[33m69b8e59[m feat: build domain aggregations and copresence logic
+[33m65379a5[m feat: add domain utilities for filters and timelines
+[33m9fa906b[m feat: add shared data repository
+[33m766a902[m feat: setup core runtime and dataset loaders
+[33mf3a82b0[m chore: define python dependencies
+[33m7158045[m chore: initialize repository structure
