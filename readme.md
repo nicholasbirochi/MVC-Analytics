@@ -39,6 +39,11 @@ box-shadow: 0 4px 14px rgba(0,0,0,0.12); margin: 8px 0 16px 0;">
 [🛠️ Solução de Problemas](#-solucao-de-problemas) | 
 [🔐 Segurança e Acesso](#-seguranca-e-acesso) | 
 [💡 Boas Práticas](#-boas-praticas) | 
+[📄 Licença](#-licenca) | 
+[🖋️ Assinatura Profissional](#-assinatura-profissional) |
+
+</div>
+
 ## 🧾 Resumo Técnico
 - Linguagem: Python 3.11
 - Framework: Dash (Plotly + Flask)
@@ -525,13 +530,6 @@ http://localhost:8050
 - Use `PreventUpdate` para callbacks sem mudança de estado  
 - Prefira `@cache.memoize()` em cálculos pesados
 
-## Notas rapidas - Aba Area
-- Modo padrao abre em "Teia": store `areas_vis_state` + botao `areas_vis_btn` para alternar entre teia e heatmap.
-- Grafico 1 usa `grafico_pentagono_rel_exec` (project/scripts/src/ui/figures.py) com 5 eixos e a mesma escala `_heatmap_colorscale`.
-- Heatmaps exibem barra de cor/tooltip; ajuste fino de escala/legenda nas funcoes de heatmap em `ui/figures.py`.
-- Texto de periodo exibido em `periodo-texto-area`; dados preparados no controller `api/area.py` via builders de `domain.builders`.
-- Para validacao rapida sem base real, `python -m compileall project/scripts/src` (ignorar aviso de pyc bloqueado em sandbox).
-
 ## 📄 Licença
 Projeto interno — uso corporativo.
 <br>© 2025 Volkswagen do Brasil / Nicholas Birochi
@@ -559,4 +557,3 @@ Projeto interno — uso corporativo.
     </td>
   </tr>
 </table>
-

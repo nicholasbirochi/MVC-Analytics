@@ -1,6 +1,4 @@
 :root {
-  /* Fonte base exclusiva: VW Text */
-  --font-base:"VW Text";
   --bg: #0b1020;
   --bg-2: #121a35;
   --card: #0f172aee;
@@ -25,7 +23,7 @@ body {
     radial-gradient(800px 700px at 90% 20%, #0ea5e933 0%, transparent 60%),
     radial-gradient(700px 700px at 80% 90%, #8b5cf633 0%, transparent 60%),
     linear-gradient(160deg, var(--bg) 0%, var(--bg-2) 100%);
-  font-family: var(--font-base);
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial;
   -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
 }
 
