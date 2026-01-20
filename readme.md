@@ -151,6 +151,10 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 │ │ └── 📓 Transformando de xlsx para parquet.ipynb
 │ │
 │ ├── 📂 Documentação/
+│ │ ├── 📂 Analisando Fraudes dos Horistas/
+│ │ │ ├── 📓 Análise para fraude de pontos.ipynb
+│ │ │ └── 💹 Registros Suspeitos.xlsx
+│ │ │
 │ │ ├── 📂 Análise feita com PDFs/
 │ │ │ ├── 📂 Base de Dados/
 │ │ │ │ ├── 📝 relatorio A.M.N.M.  01.24_31.03.pdf
