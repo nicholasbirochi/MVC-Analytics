@@ -129,7 +129,8 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 │ │ │ └── 🪶 Mensalistas_10-01-2025_12-31-2025.parquet
 │ │ │
 │ │ └── 📂 Movimentacoes/
-│ │   └── 🪶 Movimentacoes_01-01-2023_09-30-2025.parquet
+│ │   ├── 🪶 Movimentacoes_01-01-2023_09-30-2025.parquet
+│ │   └── 🪶 Movimentacoes_10-01-2025_12-31-2025.parquet
 │ │
 │ ├── 📂 xlsx/
 │ │ ├── 📂 Departamentos-Afastados/  
@@ -139,7 +140,8 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 │ │ │ └── 💹 GPTW.xlsx
 │ │ │
 │ │ └── 📂 Movimentacoes/ 
-│ │   └── 💹 Movimentacoes_01-01-2023_09-30-2025.xlsx
+│ │   ├── 💹 Movimentacoes_01-01-2023_09-30-2025.xlsx
+│ │   └── 💹 Movimentacoes_10-01-2025_12-31-2025.xls
 │ │
 │ ├── 🪶 Afastados.parquet
 │ ├── 🪶 ArquivoFinal.parquet
@@ -304,13 +306,14 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 |     📝    |        `.pdf`       | Documentos em PDF (relatórios, contratos, etc.) |
 |     🪶    |      `.parquet`     |      Formato colunar otimizado para análise     |
 |     💹    |       `.xlsx`       |                 Planilhas Excel                 |
+|     💹    |        `.xls`       |                 Planilhas Excel                 |
 |     📓    |       `.ipynb`      |                Notebooks Jupyter                |
 |     🐍    |        `.py`        |                  Código Python                  |
 |     🧊    |        `.ico`       |                 Ícones/favicons                 |
 |     🖼️    |        `.png`       |                     Imagens                     |
 |     ⚡    |        `.js`        |                Scripts JavaScript               |
 |     🎨    |        `.css`       |                 Estilos visuais                 |
-|     🧱    |       `.html`       |                 ui/front-end                 |
+|     🧱    |       `.html`       |                   ui/front-end                  |
 |     🗄️    |      `.sqlite`      |               Banco de dados local              |
 |     ⚙️    |     `.gitignore`    |            Regras de ignorados do Git           |
 |     📖    |        `.md`        |              Documentação Markdown              |
