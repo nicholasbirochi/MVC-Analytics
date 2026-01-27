@@ -98,13 +98,15 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 │ ├── 📂 csv/
 │ │ ├── 📂 Executivos/
 │ │ │ ├── 🧾 Executivos_01-08-2024_03-31-2025.csv
-│ │ │ └── 🧾 Executivos_04-01-2025_09-30-2025.csv
+│ │ │ ├── 🧾 Executivos_04-01-2025_09-30-2025.csv
+│ │ │ └── 🧾 Executivos_10-01-2025_12-31-2025.csv
 │ │ │
 │ │ ├── 📂 Horistas/
 │ │ │
 │ │ └── 📂 Mensalistas/
 │ │   ├── 🧾 Mensalistas_01-08-2024_03-31-2025.csv
-│ │   └── 🧾 Mensalistas_04-01-2025_09-30-2025.csv
+│ │   ├── 🧾 Mensalistas_04-01-2025_09-30-2025.csv
+│ │   └── 🧾 Mensalistas_10-01-2025_12-31-2025.csv
 │ │
 │ ├── 📂 parquet/
 │ │ ├── 📂 Departamentos-Afastados/
@@ -113,7 +115,8 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 │ │ │
 │ │ ├── 📂 Executivos/
 │ │ │ ├── 🪶 Executivos_01-08-2024_03-31-2025.parquet
-│ │ │ └── 🪶 Executivos_04-01-2025_09-30-2025.parquet
+│ │ │ ├── 🪶 Executivos_04-01-2025_09-30-2025.parquet
+│ │ │ └── 🪶 Executivos_10-01-2025_12-31-2025.parquet
 │ │ │
 │ │ ├── 📂 GPTW/
 │ │ │ └── 🪶 GPTW.parquet
@@ -122,10 +125,11 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 │ │ │ 
 │ │ ├── 📂 Mensalistas/
 │ │ │ ├── 🪶 Mensalistas_01-08-2024_03-31-2025.parquet
-│ │ │ └── 🪶 Mensalistas_04-01-2025_09-30-2025.parquet
+│ │ │ ├── 🪶 Mensalistas_04-01-2025_09-30-2025.parquet
+│ │ │ └── 🪶 Mensalistas_10-01-2025_12-31-2025.parquet
 │ │ │
 │ │ └── 📂 Movimentacoes/
-│ │   └── 🪶 Mensalistas_04-01-2025_09-30-2025.parquet
+│ │   └── 🪶 Movimentacoes_01-01-2023_09-30-2025.parquet
 │ │
 │ ├── 📂 xlsx/
 │ │ ├── 📂 Departamentos-Afastados/  
