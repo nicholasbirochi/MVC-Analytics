@@ -243,11 +243,11 @@ def register(app):
         ax_clock.add_patch(rect)
         ax_clock.set_title(f"\n\nFrequência da Contagem de Presencial\npor Semana ({periodo_label_curto})\n", va='bottom', fontsize=20, pad=35)
         if current_val > 2:
-            ax_clock.text(0.01, 0, f"\n\n\n\n\n⚠️ Acima do necessário! ⚠️\n+{percentual_da_media}%",
+            ax_clock.text(0.01, 0, f"\n\n\n\n\n Acima do necessário! \n+{percentual_da_media}%",
                           ha='center', va='center', fontsize=34, color='green', fontweight='bold',
                           path_effects=[patheffects.withStroke(linewidth=3, foreground='white')])
         elif current_val < 2:
-            ax_clock.text(0.01, 0, f"\n\n\n\n\n⚠️ Abaixo do esperado! ⚠️\n{percentual_da_media}%",
+            ax_clock.text(0.01, 0, f"\n\n\n\n\n Abaixo do esperado! \n{percentual_da_media}%",
                           ha='center', va='center', fontsize=34, color='red', fontweight='bold',
                           path_effects=[patheffects.withStroke(linewidth=3, foreground='white')])
         ax_clock.patch.set_facecolor('white'); ax_clock.patch.set_alpha(0)
