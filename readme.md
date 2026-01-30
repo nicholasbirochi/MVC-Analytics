@@ -78,7 +78,7 @@ Dashboard corporativo construído com **Dash (Plotly + Flask)** para monitorar a
 
 ### ⚙️ **Filtros Dinâmicos**
 - Período (cenários + slider mensal)
-- Afastados / Viagem
+- Desligados / Viagem
 - Área/Subárea (com **Herança** e exclusões automáticas)
 
 ### ⚡ **Performance e Interatividade**
@@ -109,9 +109,11 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 │ │   └── 🧾 Mensalistas_10-01-2025_12-31-2025.csv
 │ │
 │ ├── 📂 parquet/
-│ │ ├── 📂 Departamentos-Afastados/
-│ │ │ ├── 🪶 Afastados.parquet
-│ │ │ └── 🪶 Departamentos.parquet
+│ │ ├── 📂 Ativos/
+│ │ │ └── 🪶 Ativos.parquet
+│ │ │
+│ │ ├── 📂 Desligados/
+│ │ │ └── 🪶 Desligados.parquet
 │ │ │
 │ │ ├── 📂 Executivos/
 │ │ │ ├── 🪶 Executivos_01-08-2024_03-31-2025.parquet
@@ -129,27 +131,17 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 │ │ │ └── 🪶 Mensalistas_10-01-2025_12-31-2025.parquet
 │ │ │
 │ │ └── 📂 Movimentacoes/
-│ │   ├── 🪶 Movimentacoes_01-01-2023_09-30-2025.parquet
-│ │   └── 🪶 Movimentacoes_10-01-2025_12-31-2025.parquet
+│ │   └── 🪶 Movimentacoes.parquet
 │ │
-│ ├── 📂 xlsx/
-│ │ ├── 📂 Departamentos-Afastados/  
-│ │ │ └── 💹 Departamentos-Afastados.xlsx
-│ │ │
-│ │ ├── 📂 GPTW/ 
-│ │ │ └── 💹 GPTW.xlsx
-│ │ │
-│ │ └── 📂 Movimentacoes/ 
-│ │   ├── 💹 Movimentacoes_01-01-2023_09-30-2025.xlsx
-│ │   └── 💹 Movimentacoes_10-01-2025_12-31-2025.xls
-│ │
-│ ├── 🪶 Afastados.parquet
-│ ├── 🪶 ArquivoFinal.parquet
-│ ├── 🪶 ArquivoFinalDatas.parquet
-│ ├── 🪶 ArquivoFinalPessoa.parquet
-│ ├── 🪶 Departamentos.parquet
-│ ├── 🪶 GPTW.parquet
-│ └── 🪶 Movimentacoes_01-01-2023_09-30-2025.parquet.parquet
+│ └── 📂 xlsx/
+│   ├── 📂 Ativos e Desligados/  
+│   │ └── 💹 Ativos e Desligados.xlsx
+│   │
+│   ├── 📂 GPTW/ 
+│   │ └── 💹 GPTW.xlsx
+│   │
+│   └── 📂 Movimentacoes/ 
+│     └── 💹 Movimentacoes.xls
 │
 ├── 📂 Códigos Extras/
 │ ├── 📂 Convertendo o Formato das Bases/
@@ -157,8 +149,8 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 │ │ └── 📓 Transformando de xlsx para parquet.ipynb
 │ │
 │ ├── 📂 Documentação/
-│ │ ├── 📂 Analisando Fraudes dos Horistas/
-│ │ │ ├── 📓 Análise para fraude de pontos.ipynb
+│ │ ├── 📂 Analisando Fraudes dos Registros/
+│ │ │ ├── 📓 Análise das Fraudes.ipynb
 │ │ │ └── 💹 Registros Suspeitos.xlsx
 │ │ │
 │ │ ├── 📂 Análise feita com PDFs/
@@ -202,6 +194,13 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 │ │ │ ├── 🖼️ code.png
 │ │ │ └── 🖼️ resultado.png
 │ │ │
+│ │ ├── 📂 Consolidando as Planilhas do Excel/
+│ │ │ ├── 📂 data
+│ │ │ │ ├── 💹 Backlog 2025_consolidado.xlsx
+│ │ │ │ └── 💹 Backlog 2025.xlsx
+│ │ │ │
+│ │ │ └── 📓 Análise das Planilhas.ipynb
+│ │ │
 │ │ ├── 📂 Corrigindo CSV/
 │ │ │ ├── 📂 Executivos_SQL/
 │ │ │ │ └── 🧾 Executivos_SQL.csv
@@ -213,15 +212,23 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 │ │ │
 │ │ ├── 📓 Análise das movimentacoes.ipynb
 │ │ ├── 📓 Análise geral.ipynb
-│ │ ├── 📓 Análise para fraude de pontos.ipynb
 │ │ └── 💹 Colaboradores e Áreas com Problemas.xlsx
 │ │
 │ ├── 📂 Tratando Base Misturada/
-│ │ ├── 📂 xlsx
-│ │ │ ├── 💹 Departamentos-Afastados - Antigo.xlsx
-│ │ │ └── 💹 Departamentos-Afastados - Novo.xlsx
+│ │ ├── 📂 Ativos e Desligados
+│ │ │ ├── 📂 xlsx
+│ │ │ │ ├── 💹 Ativos e Desligados - 06-31-2025.xlsx
+│ │ │ │ ├── 💹 Ativos e Desligados - 09-30-2025.xlsx
+│ │ │ │ └── 💹 Ativos e Desligados - 12-31-2025.xlsx
+│ │ │ │
+│ │ │ └── 📓 Validando novas bases.ipynb
 │ │ │
-│ │ └── 📓 Validando nova base.ipynb
+│ │ └── 📂 Movimentacoes
+│ │   ├── 📂 xlsx
+│ │   │ ├── 💹 Movimentacoes_01-01-2023_09-30-2025.xlsx
+│ │   │ └── 💹 Movimentacoes_10-01-2025_12-31-2025.xlsx
+│ │   │
+│ │   └── 📓 Validando novas bases.ipynb
 │ │
 │ ├── 📓 ETL.ipynb
 │ └── 📓 Projeto unificado.ipynb
@@ -265,13 +272,13 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 │ │ └── 🐍 security_login.py
 │ │
 │ ├── 📂 database/
-│ │ ├── 🪶 Afastados.parquet
+│ │ ├── 🪶 Desligados.parquet
 │ │ ├── 🪶 Almoco.parquet
 │ │ ├── 🪶 ArquivoFinal.parquet
 │ │ ├── 🪶 ArquivoFinalDatas.parquet
 │ │ ├── 🪶 ArquivoFinalSemana.parquet
 │ │ ├── 🗄️ Banco Login.sqlite
-│ │ ├── 🪶 Departamentos.parquet
+│ │ ├── 🪶 Ativos.parquet
 │ │ └── 🪶 GPTW.parquet
 │ │
 │ └── 📂 web/
@@ -363,7 +370,7 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 - `Cargo Especifico` (str)
 >*As colunas de controle de acesso (`Filial`, `Tipo`, `Acesso`, `Uso Acesso` e `Area`) não são utilizadas.*
 
-### 🏢 df_departamentos — Estrutura hierárquica de áreas
+### 🏢 df_ativos — Estrutura hierárquica de áreas
 - `Cadastro` (str)
 - `Departamento` (str)
 - `Area` (str)
@@ -371,7 +378,7 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 >*Demais colunas (`Nome completo`, `Heranca`, `Cargo Especifico`, `Local` e `Afast_RH`) não são usadas.<br>
 >*Serve como base auxiliar para montar* o DataFrame `her` (hierarquia de áreas).*
 
-### 🚑 df_afastados (opcional) — Cadastro de colaboradores afastados
+### 🚑 df_desligados (opcional) — Cadastro de colaboradores desligados
 - `Cadastro` (str)
 - `Departamento` (str)
 - `Area` (str)
@@ -400,8 +407,8 @@ Implementação:
 ## ⚙️ Configuração via `.env`
 
 ```python
-pasta_afastados=Projeto/Banco de Dados/Afastados.parquet
-pasta_departamentos=Projeto/Banco de Dados/Departamentos.parquet
+pasta_desligados=Projeto/Banco de Dados/Desligados.parquet
+pasta_ativos=Projeto/Banco de Dados/Ativos.parquet
 caminho_gptw=Projeto/Banco de Dados/GPTW.parquet
 caminho_semana=Projeto/Banco de Dados/ArquivoFinal.parquet
 caminho_datas=Projeto/Banco de Dados/ArquivoFinalDatas.parquet
