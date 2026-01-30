@@ -210,9 +210,10 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 │ │ │ │
 │ │ │ └── 📓 Corrigindo o csv novo.ipynb
 │ │ │
-│ │ ├── 📓 Análise das movimentacoes.ipynb
-│ │ ├── 📓 Análise geral.ipynb
-│ │ └── 💹 Colaboradores e Áreas com Problemas.xlsx
+│ │ └── 📂 EDA das Bases/
+│ │   ├── 📓 Análise das movimentacoes.ipynb
+│ │   ├── 📓 Análise geral.ipynb
+│ │   └── 💹 Colaboradores e Áreas com Problemas.xlsx
 │ │
 │ ├── 📂 Tratando Base Misturada/
 │ │ ├── 📂 Ativos e Desligados
