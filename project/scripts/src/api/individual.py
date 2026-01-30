@@ -27,8 +27,8 @@ import matplotlib.patheffects as patheffects
 from ..core.repo_global import (
     df_semana_merged,
     df_datas,
-    df_departamentos,
-    df_afastados,
+    df_ativos,
+    df_desligados,
     df_count_por_semana,
 )
 from ..domain.exports import (

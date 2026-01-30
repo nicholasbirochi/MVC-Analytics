@@ -71,13 +71,13 @@ def _normalize_datas(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _normalize_departamentos(df: pd.DataFrame) -> pd.DataFrame:
+def _normalize_ativos(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     _normalize_cadastro(df)
     return df
 
 
-def _normalize_afastados(df: pd.DataFrame) -> pd.DataFrame:
+def _normalize_desligados(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     _normalize_cadastro(df)
     return df
@@ -103,12 +103,12 @@ def _load(
 
 
 @lru_cache(maxsize=None)
-def load_df_departamentos(
+def load_df_ativos(
     settings: Settings | None = None,
     reader: ParquetLoader = _read_parquet,
 ) -> pd.DataFrame:
     settings = settings or get_settings()
-    return _normalize_departamentos(_load(settings.pasta_departamentos, reader))
+    return _normalize_ativos(_load(settings.pasta_ativos, reader))
 
 
 @lru_cache(maxsize=None)
@@ -130,12 +130,12 @@ def load_df_semana(
 
 
 @lru_cache(maxsize=None)
-def load_df_afastados(
+def load_df_desligados(
     settings: Settings | None = None,
     reader: ParquetLoader = _read_parquet,
 ) -> pd.DataFrame:
     settings = settings or get_settings()
-    return _normalize_afastados(_load(settings.pasta_afastados, reader))
+    return _normalize_desligados(_load(settings.pasta_desligados, reader))
 
 
 @lru_cache(maxsize=None)
@@ -174,10 +174,10 @@ def load_all(settings: Settings | None = None) -> dict[str, pd.DataFrame]:
     """Carrega todos os DataFrames necessarios para o app."""
     settings = settings or get_settings()
     return {
-        "df_departamentos": load_df_departamentos(settings),
+        "df_ativos": load_df_ativos(settings),
         "df_datas": load_df_datas(settings),
         "df_semana_merged": load_df_semana(settings),
-        "df_afastados": load_df_afastados(settings),
+        "df_desligados": load_df_desligados(settings),
         "df_gptw": load_df_gptw(settings),
         "df_almoco": load_df_almoco(settings),
         "df_headcount": load_df_headcount(settings),

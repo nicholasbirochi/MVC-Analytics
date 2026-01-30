@@ -21,14 +21,14 @@ def _norm_df(df):
 
 
 def coletar_admissoes_e_demissoes(
-    df_afastados: pd.DataFrame | None = None,
-    df_departamentos: pd.DataFrame | None = None,
+    df_desligados: pd.DataFrame | None = None,
+    df_ativos: pd.DataFrame | None = None,
     df_semana_merged: pd.DataFrame | None = None,
 ) -> tuple[dict[str, pd.Timestamp], dict[str, pd.Timestamp]]:
-    if df_afastados is None:
-        df_afastados = repo.df_afastados
-    if df_departamentos is None:
-        df_departamentos = repo.df_departamentos
+    if df_desligados is None:
+        df_desligados = repo.df_desligados
+    if df_ativos is None:
+        df_ativos = repo.df_ativos
     if df_semana_merged is None:
         df_semana_merged = repo.df_semana_merged
 
@@ -41,7 +41,7 @@ def coletar_admissoes_e_demissoes(
         if (key not in target) or (value < target[key]):
             target[key] = value
 
-    dfa = _norm_df(df_afastados)
+    dfa = _norm_df(df_desligados)
     if dfa is not None and "Cadastro" in dfa.columns:
         cad_series = dfa["Cadastro"].astype(str)
         if "Data_Adm" in dfa.columns:
@@ -53,7 +53,7 @@ def coletar_admissoes_e_demissoes(
             for cad, data in zip(cad_series, datas_dem):
                 _put(dem, cad, data)
 
-    dfd = _norm_df(df_departamentos)
+    dfd = _norm_df(df_ativos)
     if dfd is not None and {"Cadastro", "Data Admissao"}.issubset(dfd.columns):
         tmp = dfd[["Cadastro", "Data Admissao"]].copy()
         tmp["Cadastro"] = tmp["Cadastro"].astype(str)
@@ -89,14 +89,14 @@ DEM_CACHE: dict[str, pd.Timestamp] | None = None
 
 
 def carregar_adm_dem_cache(
-    df_afastados: pd.DataFrame | None = None,
-    df_departamentos: pd.DataFrame | None = None,
+    df_desligados: pd.DataFrame | None = None,
+    df_ativos: pd.DataFrame | None = None,
     df_semana: pd.DataFrame | None = None,
 ) -> tuple[dict[str, pd.Timestamp], dict[str, pd.Timestamp]]:
     global ADM_CACHE, DEM_CACHE
     if ADM_CACHE is None or DEM_CACHE is None:
         ADM_CACHE, DEM_CACHE = coletar_admissoes_e_demissoes(
-            df_afastados, df_departamentos, df_semana
+            df_desligados, df_ativos, df_semana
         )
     return ADM_CACHE, DEM_CACHE
 
@@ -127,28 +127,28 @@ def tempo_de_casa_str(adm_ts, ref=None, dem_ts=None) -> str:
 
 def obter_periodo_admissao(
     chapa: str | int,
-    df_afastados: pd.DataFrame | None = None,
-    df_departamentos: pd.DataFrame | None = None,
+    df_desligados: pd.DataFrame | None = None,
+    df_ativos: pd.DataFrame | None = None,
 ) -> tuple[pd.Timestamp | None, pd.Timestamp | None]:
-    if df_afastados is None:
-        df_afastados = repo.df_afastados
-    if df_departamentos is None:
-        df_departamentos = repo.df_departamentos
+    if df_desligados is None:
+        df_desligados = repo.df_desligados
+    if df_ativos is None:
+        df_ativos = repo.df_ativos
 
     chapa_str = str(chapa)
 
-    pessoa_afastados = df_afastados[df_afastados["Cadastro"] == chapa_str]
-    if not pessoa_afastados.empty:
-        adm = pd.to_datetime(pessoa_afastados["Data_Adm"].iloc[0], errors="coerce")
-        dem = pd.to_datetime(pessoa_afastados["Data_Dem"].iloc[0], errors="coerce")
+    pessoa_desligados = df_desligados[df_desligados["Cadastro"] == chapa_str]
+    if not pessoa_desligados.empty:
+        adm = pd.to_datetime(pessoa_desligados["Data_Adm"].iloc[0], errors="coerce")
+        dem = pd.to_datetime(pessoa_desligados["Data_Dem"].iloc[0], errors="coerce")
         if pd.isna(dem):
             dem = pd.Timestamp.max
         return adm, dem
 
-    pessoa_departamentos = df_departamentos[df_departamentos["Cadastro"] == chapa_str]
-    if not pessoa_departamentos.empty:
+    pessoa_ativos = df_ativos[df_ativos["Cadastro"] == chapa_str]
+    if not pessoa_ativos.empty:
         adm = pd.to_datetime(
-            pessoa_departamentos["Data Admissao"].iloc[0],
+            pessoa_ativos["Data Admissao"].iloc[0],
             dayfirst=True,
             errors="coerce",
         )

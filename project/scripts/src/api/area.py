@@ -17,7 +17,7 @@ import pandas as pd
 
 from ..core.repo_global import (
     df_datas,
-    df_departamentos,
+    df_ativos,
     df_semana_merged,
     df_almoco,
     her,
@@ -100,14 +100,14 @@ def register(app):
             Input('area-atual-area', 'data'),
             Input('dropdown-subarea-area', 'value'),
             Input('cenario-toggle-area', 'value'),
-            Input('afastados-toggle-area', 'value'),
+            Input('desligados-toggle-area', 'value'),
             Input('viajam-toggle-area', 'value'),
             Input('periodo-slider-area', 'value'),
             Input('url','search'),
             Input('areas_vis_state','data')
         ]
     )
-    def callback_unificado(area_base, subarea_sel, cenario, afastados_area, viajam_area, slider_val_state, search, areas_vis_state):
+    def callback_unificado(area_base, subarea_sel, cenario, desligados_area, viajam_area, slider_val_state, search, areas_vis_state):
         from urllib.parse import parse_qs
         qs = parse_qs((search or '').lstrip('?'))
         modo = (qs.get('modo', ['geral'])[0] or 'geral').lower()
@@ -200,9 +200,9 @@ def register(app):
         # --- 3) DF FULL (recalcular só quando precisa) ---
         mudou_area_ou_sub = trig in ('area-atual-area', 'dropdown-subarea-area')
         mudou_periodo     = trig in ('periodo-slider-area', 'cenario-toggle-area')
-        mudou_filtros     = trig in ('afastados-toggle-area', 'viajam-toggle-area')
+        mudou_filtros     = trig in ('desligados-toggle-area', 'viajam-toggle-area')
 
-        df_key = cache_key(area_base, sub_val_out, afastados_area, viajam_area, i0, i1)
+        df_key = cache_key(area_base, sub_val_out, desligados_area, viajam_area, i0, i1)
 
         if not hasattr(callback_unificado, "_df_cache"):
             callback_unificado._df_cache = {}
@@ -212,12 +212,12 @@ def register(app):
 
         if precisa_df:
             if is_almoco:
-                df_full = build_dataframe_almoco_area(area_base, sub_val_out, her, df_almoco, df_departamentos)
+                df_full = build_dataframe_almoco_area(area_base, sub_val_out, her, df_almoco, df_ativos)
             else:
-                df_full = build_dataframe_diario_area(area_base, sub_val_out, her, df_datas, df_departamentos)
+                df_full = build_dataframe_diario_area(area_base, sub_val_out, her, df_datas, df_ativos)
 
-            # filtros opcionais (afastados/viajam) – mantenha como já estava, se fizer sentido para almoço
-            if (afastados_area == 'right' and not df_full.empty and
+            # filtros opcionais (desligados/viajam) – mantenha como já estava, se fizer sentido para almoço
+            if (desligados_area == 'right' and not df_full.empty and
                 'Cadastro' in df_full.columns and 'Afastado' in getattr(globals().get('df_semana_merged', pd.DataFrame()), 'columns', [])):
                 afast = df_semana_merged[['Cadastro','Afastado']].drop_duplicates()
                 afast['Cadastro'] = afast['Cadastro'].astype(str)
@@ -337,9 +337,9 @@ def register(app):
 
         # ======= CONSTRÓI O RELATÓRIO (FIGURAS INICIAIS) =======
         if is_almoco:
-            df_full = build_dataframe_almoco_area(area, subarea, her, df_almoco, df_departamentos)
+            df_full = build_dataframe_almoco_area(area, subarea, her, df_almoco, df_ativos)
         else:
-            df_full = build_dataframe_diario_area(area, subarea, her, df_datas, df_departamentos)
+            df_full = build_dataframe_diario_area(area, subarea, her, df_datas, df_ativos)
 
         fig_heatmap_men = None
         fig_heatmap_exec = None
@@ -355,12 +355,12 @@ def register(app):
             filter_block_style['display'] = 'none'
 
         filtros_div = html.Div([
-            # Afastados / Viajam
+            # Desligados / Viajam
             html.Div([
                 html.Div([
-                    html.Label("Mostrar as pessoas afastadas?"),
+                    html.Label("Mostrar as pessoas desligadas?"),
                     dcc.RadioItems(
-                        id='afastados-toggle-area',
+                        id='desligados-toggle-area',
                         options=[{'label': 'Sim', 'value': 'left'}, {'label': 'Não', 'value': 'right'}],
                         value='left',
                         labelStyle={'display': 'inline-block', 'marginRight': '10px'}
