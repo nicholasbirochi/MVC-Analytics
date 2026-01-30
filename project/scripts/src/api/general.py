@@ -17,8 +17,8 @@ import time
 
 from ..core.repo_global import (
     df_semana_merged,
-    df_departamentos,
-    df_afastados,
+    df_ativos,
+    df_desligados,
     df_datas,
     df_gptw,
     df_almoco,
@@ -194,7 +194,7 @@ def register(app):
 
     @app.callback(
         Output('tabela-detalhada-colaboradores', 'children'),
-        Input('afastados-toggle', 'value'),
+        Input('desligados-toggle', 'value'),
         Input('viajam-toggle', 'value'),
         Input('dropdown-chapa', 'value'),
         Input('faixa-selecionada', 'data'),
@@ -202,13 +202,13 @@ def register(app):
         Input('subarea-selecionada', 'data'),
         Input('periodo-indices', 'data')
     )
-    def atualizar_tabela(afastados, viajam, chapa_selecionada, faixas, area_selecionada, subarea_selecionada, periodo_idx):
+    def atualizar_tabela(desligados, viajam, chapa_selecionada, faixas, area_selecionada, subarea_selecionada, periodo_idx):
         if not faixas:
             faixas = []
         elif isinstance(faixas, str):
             faixas = [faixas]
 
-        df_filtrado = filtrar_base(afastados, viajam, area_selecionada, subarea_selecionada, periodo_idx, faixas)
+        df_filtrado = filtrar_base(desligados, viajam, area_selecionada, subarea_selecionada, periodo_idx, faixas)
 
         media_colab = (
             df_filtrado
@@ -281,20 +281,20 @@ def register(app):
 
     @app.callback(
         Output('dropdown-chapa', 'options'),
-        Input('afastados-toggle', 'value'),
+        Input('desligados-toggle', 'value'),
         Input('viajam-toggle', 'value'),
         Input('faixa-selecionada', 'data'),
         Input('area-selecionada', 'data'),
         Input('subarea-selecionada', 'data'),
         Input('periodo-indices', 'data')
     )
-    def atualizar_opcoes_chapa(afastados, viajam, faixas, area_selecionada, subarea_selecionada, periodo_idx):
+    def atualizar_opcoes_chapa(desligados, viajam, faixas, area_selecionada, subarea_selecionada, periodo_idx):
         if not faixas:
             faixas = []
         elif isinstance(faixas, str):
             faixas = [faixas]
 
-        df_filtrado = filtrar_base(afastados, viajam, area_selecionada, subarea_selecionada, periodo_idx, faixas)
+        df_filtrado = filtrar_base(desligados, viajam, area_selecionada, subarea_selecionada, periodo_idx, faixas)
 
         media_presenca = df_filtrado.groupby(['Cadastro', 'Nome'])['Contagem Presença'].mean().reset_index()
         media_presenca.columns = ['Chapa', 'Nome', 'Média']
@@ -306,20 +306,20 @@ def register(app):
 
     @app.callback(
         Output('grafico-heatmap', 'figure'),
-        Input('afastados-toggle', 'value'),
+        Input('desligados-toggle', 'value'),
         Input('viajam-toggle', 'value'),
         Input('faixa-selecionada', 'data'),
         Input('area-selecionada', 'data'),
         Input('subarea-selecionada', 'data'),
         Input('periodo-indices', 'data')
     )
-    def atualizar_heatmap(afastados, viajam, faixas, area_selecionada, subarea_selecionada, periodo_idx):
+    def atualizar_heatmap(desligados, viajam, faixas, area_selecionada, subarea_selecionada, periodo_idx):
         if not faixas:
             faixas = []
         elif isinstance(faixas, str):
             faixas = [faixas]
 
-        df_filtrado = filtrar_base(afastados, viajam, area_selecionada, subarea_selecionada, periodo_idx, faixas)
+        df_filtrado = filtrar_base(desligados, viajam, area_selecionada, subarea_selecionada, periodo_idx, faixas)
 
         media_presenca_detalhada = df_filtrado.groupby('Cadastro')['Contagem Presença'].mean().reset_index()
         media_presenca_detalhada.columns = ['Cadastro', 'Média Presença']
@@ -426,20 +426,20 @@ def register(app):
 
     @app.callback(
         Output('grafico-dispersao', 'figure'),
-        Input('afastados-toggle', 'value'),
+        Input('desligados-toggle', 'value'),
         Input('viajam-toggle', 'value'),
         Input('faixa-selecionada', 'data'),
         Input('area-selecionada', 'data'),
         Input('subarea-selecionada', 'data'),
         Input('periodo-indices', 'data')
     )
-    def atualizar_dispersao(afastados, viajam, faixas, area_selecionada, subarea_selecionada, periodo_idx):
+    def atualizar_dispersao(desligados, viajam, faixas, area_selecionada, subarea_selecionada, periodo_idx):
         if not faixas:
             faixas = []
         elif isinstance(faixas, str):
             faixas = [faixas]
 
-        df_filtrado = filtrar_base(afastados, viajam, area_selecionada, subarea_selecionada, periodo_idx, faixas)
+        df_filtrado = filtrar_base(desligados, viajam, area_selecionada, subarea_selecionada, periodo_idx, faixas)
 
         media_presenca_detalhada = df_filtrado.groupby('Cadastro')['Contagem Presença'].mean().reset_index()
         media_presenca_detalhada.columns = ['Cadastro', 'Média Presença']
@@ -471,20 +471,20 @@ def register(app):
 
     @app.callback(
         Output('grafico-presenca-cargo', 'figure'),
-        Input('afastados-toggle', 'value'),
+        Input('desligados-toggle', 'value'),
         Input('viajam-toggle', 'value'),
         Input('faixa-selecionada', 'data'),
         Input('area-selecionada', 'data'),
         Input('subarea-selecionada', 'data'),
         Input('periodo-indices', 'data')
     )
-    def atualizar_presenca_cargo(afastados, viajam, faixas, area_selecionada, subarea_selecionada, periodo_idx):
+    def atualizar_presenca_cargo(desligados, viajam, faixas, area_selecionada, subarea_selecionada, periodo_idx):
         if not faixas:
             faixas = []
         elif isinstance(faixas, str):
             faixas = [faixas]
 
-        df_filtrado = filtrar_base(afastados, viajam, area_selecionada, subarea_selecionada, periodo_idx, faixas)
+        df_filtrado = filtrar_base(desligados, viajam, area_selecionada, subarea_selecionada, periodo_idx, faixas)
 
         media_presenca_detalhada = df_filtrado.groupby('Cadastro')['Contagem Presença'].mean().reset_index()
         media_presenca_detalhada.columns = ['Cadastro', 'Média Presença']
@@ -526,14 +526,14 @@ def register(app):
 
     @app.callback(
         Output('grafico-boxplot', 'figure'),
-        Input('afastados-toggle', 'value'),
+        Input('desligados-toggle', 'value'),
         Input('viajam-toggle', 'value'),
         Input('faixa-selecionada', 'data'),
         Input('area-selecionada', 'data'),
         Input('subarea-selecionada', 'data'),
         Input('periodo-indices', 'data')
     )
-    def atualizar_boxplot(afastados, viajam, faixas, area_selecionada, subarea_selecionada, periodo_idx):
+    def atualizar_boxplot(desligados, viajam, faixas, area_selecionada, subarea_selecionada, periodo_idx):
         # Se nenhuma área específica foi selecionada, não carrega o gráfico
         if not area_selecionada or area_selecionada == "GERAL":
             # pode retornar um gráfico vazio ou simplesmente não atualizar
@@ -543,7 +543,7 @@ def register(app):
         elif isinstance(faixas, str):
             faixas = [faixas]
 
-        df_filtrado = filtrar_base(afastados, viajam, area_selecionada, subarea_selecionada, periodo_idx, faixas)
+        df_filtrado = filtrar_base(desligados, viajam, area_selecionada, subarea_selecionada, periodo_idx, faixas)
 
         medias_individuais = (
             df_filtrado.groupby(['Cadastro', 'Nome', 'Area'])['Contagem Presença']
@@ -610,14 +610,14 @@ def register(app):
 
     @app.callback(
         Output('tabela-informacoes-colaboradores', 'children'),
-        Input('afastados-toggle', 'value'),
+        Input('desligados-toggle', 'value'),
         Input('viajam-toggle', 'value'),
         Input('area-selecionada', 'data'),
         Input('subarea-selecionada', 'data'),
         Input('periodo-indices', 'data')
     )
-    def atualizar_info(afastados, viajam, area_selecionada, subarea_selecionada, periodo_idx):
-        df_filtrado = filtrar_base(afastados, viajam, area_selecionada, subarea_selecionada, periodo_idx, [])
+    def atualizar_info(desligados, viajam, area_selecionada, subarea_selecionada, periodo_idx):
+        df_filtrado = filtrar_base(desligados, viajam, area_selecionada, subarea_selecionada, periodo_idx, [])
 
         total_colaboradores = df_filtrado['Cadastro'].nunique()
         total_mensalistas = df_filtrado[df_filtrado['Cargo'] == 'M']['Cadastro'].nunique() if 'Cargo' in df_filtrado.columns else 0
@@ -644,20 +644,20 @@ def register(app):
 
     @app.callback(
         Output('resumo-container', 'children'),
-        Input('afastados-toggle', 'value'),
+        Input('desligados-toggle', 'value'),
         Input('viajam-toggle', 'value'),
         Input('faixa-selecionada', 'data'),
         Input('area-selecionada', 'data'),
         Input('subarea-selecionada', 'data'),
         Input('periodo-indices', 'data')
     )
-    def atualizar_resumo(afastados, viajam, faixas, area_selecionada, subarea_selecionada, periodo_idx):
+    def atualizar_resumo(desligados, viajam, faixas, area_selecionada, subarea_selecionada, periodo_idx):
         if not faixas:
             faixas = []
         elif isinstance(faixas, str):
             faixas = [faixas]
 
-        df_filtrado = filtrar_base(afastados, viajam, area_selecionada, subarea_selecionada, periodo_idx, faixas)
+        df_filtrado = filtrar_base(desligados, viajam, area_selecionada, subarea_selecionada, periodo_idx, faixas)
 
         media_colab_resumo = (
             df_filtrado.groupby(['Area', 'Departamento', 'Cadastro', 'Nome'])['Contagem Presença']

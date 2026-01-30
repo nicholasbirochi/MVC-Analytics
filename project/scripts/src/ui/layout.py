@@ -42,9 +42,9 @@ LAYOUT = html.Div([
                 html.Div([
                     # --- Bloco A: 2 RadioItems ---
                     html.Div([
-                        html.Label("Mostrar as pessoas afastadas?"),
+                        html.Label("Mostrar as pessoas desligadas?"),
                         dcc.RadioItems(
-                            id='afastados-toggle',
+                            id='desligados-toggle',
                             options=[
                                 {'label': 'Sim', 'value': 'left'},
                                 {'label': 'Não', 'value': 'right'}

@@ -43,8 +43,8 @@ class Settings:
 
     base_dir: Path
     data_dir: Path
-    pasta_afastados: Path
-    pasta_departamentos: Path
+    pasta_desligados: Path
+    pasta_ativos: Path
     caminho_gptw: Path
     caminho_semana: Path
     caminho_datas: Path
@@ -106,14 +106,14 @@ def get_settings() -> Settings:
     )
 
     bases = (repo_root, base_dir, data_dir)
-    pasta_afastados = _resolve_path(
-        os.getenv("pasta_afastados"),
-        data_dir / "Afastados.parquet",
+    pasta_desligados = _resolve_path(
+        os.getenv("pasta_desligados"),
+        data_dir / "Desligados.parquet",
         bases,
     )
-    pasta_departamentos = _resolve_path(
-        os.getenv("pasta_departamentos"),
-        data_dir / "Departamentos.parquet",
+    pasta_ativos = _resolve_path(
+        os.getenv("pasta_ativos"),
+        data_dir / "Ativos.parquet",
         bases,
     )
     caminho_gptw = _resolve_path(
@@ -161,8 +161,8 @@ def get_settings() -> Settings:
     return Settings(
         base_dir=base_dir,
         data_dir=data_dir,
-        pasta_afastados=pasta_afastados,
-        pasta_departamentos=pasta_departamentos,
+        pasta_desligados=pasta_desligados,
+        pasta_ativos=pasta_ativos,
         caminho_gptw=caminho_gptw,
         caminho_semana=caminho_semana,
         caminho_datas=caminho_datas,
@@ -183,10 +183,10 @@ def get_settings() -> Settings:
 SETTINGS = get_settings()
 BASE_DIR: Final[Path] = SETTINGS.base_dir
 DATA_DIR: Final[Path] = SETTINGS.data_dir
-DEPARTAMENTOS_PARQUET: Final[Path] = SETTINGS.pasta_departamentos
+DEPARTAMENTOS_PARQUET: Final[Path] = SETTINGS.pasta_ativos
 DATAS_PARQUET: Final[Path] = SETTINGS.caminho_datas
 SEMANA_PARQUET: Final[Path] = SETTINGS.caminho_semana
-AFASTADOS_PARQUET: Final[Path] = SETTINGS.pasta_afastados
+AFASTADOS_PARQUET: Final[Path] = SETTINGS.pasta_desligados
 GPTW_PARQUET: Final[Path] = SETTINGS.caminho_gptw
 ALMOCO_PARQUET: Final[Path] = SETTINGS.caminho_almoco
 HEADCOUNT_PARQUET: Final[Path] | None = SETTINGS.caminho_headcount

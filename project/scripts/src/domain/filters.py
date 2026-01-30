@@ -154,7 +154,7 @@ def slug(texto: str) -> str:
 
 
 def filtrar_base(
-    afastados: str,
+    desligados: str,
     viajam: str,
     area_selecionada: str | None,
     subarea_selecionada: str | None,
@@ -163,7 +163,7 @@ def filtrar_base(
     df_semana_merged: pd.DataFrame | None = None,
     her_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Filtra df_semana_merged aplicando periodo, elegibilidade, afastados/viajam e area."""
+    """Filtra df_semana_merged aplicando periodo, elegibilidade, desligados/viajam e area."""
     df_semana_merged = df_semana_merged if df_semana_merged is not None else repo.df_semana_merged
     her_df = her_df if her_df is not None else getattr(repo, "her", pd.DataFrame())
 
@@ -171,8 +171,8 @@ def filtrar_base(
     df_filtrado = filtrar_por_periodo(df_semana_merged, dt_ini, dt_fim).copy()
 
     adm_cache, dem_cache = carregar_adm_dem_cache(
-        repo.df_afastados if hasattr(repo, "df_afastados") else None,
-        repo.df_departamentos if hasattr(repo, "df_departamentos") else None,
+        repo.df_desligados if hasattr(repo, "df_desligados") else None,
+        repo.df_ativos if hasattr(repo, "df_ativos") else None,
         df_semana_merged,
     )
 
@@ -186,7 +186,7 @@ def filtrar_base(
                 elegiveis.append(str(cad))
         df_filtrado = df_filtrado[df_filtrado["Cadastro"].astype(str).isin(set(elegiveis))]
 
-    if afastados == "right" and "Afastado" in df_filtrado.columns:
+    if desligados == "right" and "Afastado" in df_filtrado.columns:
         df_filtrado = df_filtrado[df_filtrado["Afastado"] != "Sim"]
 
     if viajam == "right":

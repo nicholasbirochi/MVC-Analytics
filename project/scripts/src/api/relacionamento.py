@@ -678,8 +678,8 @@ def register(app):
             raise PreventUpdate
 
         # todas as áreas conhecidas
-        if 'Area' in df_departamentos.columns:
-            todas = sorted(df_departamentos['Area'].dropna().unique().tolist())
+        if 'Area' in df_ativos.columns:
+            todas = sorted(df_ativos['Area'].dropna().unique().tolist())
         else:
             todas = sorted(df_semana_merged['Area'].dropna().unique().tolist())
 

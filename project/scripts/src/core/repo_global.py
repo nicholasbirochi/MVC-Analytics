@@ -8,10 +8,10 @@ import pandas as pd
 
 from .config import SETTINGS, configure_runtime
 from ..data.datasets import (
-    load_df_afastados,
+    load_df_desligados,
     load_df_almoco,
     load_df_datas,
-    load_df_departamentos,
+    load_df_ativos,
     load_df_gptw,
     load_df_headcount,
     load_df_semana,
@@ -26,10 +26,10 @@ from ..domain.builders import (
 configure_runtime(SETTINGS)
 
 # Carregamento principal -------------------------------------------------------
-df_departamentos: pd.DataFrame = load_df_departamentos(SETTINGS)
+df_ativos: pd.DataFrame = load_df_ativos(SETTINGS)
 df_datas: pd.DataFrame = load_df_datas(SETTINGS)
 df_semana_merged: pd.DataFrame = load_df_semana(SETTINGS)
-df_afastados: pd.DataFrame = load_df_afastados(SETTINGS)
+df_desligados: pd.DataFrame = load_df_desligados(SETTINGS)
 df_gptw: pd.DataFrame = load_df_gptw(SETTINGS)
 df_almoco: pd.DataFrame = load_df_almoco(SETTINGS)
 df_headcount: pd.DataFrame = load_df_headcount(SETTINGS)
@@ -40,10 +40,10 @@ her: pd.DataFrame = build_her(df_semana_merged)
 dropdown_options: list[dict] = build_dropdown_options(her)
 
 __all__ = [
-    "df_departamentos",
+    "df_ativos",
     "df_datas",
     "df_semana_merged",
-    "df_afastados",
+    "df_desligados",
     "df_gptw",
     "df_almoco",
     "df_headcount",
