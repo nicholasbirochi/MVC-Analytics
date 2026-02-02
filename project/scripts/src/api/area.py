@@ -17,7 +17,7 @@ import pandas as pd
 
 from ..core.repo_global import (
     df_datas,
-    df_ativos,
+    df_df_ativos,
     df_semana_merged,
     df_almoco,
     her,
@@ -43,7 +43,7 @@ from ..ui.figures import (
     grafico_rede_encontros_exec,
     _sanitize_object_columns,
 )
-from ..ui.gptw import mini_tabela_gptw
+from ..ui.df_gptw import mini_tabela_df_gptw
 from ..ui.theme import ESTILO_EXIBIR, ESTILO_OCULTO, aplicar_tema_pb
 
 estilo_exibir = ESTILO_EXIBIR
@@ -100,14 +100,14 @@ def register(app):
             Input('area-atual-area', 'data'),
             Input('dropdown-subarea-area', 'value'),
             Input('cenario-toggle-area', 'value'),
-            Input('desligados-toggle-area', 'value'),
+            Input('df_desligados-toggle-area', 'value'),
             Input('viajam-toggle-area', 'value'),
             Input('periodo-slider-area', 'value'),
             Input('url','search'),
             Input('areas_vis_state','data')
         ]
     )
-    def callback_unificado(area_base, subarea_sel, cenario, desligados_area, viajam_area, slider_val_state, search, areas_vis_state):
+    def callback_unificado(area_base, subarea_sel, cenario, df_desligados_area, viajam_area, slider_val_state, search, areas_vis_state):
         from urllib.parse import parse_qs
         qs = parse_qs((search or '').lstrip('?'))
         modo = (qs.get('modo', ['geral'])[0] or 'geral').lower()
@@ -200,9 +200,9 @@ def register(app):
         # --- 3) DF FULL (recalcular só quando precisa) ---
         mudou_area_ou_sub = trig in ('area-atual-area', 'dropdown-subarea-area')
         mudou_periodo     = trig in ('periodo-slider-area', 'cenario-toggle-area')
-        mudou_filtros     = trig in ('desligados-toggle-area', 'viajam-toggle-area')
+        mudou_filtros     = trig in ('df_desligados-toggle-area', 'viajam-toggle-area')
 
-        df_key = cache_key(area_base, sub_val_out, desligados_area, viajam_area, i0, i1)
+        df_key = cache_key(area_base, sub_val_out, df_desligados_area, viajam_area, i0, i1)
 
         if not hasattr(callback_unificado, "_df_cache"):
             callback_unificado._df_cache = {}
@@ -212,17 +212,17 @@ def register(app):
 
         if precisa_df:
             if is_almoco:
-                df_full = build_dataframe_almoco_area(area_base, sub_val_out, her, df_almoco, df_ativos)
+                df_full = build_dataframe_almoco_area(area_base, sub_val_out, her, df_almoco, df_df_ativos)
             else:
-                df_full = build_dataframe_diario_area(area_base, sub_val_out, her, df_datas, df_ativos)
+                df_full = build_dataframe_diario_area(area_base, sub_val_out, her, df_datas, df_df_ativos)
 
-            # filtros opcionais (desligados/viajam) – mantenha como já estava, se fizer sentido para almoço
-            if (desligados_area == 'right' and not df_full.empty and
-                'Cadastro' in df_full.columns and 'Afastado' in getattr(globals().get('df_semana_merged', pd.DataFrame()), 'columns', [])):
-                afast = df_semana_merged[['Cadastro','Afastado']].drop_duplicates()
+            # filtros opcionais (df_desligados/viajam) – mantenha como já estava, se fizer sentido para almoço
+            if (df_desligados_area == 'right' and not df_full.empty and
+                'Cadastro' in df_full.columns and 'Desligado' in getattr(globals().get('df_semana_merged', pd.DataFrame()), 'columns', [])):
+                afast = df_semana_merged[['Cadastro','Desligado']].drop_duplicates()
                 afast['Cadastro'] = afast['Cadastro'].astype(str)
                 df_full = df_full.merge(afast, on='Cadastro', how='left')
-                df_full = df_full[df_full['Afastado'] != 'Sim'].drop(columns=['Afastado'])
+                df_full = df_full[df_full['Desligado'] != 'Sim'].drop(columns=['Desligado'])
 
             if (viajam_area == 'right' and not df_full.empty and 'Cadastro' in df_full.columns):
                 df_sm = globals().get('df_semana_merged', pd.DataFrame())
@@ -337,9 +337,9 @@ def register(app):
 
         # ======= CONSTRÓI O RELATÓRIO (FIGURAS INICIAIS) =======
         if is_almoco:
-            df_full = build_dataframe_almoco_area(area, subarea, her, df_almoco, df_ativos)
+            df_full = build_dataframe_almoco_area(area, subarea, her, df_almoco, df_df_ativos)
         else:
-            df_full = build_dataframe_diario_area(area, subarea, her, df_datas, df_ativos)
+            df_full = build_dataframe_diario_area(area, subarea, her, df_datas, df_df_ativos)
 
         fig_heatmap_men = None
         fig_heatmap_exec = None
@@ -360,7 +360,7 @@ def register(app):
                 html.Div([
                     html.Label("Mostrar as pessoas desligadas?"),
                     dcc.RadioItems(
-                        id='desligados-toggle-area',
+                        id='df_desligados-toggle-area',
                         options=[{'label': 'Sim', 'value': 'left'}, {'label': 'Não', 'value': 'right'}],
                         value='left',
                         labelStyle={'display': 'inline-block', 'marginRight': '10px'}
@@ -510,7 +510,7 @@ def register(app):
 
                 # ---- Mini-tabela à direita ----
                 html.Div(
-                    mini_tabela_gptw(subarea or area),
+                    mini_tabela_df_gptw(subarea or area),
                     style={
                         'marginRight': '14px',
                         'flex': '0 0 260px',

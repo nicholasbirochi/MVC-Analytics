@@ -43,9 +43,9 @@ class Settings:
 
     base_dir: Path
     data_dir: Path
-    pasta_desligados: Path
-    pasta_ativos: Path
-    caminho_gptw: Path
+    pasta_df_desligados: Path
+    pasta_df_ativos: Path
+    caminho_df_gptw: Path
     caminho_semana: Path
     caminho_datas: Path
     caminho_almoco: Path
@@ -106,18 +106,18 @@ def get_settings() -> Settings:
     )
 
     bases = (repo_root, base_dir, data_dir)
-    pasta_desligados = _resolve_path(
-        os.getenv("pasta_desligados"),
+    pasta_df_desligados = _resolve_path(
+        os.getenv("pasta_df_desligados"),
         data_dir / "Desligados.parquet",
         bases,
     )
-    pasta_ativos = _resolve_path(
-        os.getenv("pasta_ativos"),
+    pasta_df_ativos = _resolve_path(
+        os.getenv("pasta_df_ativos"),
         data_dir / "Ativos.parquet",
         bases,
     )
-    caminho_gptw = _resolve_path(
-        os.getenv("caminho_gptw"),
+    caminho_df_gptw = _resolve_path(
+        os.getenv("caminho_df_gptw"),
         data_dir / "GPTW.parquet",
         bases,
     )
@@ -161,9 +161,9 @@ def get_settings() -> Settings:
     return Settings(
         base_dir=base_dir,
         data_dir=data_dir,
-        pasta_desligados=pasta_desligados,
-        pasta_ativos=pasta_ativos,
-        caminho_gptw=caminho_gptw,
+        pasta_df_desligados=pasta_df_desligados,
+        pasta_df_ativos=pasta_df_ativos,
+        caminho_df_gptw=caminho_df_gptw,
         caminho_semana=caminho_semana,
         caminho_datas=caminho_datas,
         caminho_almoco=caminho_almoco,
@@ -183,11 +183,11 @@ def get_settings() -> Settings:
 SETTINGS = get_settings()
 BASE_DIR: Final[Path] = SETTINGS.base_dir
 DATA_DIR: Final[Path] = SETTINGS.data_dir
-DEPARTAMENTOS_PARQUET: Final[Path] = SETTINGS.pasta_ativos
+DEPARTAMENTOS_PARQUET: Final[Path] = SETTINGS.pasta_df_ativos
 DATAS_PARQUET: Final[Path] = SETTINGS.caminho_datas
 SEMANA_PARQUET: Final[Path] = SETTINGS.caminho_semana
-AFASTADOS_PARQUET: Final[Path] = SETTINGS.pasta_desligados
-GPTW_PARQUET: Final[Path] = SETTINGS.caminho_gptw
+AFASTADOS_PARQUET: Final[Path] = SETTINGS.pasta_df_desligados
+GPTW_PARQUET: Final[Path] = SETTINGS.caminho_df_gptw
 ALMOCO_PARQUET: Final[Path] = SETTINGS.caminho_almoco
 HEADCOUNT_PARQUET: Final[Path] | None = SETTINGS.caminho_headcount
 DEFAULT_LOCALE = SETTINGS.pandas_locale

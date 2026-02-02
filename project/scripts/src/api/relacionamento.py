@@ -16,8 +16,8 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 
-from ..core.repo_global import df_datas, df_semana_merged, df_gptw, her
-from ..ui.gptw import gptw_tabela_empilhada
+from ..core.repo_global import df_datas, df_semana_merged, df_df_gptw, her
+from ..ui.df_gptw import df_gptw_tabela_empilhada
 from ..ui.theme import ESTILO_EXIBIR, ESTILO_OCULTO
 
 
@@ -27,12 +27,12 @@ estilo_oculto = ESTILO_OCULTO
 
 def register(app):
     @app.callback(
-        Output('tabela-gptw-rel', 'children'),
-        Input('dropdown-area-gptw', 'value')
+        Output('tabela-df_gptw-rel', 'children'),
+        Input('dropdown-area-df_gptw', 'value')
     )
-    def renderizar_tabela_gptw(areas):
+    def renderizar_tabela_df_gptw(areas):
         # quando nada selecionado, retorna vazio (Div)
-        return gptw_tabela_empilhada(areas, df_gptw=df_gptw, her_df=her)
+        return df_gptw_tabela_empilhada(areas, df_df_gptw=df_df_gptw, her_df=her)
 
     def add_calendar_stack(
         fig, semanas,
@@ -201,13 +201,13 @@ def register(app):
         return html.Div(items, style={"display": "flex", "flexWrap": "wrap"})
 
     @app.callback(
-        Output("dropdown_gptw", "options"),
-        Output("dropdown_gptw", "value"),
-        Input("dropdown_gptw", "value"),
+        Output("dropdown_df_gptw", "options"),
+        Output("dropdown_df_gptw", "value"),
+        Input("dropdown_df_gptw", "value"),
         prevent_initial_call=True
     )
-    def atualizar_dropdown_gptw(valor_atual):
-        df = df_gptw.copy()
+    def atualizar_dropdown_df_gptw(valor_atual):
+        df = df_df_gptw.copy()
         todas_areas = sorted(df["Area"].dropna().unique().tolist())
 
         # normaliza valor atual
@@ -246,10 +246,10 @@ def register(app):
         return opcoes, valor_filtrado
 
     @app.callback(
-        Output('dropdown-area-gptw', 'value'),
-        Input('dropdown-area-gptw', 'value'),
+        Output('dropdown-area-df_gptw', 'value'),
+        Input('dropdown-area-df_gptw', 'value'),
         Input('url', 'pathname'),
-        State('dropdown-area-gptw', 'options'),
+        State('dropdown-area-df_gptw', 'options'),
         prevent_initial_call=True
     )
     def atualizar_valor_areas(value, pathname, options):
@@ -669,8 +669,8 @@ def register(app):
         return fig_pres, fig_mini_movel
 
     @app.callback(
-        Output('dropdown-area-gptw', 'options'),
-        Input('dropdown-area-gptw', 'value'),
+        Output('dropdown-area-df_gptw', 'options'),
+        Input('dropdown-area-df_gptw', 'value'),
         Input('url', 'pathname')
     )
     def atualizar_opcoes_areas(selecionadas, pathname):
@@ -678,8 +678,8 @@ def register(app):
             raise PreventUpdate
 
         # todas as áreas conhecidas
-        if 'Area' in df_ativos.columns:
-            todas = sorted(df_ativos['Area'].dropna().unique().tolist())
+        if 'Area' in df_df_ativos.columns:
+            todas = sorted(df_df_ativos['Area'].dropna().unique().tolist())
         else:
             todas = sorted(df_semana_merged['Area'].dropna().unique().tolist())
 
@@ -835,12 +835,12 @@ def register(app):
                 html.Div([
                     html.Div([
                         dcc.Dropdown(
-                            id='dropdown-area-gptw',
+                            id='dropdown-area-df_gptw',
                             options=[], value=[], multi=True, placeholder='Selecione áreas…',
                             style={'minWidth': '260px', 'maxWidth': '520px', 'width': '100%', 'margin': '0'}
                         ),
                     ], style={'marginBottom': '10px', 'display': 'flex'}),
-                    html.Div(id='tabela-gptw-rel', style={'display': 'flex', 'justifyContent': 'center'})
+                    html.Div(id='tabela-df_gptw-rel', style={'display': 'flex', 'justifyContent': 'center'})
                 ], style={'padding': '16px', 'background': '#fff', 'borderRadius': '12px', 'margin': '10px'})
             ], style={'padding': '10px', 'backgroundColor': 'white'})
 
