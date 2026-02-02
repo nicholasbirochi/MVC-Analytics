@@ -71,19 +71,19 @@ def _normalize_datas(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _normalize_ativos(df: pd.DataFrame) -> pd.DataFrame:
+def _normalize_df_ativos(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     _normalize_cadastro(df)
     return df
 
 
-def _normalize_desligados(df: pd.DataFrame) -> pd.DataFrame:
+def _normalize_df_desligados(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     _normalize_cadastro(df)
     return df
 
 
-def _normalize_gptw(df: pd.DataFrame) -> pd.DataFrame:
+def _normalize_df_gptw(df: pd.DataFrame) -> pd.DataFrame:
     return df.copy()
 
 
@@ -103,12 +103,12 @@ def _load(
 
 
 @lru_cache(maxsize=None)
-def load_df_ativos(
+def load_df_df_ativos(
     settings: Settings | None = None,
     reader: ParquetLoader = _read_parquet,
 ) -> pd.DataFrame:
     settings = settings or get_settings()
-    return _normalize_ativos(_load(settings.pasta_ativos, reader))
+    return _normalize_df_ativos(_load(settings.pasta_df_ativos, reader))
 
 
 @lru_cache(maxsize=None)
@@ -130,21 +130,21 @@ def load_df_semana(
 
 
 @lru_cache(maxsize=None)
-def load_df_desligados(
+def load_df_df_desligados(
     settings: Settings | None = None,
     reader: ParquetLoader = _read_parquet,
 ) -> pd.DataFrame:
     settings = settings or get_settings()
-    return _normalize_desligados(_load(settings.pasta_desligados, reader))
+    return _normalize_df_desligados(_load(settings.pasta_df_desligados, reader))
 
 
 @lru_cache(maxsize=None)
-def load_df_gptw(
+def load_df_df_gptw(
     settings: Settings | None = None,
     reader: ParquetLoader = _read_parquet,
 ) -> pd.DataFrame:
     settings = settings or get_settings()
-    return _normalize_gptw(_load(settings.caminho_gptw, reader))
+    return _normalize_df_gptw(_load(settings.caminho_df_gptw, reader))
 
 
 @lru_cache(maxsize=None)
@@ -174,11 +174,11 @@ def load_all(settings: Settings | None = None) -> dict[str, pd.DataFrame]:
     """Carrega todos os DataFrames necessarios para o app."""
     settings = settings or get_settings()
     return {
-        "df_ativos": load_df_ativos(settings),
+        "df_df_ativos": load_df_df_ativos(settings),
         "df_datas": load_df_datas(settings),
         "df_semana_merged": load_df_semana(settings),
-        "df_desligados": load_df_desligados(settings),
-        "df_gptw": load_df_gptw(settings),
+        "df_df_desligados": load_df_df_desligados(settings),
+        "df_df_gptw": load_df_df_gptw(settings),
         "df_almoco": load_df_almoco(settings),
         "df_headcount": load_df_headcount(settings),
     }

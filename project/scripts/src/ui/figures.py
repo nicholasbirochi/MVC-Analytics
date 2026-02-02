@@ -251,7 +251,7 @@ def _radar_from_metrics(df: pd.DataFrame, titulo: str, label_col: str, top_n: in
         return fig
 
     metrics = ["encontros", "pessoas_unicas", "dias", "semanas", "recencia"]
-    categorias = ["Interações", "Pessoas únicas", "Dias ativos", "Semanas ativas", "Recência (28d)"]
+    categorias = ["Interações", "Pessoas únicas", "Dias df_ativos", "Semanas ativas", "Recência (28d)"]
     df = df.copy().sort_values("encontros", ascending=False).head(top_n)
 
     for m in metrics:
@@ -269,7 +269,7 @@ def _radar_from_metrics(df: pd.DataFrame, titulo: str, label_col: str, top_n: in
             f"<b>{row[label_col]}</b><br>"
             f"Interações: {valores_raw[0]:.0f}<br>"
             f"Pessoas únicas: {valores_raw[1]:.0f}<br>"
-            f"Dias ativos: {valores_raw[2]:.0f}<br>"
+            f"Dias df_ativos: {valores_raw[2]:.0f}<br>"
             f"Semanas ativas: {valores_raw[3]:.0f}<br>"
             f"Recência (28d): {valores_raw[4]:.0f}"
         )

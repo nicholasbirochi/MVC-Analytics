@@ -30,7 +30,7 @@ def build_df_count_por_semana(df_semana_merged: pd.DataFrame) -> pd.DataFrame:
                     "Departamento",
                     "Heranca",
                     "Cargo Especifico",
-                    "Afastado",
+                    "Desligado",
                 ]
             )["Dia Semana"]
             .value_counts()
@@ -43,7 +43,7 @@ def build_df_count_por_semana(df_semana_merged: pd.DataFrame) -> pd.DataFrame:
             "Departamento",
             "Heranca",
             "Cargo Especifico",
-            "Afastado",
+            "Desligado",
             "Dia Semana",
             "Contagem Presença",
         ]
@@ -56,7 +56,7 @@ def build_df_count_por_semana(df_semana_merged: pd.DataFrame) -> pd.DataFrame:
             "Departamento",
             "Heranca",
             "Cargo Especifico",
-            "Afastado",
+            "Desligado",
             "Dia Semana",
             "Contagem Presença",
         ]
@@ -142,7 +142,7 @@ def build_dataframe_diario_area(
         df_datas_local.copy() if df_datas_local is not None else repo.df_datas.copy()
     )
     df_dept = (
-        df_dept.copy() if df_dept is not None else repo.df_ativos.copy()
+        df_dept.copy() if df_dept is not None else repo.df_df_ativos.copy()
     )
 
     if her_df is None or her_df.empty or df_datas_local is None or df_datas_local.empty:
@@ -268,7 +268,7 @@ def build_dataframe_almoco_area(
 
     her_df = her_df.copy() if her_df is not None else repo.her.copy()
     df_dept = (
-        df_dept.copy() if df_dept is not None else repo.df_ativos.copy()
+        df_dept.copy() if df_dept is not None else repo.df_df_ativos.copy()
     )
 
     _normalize_many(her_df, df_dept)
@@ -462,7 +462,7 @@ def obter_heranca_do_cadastro(
     if cad_exec is None:
         return None
     cad_exec = str(cad_exec)
-    df_dept = df_dept if df_dept is not None else repo.df_ativos
+    df_dept = df_dept if df_dept is not None else repo.df_df_ativos
     her_df = her_df if her_df is not None else repo.her
 
     if "Cadastro" in df_dept.columns:
@@ -487,7 +487,7 @@ def obter_area_do_cadastro(
 ) -> str | None:
     if not cad:
         return None
-    df_dept = df_dept if df_dept is not None else repo.df_ativos
+    df_dept = df_dept if df_dept is not None else repo.df_df_ativos
     linha = df_dept[df_dept["Cadastro"].astype(str).eq(str(cad))]
     if linha.empty:
         return None
@@ -498,7 +498,7 @@ def obter_area_do_cadastro(
 def cache_key(
     area_base,
     subarea_sel,
-    desligados_area,
+    df_desligados_area,
     viajam_area,
     i0,
     i1,
@@ -506,7 +506,7 @@ def cache_key(
     return (
         str(area_base or ""),
         str(subarea_sel or ""),
-        str(desligados_area or ""),
+        str(df_desligados_area or ""),
         str(viajam_area or ""),
         int(i0 if isinstance(i0, (int, np.integer)) else 0),
         int(i1 if isinstance(i1, (int, np.integer)) else 0),

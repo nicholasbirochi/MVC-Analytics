@@ -339,7 +339,7 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 - `Heranca` (str)
 - `Cargo Especifico` (str)
 - `Cargo` (str)
-- `Afastado` (str)
+- `Desligado` (str)
 - `Ano` (int)
 - `Semana por Ano` (int)
 - `Contagem Presença` (float/int)
@@ -353,7 +353,7 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 - `Dia Semana` (str)
 - `Semana por Ano` (int)
 - `Ano` (int)
->*As demais colunas originais (`Nome`, `Area`, `Departamento`, `Heranca`, `Cargo Especifico`, `Dir`, `Tipo`, `Acesso`, `Coletor`, `Descricao Coletor`, `Uso Acesso`, `Cargo`, `Afastado` e `Hora`) não são utilizadas pelo app.*
+>*As demais colunas originais (`Nome`, `Area`, `Departamento`, `Heranca`, `Cargo Especifico`, `Dir`, `Tipo`, `Acesso`, `Coletor`, `Descricao Coletor`, `Uso Acesso`, `Cargo`, `Desligado` e `Hora`) não são utilizadas pelo app.*
 
 ### 🍽️ df_almoco — Acesso ao refeitório (base auxiliar)
 - `Cadastro` (str)
@@ -365,7 +365,7 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 - `Coletor` (int)
 - `Descricao Coletor` (str)
 - `Cargo` (str)
-- `Afastado` (str)
+- `Desligado` (str)
 - `Departamento` (str) (str)
 - `Heranca` (str)
 - `Cargo Especifico` (str)
