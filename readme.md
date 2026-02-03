@@ -373,6 +373,7 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 
 ### 🏢 df_ativos — Estrutura hierárquica de áreas
 - `Cadastro` (str)
+- `Cargo` (str)
 - `Departamento` (str)
 - `Area` (str)
 - `Data_Admissão` (datetime)
