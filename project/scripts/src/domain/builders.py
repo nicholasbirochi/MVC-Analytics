@@ -26,7 +26,7 @@ def build_df_count_por_semana(df_semana_merged: pd.DataFrame) -> pd.DataFrame:
                 [
                     "Cadastro",
                     "Nome",
-                    "Area",
+                    "Área",
                     "Departamento",
                     "Heranca",
                     "Cargo Especifico",
@@ -39,7 +39,7 @@ def build_df_count_por_semana(df_semana_merged: pd.DataFrame) -> pd.DataFrame:
         out.columns = [
             "Cadastro",
             "Nome",
-            "Area",
+            "Área",
             "Departamento",
             "Heranca",
             "Cargo Especifico",
@@ -52,7 +52,7 @@ def build_df_count_por_semana(df_semana_merged: pd.DataFrame) -> pd.DataFrame:
         columns=[
             "Cadastro",
             "Nome",
-            "Area",
+            "Área",
             "Departamento",
             "Heranca",
             "Cargo Especifico",
@@ -66,11 +66,11 @@ def build_df_count_por_semana(df_semana_merged: pd.DataFrame) -> pd.DataFrame:
 def build_her(df_semana_merged: pd.DataFrame) -> pd.DataFrame:
     """Construtor da tabela de heranca de areas para dropdowns."""
     if df_semana_merged is None or df_semana_merged.empty:
-        return pd.DataFrame(columns=["Area", "Departamento", "Heranca"])
+        return pd.DataFrame(columns=["Área", "Departamento", "Heranca"])
     return (
-        df_semana_merged[["Area", "Departamento", "Heranca"]]
+        df_semana_merged[["Área", "Departamento", "Heranca"]]
         .drop_duplicates()
-        .sort_values("Area")
+        .sort_values("Área")
     )
 
 
@@ -85,7 +85,7 @@ def build_dropdown_options(her_df: pd.DataFrame) -> list[dict]:
         }
     ]
     opts = [
-        {"label": f"{row['Area']} {row['Departamento']}", "value": row["Area"]}
+        {"label": f"{row['Área']} {row['Departamento']}", "value": row["Área"]}
         for _, row in her_df.iterrows()
     ]
     return base + opts
@@ -111,7 +111,7 @@ def _empty_diario() -> pd.DataFrame:
             "Cadastro",
             "Nome",
             "Cargo",
-            "Area",
+            "Área",
             "Departamento",
             "Planta",
             "Contagem Presença",
@@ -123,7 +123,7 @@ def _normalize_many(*dfs: pd.DataFrame) -> None:
     for df in dfs:
         if df is None:
             continue
-        for col in ("Heranca", "Area", "Departamento", "Cadastro"):
+        for col in ("Heranca", "Área", "Departamento", "Cadastro"):
             if col in df.columns:
                 df[col] = df[col].astype(str).str.strip()
 
@@ -152,25 +152,25 @@ def build_dataframe_diario_area(
     alvo = subarea or area
 
     if alvo:
-        if "Area" in df_dept.columns:
+        if "Área" in df_dept.columns:
             if subarea:
-                mask_area = df_dept["Area"].eq(alvo)
+                mask_area = df_dept["Área"].eq(alvo)
             else:
-                mask_area = df_dept["Area"].str.contains(str(area), case=False, na=False)
-            base_dept = df_dept.loc[mask_area, ["Cadastro", "Area", "Departamento"]].drop_duplicates()
+                mask_area = df_dept["Área"].str.contains(str(area), case=False, na=False)
+            base_dept = df_dept.loc[mask_area, ["Cadastro", "Área", "Departamento"]].drop_duplicates()
         else:
-            base_dept = pd.DataFrame(columns=["Cadastro", "Area", "Departamento"])
+            base_dept = pd.DataFrame(columns=["Cadastro", "Área", "Departamento"])
 
         if base_dept.empty:
             herancas = (
-                her_df.loc[her_df["Area"].eq(alvo), "Heranca"].dropna().unique()
-                if {"Area", "Heranca"}.issubset(her_df.columns)
+                her_df.loc[her_df["Área"].eq(alvo), "Heranca"].dropna().unique()
+                if {"Área", "Heranca"}.issubset(her_df.columns)
                 else []
             )
-            if not herancas and {"Area", "Heranca"}.issubset(her_df.columns):
+            if not herancas and {"Área", "Heranca"}.issubset(her_df.columns):
                 herancas = (
                     her_df[
-                        her_df["Area"].str.contains(str(alvo), case=False, na=False)
+                        her_df["Área"].str.contains(str(alvo), case=False, na=False)
                     ]["Heranca"]
                     .dropna()
                     .unique()
@@ -180,11 +180,11 @@ def build_dataframe_diario_area(
             starts_any = lambda h: any(str(h).startswith(p) for p in herancas)
             if "Heranca" in df_dept.columns:
                 mask = df_dept["Heranca"].apply(starts_any)
-                base_dept = df_dept.loc[mask, ["Cadastro", "Area", "Departamento"]].drop_duplicates()
+                base_dept = df_dept.loc[mask, ["Cadastro", "Área", "Departamento"]].drop_duplicates()
             else:
-                base_dept = df_dept.loc[mask_area, ["Cadastro", "Area", "Departamento"]].drop_duplicates()
+                base_dept = df_dept.loc[mask_area, ["Cadastro", "Área", "Departamento"]].drop_duplicates()
     else:
-        base_dept = df_dept[["Cadastro", "Area", "Departamento"]].drop_duplicates()
+        base_dept = df_dept[["Cadastro", "Área", "Departamento"]].drop_duplicates()
 
     if base_dept.empty:
         return _empty_diario()
@@ -236,7 +236,7 @@ def build_dataframe_diario_area(
     )
     df_full["Contagem Presença"] = df_full["Contagem Presença"].astype(int)
 
-    for col in ["Nome", "Cargo", "Area", "Departamento"]:
+    for col in ["Nome", "Cargo", "Área", "Departamento"]:
         if col not in df_full.columns:
             df_full[col] = np.nan
 
@@ -259,7 +259,7 @@ def build_dataframe_almoco_area(
                 "Cadastro",
                 "Nome",
                 "Cargo",
-                "Area",
+                "Área",
                 "Departamento",
                 "Planta",
                 "Contagem Presença",
@@ -274,31 +274,31 @@ def build_dataframe_almoco_area(
     _normalize_many(her_df, df_dept)
     alvo = subarea or area
 
-    base_dept = pd.DataFrame(columns=["Cadastro", "Area", "Departamento"])
-    if "Area" in df_dept.columns:
+    base_dept = pd.DataFrame(columns=["Cadastro", "Área", "Departamento"])
+    if "Área" in df_dept.columns:
         if subarea:
-            mask_area = df_dept["Area"].eq(alvo)
+            mask_area = df_dept["Área"].eq(alvo)
         else:
-            mask_area = df_dept["Area"].str.contains(str(area), case=False, na=False)
-        base_dept = df_dept.loc[mask_area, ["Cadastro", "Area", "Departamento"]].drop_duplicates()
+            mask_area = df_dept["Área"].str.contains(str(area), case=False, na=False)
+        base_dept = df_dept.loc[mask_area, ["Cadastro", "Área", "Departamento"]].drop_duplicates()
 
     if base_dept.empty and alvo:
         herancas = (
-            her_df.loc[her_df["Area"].eq(alvo), "Heranca"].dropna().unique()
-            if {"Area", "Heranca"}.issubset(her_df.columns)
+            her_df.loc[her_df["Área"].eq(alvo), "Heranca"].dropna().unique()
+            if {"Área", "Heranca"}.issubset(her_df.columns)
             else []
         )
-        if not herancas and {"Area", "Heranca"}.issubset(her_df.columns):
+        if not herancas and {"Área", "Heranca"}.issubset(her_df.columns):
             herancas = (
                 her_df[
-                    her_df["Area"].str.contains(str(alvo), case=False, na=False)
+                    her_df["Área"].str.contains(str(alvo), case=False, na=False)
                 ]["Heranca"]
                 .dropna()
                 .unique()
             )
         if herancas and "Heranca" in df_dept.columns:
             mask = df_dept["Heranca"].apply(lambda h: any(str(h).startswith(p) for p in herancas))
-            base_dept = df_dept.loc[mask, ["Cadastro", "Area", "Departamento"]].drop_duplicates()
+            base_dept = df_dept.loc[mask, ["Cadastro", "Área", "Departamento"]].drop_duplicates()
 
     if base_dept.empty:
         return pd.DataFrame(
@@ -307,7 +307,7 @@ def build_dataframe_almoco_area(
                 "Cadastro",
                 "Nome",
                 "Cargo",
-                "Area",
+                "Área",
                 "Departamento",
                 "Planta",
                 "Contagem Presença",
@@ -351,7 +351,7 @@ def build_dataframe_almoco_area(
                 "Cadastro",
                 "Nome",
                 "Cargo",
-                "Area",
+                "Área",
                 "Departamento",
                 "Planta",
                 "Contagem Presença",
@@ -409,7 +409,7 @@ def build_dataframe_almoco_area(
                 "Cadastro",
                 "Nome",
                 "Cargo",
-                "Area",
+                "Área",
                 "Departamento",
                 "Planta",
                 "Contagem Presença",
@@ -432,7 +432,7 @@ def build_dataframe_almoco_area(
         lambda x: x if isinstance(x, (set, frozenset)) else frozenset()
     )
 
-    for col in ["Nome", "Cargo", "Area", "Departamento"]:
+    for col in ["Nome", "Cargo", "Área", "Departamento"]:
         if col not in out.columns:
             out[col] = np.nan
 
@@ -446,7 +446,7 @@ def build_dataframe_almoco_area(
             "Cadastro",
             "Nome",
             "Cargo",
-            "Area",
+            "Área",
             "Departamento",
             "Planta",
             "Contagem Presença",
@@ -470,11 +470,11 @@ def obter_heranca_do_cadastro(
         if not linha.empty:
             if "Heranca" in df_dept.columns and pd.notna(linha.iloc[0].get("Heranca")):
                 return str(linha.iloc[0]["Heranca"]).strip()
-            if "Area" in df_dept.columns and pd.notna(linha.iloc[0].get("Area")):
-                area_exec = str(linha.iloc[0]["Area"]).strip()
-                if {"Area", "Heranca"}.issubset(her_df.columns):
+            if "Área" in df_dept.columns and pd.notna(linha.iloc[0].get("Área")):
+                area_exec = str(linha.iloc[0]["Área"]).strip()
+                if {"Área", "Heranca"}.issubset(her_df.columns):
                     her = her_df.loc[
-                        her_df["Area"].astype(str).eq(area_exec), "Heranca"
+                        her_df["Área"].astype(str).eq(area_exec), "Heranca"
                     ]
                     if not her.empty:
                         return str(her.iloc[0]).strip()
@@ -491,7 +491,7 @@ def obter_area_do_cadastro(
     linha = df_dept[df_dept["Cadastro"].astype(str).eq(str(cad))]
     if linha.empty:
         return None
-    area = linha.iloc[-1].get("Area", None)
+    area = linha.iloc[-1].get("Área", None)
     return None if pd.isna(area) else str(area).strip()
 
 

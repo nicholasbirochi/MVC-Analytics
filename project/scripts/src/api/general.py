@@ -110,17 +110,17 @@ def register(app):
             sub_opts, sub_style, sub_val = [], {'display': 'none'}, None
         else:
             try:
-                heranca = her[her['Area'] == area]['Heranca'].unique()
+                heranca = her[her['Área'] == area]['Heranca'].unique()
                 subareas_df = her[
-                    (her['Area'].str.startswith(area)) &
-                    (her['Area'] != area) &
+                    (her['Área'].str.startswith(area)) &
+                    (her['Área'] != area) &
                     (her['Heranca'].isin(heranca))
                 ]
                 if subareas_df.empty:
                     sub_opts, sub_style, sub_val = [], {'display': 'none'}, None
                 else:
                     sub_opts = [
-                        {'label': f"{row['Area']} {row.get('Departamento','')}", 'value': row['Area']}
+                        {'label': f"{row['Área']} {row.get('Departamento','')}", 'value': row['Área']}
                         for _, row in subareas_df.iterrows()
                     ]
                     # preserva a seleção anterior se ainda existir nas opções
@@ -212,7 +212,7 @@ def register(app):
 
         media_colab = (
             df_filtrado
-            .groupby(['Area', 'Departamento', 'Cadastro', 'Nome', 'Cargo Especifico'])['Contagem Presença']
+            .groupby(['Área', 'Departamento', 'Cadastro', 'Nome', 'Cargo Especifico'])['Contagem Presença']
             .mean()
             .reset_index()
         )
@@ -546,7 +546,7 @@ def register(app):
         df_filtrado = filtrar_base(df_desligados, viajam, area_selecionada, subarea_selecionada, periodo_idx, faixas)
 
         medias_individuais = (
-            df_filtrado.groupby(['Cadastro', 'Nome', 'Area'])['Contagem Presença']
+            df_filtrado.groupby(['Cadastro', 'Nome', 'Área'])['Contagem Presença']
             .mean().reset_index().round(2)
         )
         medias_individuais.columns = ['Chapa', 'Nome', 'Área', 'Média Presença']
@@ -660,7 +660,7 @@ def register(app):
         df_filtrado = filtrar_base(df_desligados, viajam, area_selecionada, subarea_selecionada, periodo_idx, faixas)
 
         media_colab_resumo = (
-            df_filtrado.groupby(['Area', 'Departamento', 'Cadastro', 'Nome'])['Contagem Presença']
+            df_filtrado.groupby(['Área', 'Departamento', 'Cadastro', 'Nome'])['Contagem Presença']
             .mean().reset_index()
         )
         media_colab_resumo.columns = ['Área', 'Departamento', 'Chapa', 'Nome', 'Média Dia']
