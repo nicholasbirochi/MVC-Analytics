@@ -97,14 +97,17 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 ├── 📁 Base de Dados Original/
 │ ├── 📂 csv/
 │ │ ├── 📂 Executivos/
-│ │ │ ├── 🧾 Executivos_01-08-2024_03-31-2025.csv
+│ │ │ ├── 🧾 Executivos_01-01-2024_03-31-2025.csv
 │ │ │ ├── 🧾 Executivos_04-01-2025_09-30-2025.csv
 │ │ │ └── 🧾 Executivos_10-01-2025_12-31-2025.csv
 │ │ │
 │ │ ├── 📂 Horistas/
+│ │ │ ├── 🧾 Horistas_01-01-2024_03-31-2025.csv
+│ │ │ ├── 🧾 Horistas_04-01-2025_09-30-2025.csv
+│ │ │ └── 🧾 Horistas_10-01-2025_12-31-2025.csv
 │ │ │
 │ │ └── 📂 Mensalistas/
-│ │   ├── 🧾 Mensalistas_01-08-2024_03-31-2025.csv
+│ │   ├── 🧾 Mensalistas_01-01-2024_03-31-2025.csv
 │ │   ├── 🧾 Mensalistas_04-01-2025_09-30-2025.csv
 │ │   └── 🧾 Mensalistas_10-01-2025_12-31-2025.csv
 │ │
@@ -116,7 +119,7 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 │ │ │ └── 🪶 Desligados.parquet
 │ │ │
 │ │ ├── 📂 Executivos/
-│ │ │ ├── 🪶 Executivos_01-08-2024_03-31-2025.parquet
+│ │ │ ├── 🪶 Executivos_01-01-2024_03-31-2025.parquet
 │ │ │ ├── 🪶 Executivos_04-01-2025_09-30-2025.parquet
 │ │ │ └── 🪶 Executivos_10-01-2025_12-31-2025.parquet
 │ │ │
@@ -124,9 +127,12 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 │ │ │ └── 🪶 GPTW.parquet
 │ │ │
 │ │ ├── 📂 Horistas/
+│ │ │ ├── 🪶 Horistas_01-01-2024_03-31-2025.parquet
+│ │ │ ├── 🪶 Horistas_04-01-2025_09-30-2025.parquet
+│ │ │ └── 🪶 Horistas_10-01-2025_12-31-2025.parquet
 │ │ │ 
 │ │ ├── 📂 Mensalistas/
-│ │ │ ├── 🪶 Mensalistas_01-08-2024_03-31-2025.parquet
+│ │ │ ├── 🪶 Mensalistas_01-01-2024_03-31-2025.parquet
 │ │ │ ├── 🪶 Mensalistas_04-01-2025_09-30-2025.parquet
 │ │ │ └── 🪶 Mensalistas_10-01-2025_12-31-2025.parquet
 │ │ │
