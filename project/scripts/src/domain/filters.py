@@ -51,10 +51,10 @@ def aplicar_filtro_por_area(
 ) -> pd.DataFrame:
     if area and area != "GERAL":
         if subarea:
-            deps = her_df[her_df["Area"] == subarea]["Heranca"].unique()
-            return df[(df["Area"] == subarea) & (df["Heranca"].isin(deps))]
-        deps = her_df[her_df["Area"] == area]["Heranca"].unique()
-        return df[df["Area"].str.startswith(area) & df["Heranca"].isin(deps)]
+            deps = her_df[her_df["Área"] == subarea]["Heranca"].unique()
+            return df[(df["Área"] == subarea) & (df["Heranca"].isin(deps))]
+        deps = her_df[her_df["Área"] == area]["Heranca"].unique()
+        return df[df["Área"].str.startswith(area) & df["Heranca"].isin(deps)]
     return df
 
 
@@ -66,15 +66,15 @@ def resolver_areas_viajantes(
         areas_base = AREAS_FORA
     areas_base_norm = [normaliza_str(area) for area in areas_base if normaliza_str(area)]
 
-    if her_df is None or her_df.empty or not {"Area", "Heranca"}.issubset(her_df.columns):
+    if her_df is None or her_df.empty or not {"Área", "Heranca"}.issubset(her_df.columns):
         return set(areas_base_norm), set()
 
-    tmp = her_df[["Area", "Heranca"]].copy()
-    tmp["Area"] = tmp["Area"].astype(str).str.strip()
+    tmp = her_df[["Área", "Heranca"]].copy()
+    tmp["Área"] = tmp["Área"].astype(str).str.strip()
     tmp["Heranca"] = tmp["Heranca"].astype(str).str.strip()
 
     herancas_base = (
-        tmp.loc[tmp["Area"].apply(lambda area: startswith_any(area, areas_base_norm)), "Heranca"]
+        tmp.loc[tmp["Área"].apply(lambda area: startswith_any(area, areas_base_norm)), "Heranca"]
         .dropna()
         .unique()
         .tolist()
@@ -195,8 +195,8 @@ def filtrar_base(
         mask_area = False
         mask_her = False
 
-        if "Area" in df_filtrado.columns:
-            mask_area = df_filtrado["Area"].apply(lambda a: startswith_any(a, areas_prefixos))
+        if "Área" in df_filtrado.columns:
+            mask_area = df_filtrado["Área"].apply(lambda a: startswith_any(a, areas_prefixos))
 
         if "Heranca" in df_filtrado.columns and len(herancas_prefixos) > 0:
             mask_her = df_filtrado["Heranca"].apply(lambda h: startswith_any(h, herancas_prefixos))

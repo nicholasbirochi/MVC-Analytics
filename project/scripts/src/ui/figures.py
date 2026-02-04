@@ -109,7 +109,7 @@ def _montar_labels(meta: pd.DataFrame, cadastros: Iterable[str], tenure: dict[st
     for cadastro in cadastros:
         info = meta.loc[cadastro]
         nome = info.get("Nome", "")
-        area = info.get("AreaNorm", "")
+        area = info.get("ÁreaNorm", "")
         tenure_label = tenure.get(str(cadastro), "-")
         label = (
             f"{_abbr(nome)} <span style='font-size:10px;opacity:.85'><b>({tenure_label})</b></span>"
@@ -513,7 +513,7 @@ def grafico_heatmap_encontros_men(
         .fillna(0)
     )
 
-    area_col = "Area" if "Area" in dfp.columns else None
+    area_col = "Área" if "Área" in dfp.columns else None
     meta_cols = ["Cadastro", "Nome", "Cargo"]
     if area_col:
         meta_cols.append(area_col)
@@ -523,9 +523,9 @@ def grafico_heatmap_encontros_men(
     )
     meta = meta_src.set_index("Cadastro").copy()
     if area_col:
-        meta = meta.rename(columns={area_col: "AreaNorm"})
+        meta = meta.rename(columns={area_col: "ÁreaNorm"})
     else:
-        meta["AreaNorm"] = ""
+        meta["ÁreaNorm"] = ""
 
     adm_cache, dem_cache = carregar_adm_dem_cache()
     ref_dt = days.max() if len(days) else pd.Timestamp.today().normalize()
@@ -944,13 +944,13 @@ def grafico_heatmap_encontros_exec(
         .fillna(0)
     )
 
-    meta_cols = ["Cadastro", "Nome", "Cargo", "Area"]
+    meta_cols = ["Cadastro", "Nome", "Cargo", "Área"]
     meta = (
         dfp.sort_values("Data")
         .drop_duplicates("Cadastro", keep="last")[meta_cols]
         .set_index("Cadastro")
     )
-    meta = meta.rename(columns={"Area": "AreaNorm"})
+    meta = meta.rename(columns={"Área": "ÁreaNorm"})
 
     adm_cache, dem_cache = carregar_adm_dem_cache()
     ref_dt = days.max() if len(days) else pd.Timestamp.today().normalize()

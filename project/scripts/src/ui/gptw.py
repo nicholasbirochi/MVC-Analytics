@@ -54,20 +54,20 @@ def _listar_subareas(
     df_df_gptw = df_df_gptw if df_df_gptw is not None else getattr(repo, "df_df_gptw", None)
 
     subareas: list[str] = []
-    if isinstance(her_df, pd.DataFrame) and {"Area", "Heranca"}.issubset(her_df.columns):
+    if isinstance(her_df, pd.DataFrame) and {"Área", "Heranca"}.issubset(her_df.columns):
         her_df = her_df.copy()
-        her_df["Area"] = her_df["Area"].astype(str).str.strip()
-        herancas = her_df.loc[her_df["Area"].eq(area_label), "Heranca"].dropna().unique()
+        her_df["Área"] = her_df["Área"].astype(str).str.strip()
+        herancas = her_df.loc[her_df["Área"].eq(area_label), "Heranca"].dropna().unique()
         cand = her_df[
-            her_df["Area"].str.startswith(area_label)
-            & her_df["Area"].ne(area_label)
+            her_df["Área"].str.startswith(area_label)
+            & her_df["Área"].ne(area_label)
         ]
         if len(herancas) > 0:
             cand = cand[cand["Heranca"].isin(herancas)]
-        subareas = cand["Area"].dropna().unique().tolist()
+        subareas = cand["Área"].dropna().unique().tolist()
 
     if not subareas and isinstance(df_df_gptw, pd.DataFrame):
-        all_areas = df_df_gptw["Area"].astype(str).str.strip().unique().tolist()
+        all_areas = df_df_gptw["Área"].astype(str).str.strip().unique().tolist()
         subareas = [
             a
             for a in all_areas
@@ -120,7 +120,7 @@ def mini_tabela_df_gptw(
             [
                 html.Thead(
                     html.Tr(
-                        [html.Th("Area", style=th)]
+                        [html.Th("Área", style=th)]
                         + [html.Th(str(a), style=th) for a in anos_ord]
                     )
                 ),
@@ -145,7 +145,7 @@ def mini_tabela_df_gptw(
             [
                 html.Thead(
                     html.Tr(
-                        [html.Th("Area", style=th)]
+                        [html.Th("Área", style=th)]
                         + [html.Th(str(a), style=th) for a in anos_ord]
                     )
                 ),
@@ -165,10 +165,10 @@ def mini_tabela_df_gptw(
         return html.Div(tabela, style=wrapper_style, title="df_df_gptw vazio/ausente")
 
     df = df.copy()
-    area_col = "Area" if "Area" in df.columns else None
+    area_col = "Área" if "Área" in df.columns else None
     if area_col is None:
         return html.Div(
-            "df_df_gptw sem coluna Area/Area",
+            "df_df_gptw sem coluna Área/Área",
             style={**wrapper_style, "opacity": 0.7, "fontSize": "12px"},
         )
 
@@ -250,7 +250,7 @@ def mini_tabela_df_gptw(
         [
             html.Thead(
                 html.Tr(
-                    [html.Th("Area", style=th)]
+                    [html.Th("Área", style=th)]
                     + [html.Th(str(a), style=th) for a in anos_ord]
                 )
             ),

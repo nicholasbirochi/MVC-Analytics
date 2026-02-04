@@ -37,7 +37,7 @@ def calcular_ordem_heatmap(df_full: pd.DataFrame) -> tuple[list[str], list[str]]
         .fillna(0)
     )
 
-    area_col = "Area" if "Area" in dfp.columns else None
+    area_col = "Área" if "Área" in dfp.columns else None
     meta_cols = ["Cadastro", "Nome", "Cargo"]
     if area_col:
         meta_cols.append(area_col)
@@ -48,9 +48,9 @@ def calcular_ordem_heatmap(df_full: pd.DataFrame) -> tuple[list[str], list[str]]
         .set_index("Cadastro")
     )
     if area_col:
-        meta = meta.rename(columns={area_col: "AreaNorm"})
+        meta = meta.rename(columns={area_col: "ÁreaNorm"})
     else:
-        meta["AreaNorm"] = ""
+        meta["ÁreaNorm"] = ""
 
     def _tok(texto: str) -> list[str]:
         return [
@@ -66,7 +66,7 @@ def calcular_ordem_heatmap(df_full: pd.DataFrame) -> tuple[list[str], list[str]]
     cad_M = sorted(
         meta.index[meta["Cargo"] == "M"],
         key=lambda c: (
-            _akey(meta.loc[c, "AreaNorm"]),
+            _akey(meta.loc[c, "ÁreaNorm"]),
             str(meta.loc[c, "Nome"]).lower(),
             str(c),
         ),
@@ -74,7 +74,7 @@ def calcular_ordem_heatmap(df_full: pd.DataFrame) -> tuple[list[str], list[str]]
     cad_E = sorted(
         meta.index[meta["Cargo"] == "E"],
         key=lambda c: (
-            _akey(meta.loc[c, "AreaNorm"]),
+            _akey(meta.loc[c, "ÁreaNorm"]),
             str(meta.loc[c, "Nome"]).lower(),
             str(c),
         ),
@@ -95,8 +95,8 @@ def calcular_ordem_heatmap(df_full: pd.DataFrame) -> tuple[list[str], list[str]]
         se = str(ae).replace("/", "-").lower().strip()
         return bool(se) and sm.startswith(se)
 
-    areas_M = [meta.loc[c, "AreaNorm"] for c in cad_M]
-    areas_E = [meta.loc[c, "AreaNorm"] for c in cad_E]
+    areas_M = [meta.loc[c, "ÁreaNorm"] for c in cad_M]
+    areas_E = [meta.loc[c, "ÁreaNorm"] for c in cad_E]
     allowed = np.array(
         [
             [_rel(areas_M[i], areas_E[j]) for j in range(len(cad_E))]

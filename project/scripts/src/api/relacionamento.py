@@ -208,7 +208,7 @@ def register(app):
     )
     def atualizar_dropdown_df_gptw(valor_atual):
         df = df_df_gptw.copy()
-        todas_areas = sorted(df["Area"].dropna().unique().tolist())
+        todas_areas = sorted(df["Área"].dropna().unique().tolist())
 
         # normaliza valor atual
         if not valor_atual:
@@ -220,9 +220,9 @@ def register(app):
         # mapeamento área → subáreas, se existir coluna
         if "Subarea" in df.columns:
             mapa = (
-                df[["Area", "Subarea"]]
+                df[["Área", "Subarea"]]
                 .dropna()
-                .groupby("Area")["Subarea"]
+                .groupby("Área")["Subarea"]
                 .apply(set)
                 .to_dict()
             )
@@ -678,19 +678,19 @@ def register(app):
             raise PreventUpdate
 
         # todas as áreas conhecidas
-        if 'Area' in df_df_ativos.columns:
-            todas = sorted(df_df_ativos['Area'].dropna().unique().tolist())
+        if 'Área' in df_df_ativos.columns:
+            todas = sorted(df_df_ativos['Área'].dropna().unique().tolist())
         else:
-            todas = sorted(df_semana_merged['Area'].dropna().unique().tolist())
+            todas = sorted(df_semana_merged['Área'].dropna().unique().tolist())
 
         her_df = globals().get('her', pd.DataFrame())
         selecionadas = [str(a).strip() for a in (selecionadas or [])]
 
         # função recursiva: obtém descendentes
         def descendentes(area):
-            if not isinstance(her_df, pd.DataFrame) or her_df.empty or not {'Area', 'Heranca'}.issubset(her_df.columns):
+            if not isinstance(her_df, pd.DataFrame) or her_df.empty or not {'Área', 'Heranca'}.issubset(her_df.columns):
                 return [a for a in todas if a != area and a.startswith(area)]
-            filhos = her_df.loc[her_df['Heranca'] == area, 'Area'].astype(str).tolist()
+            filhos = her_df.loc[her_df['Heranca'] == area, 'Área'].astype(str).tolist()
             netos = []
             for f in filhos:
                 netos.extend(descendentes(f))

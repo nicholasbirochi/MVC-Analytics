@@ -174,17 +174,17 @@ def register(app):
             sub_opts_out, sub_val_out = [], None
         else:
             try:
-                heranca = her[her['Area'] == area_base]['Heranca'].unique()
+                heranca = her[her['Área'] == area_base]['Heranca'].unique()
                 subareas_df = her[
-                    (her['Area'].str.startswith(area_base)) &
-                    (her['Area'] != area_base) &
+                    (her['Área'].str.startswith(area_base)) &
+                    (her['Área'] != area_base) &
                     (her['Heranca'].isin(heranca))
                 ]
                 if subareas_df.empty:
                     sub_opts_out = []
                 else:
                     sub_opts_out = [
-                        {'label': f"{row['Area']} {row.get('Departamento','')}", 'value': row['Area']}
+                        {'label': f"{row['Área']} {row.get('Departamento','')}", 'value': row['Área']}
                         for _, row in subareas_df.iterrows()
                     ]
             except Exception:
