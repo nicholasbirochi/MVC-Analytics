@@ -141,7 +141,7 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 │   │ └── 💹 GPTW.xlsx
 │   │
 │   └── 📂 Movimentacoes/ 
-│     └── 💹 Movimentacoes.xls
+│     └── 💹 Movimentacoes.xlsx
 │
 ├── 📂 Códigos Extras/
 │ ├── 📂 Convertendo o Formato das Bases/
@@ -314,7 +314,6 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 |     📝    |        `.pdf`       | Documentos em PDF (relatórios, contratos, etc.) |
 |     🪶    |      `.parquet`     |      Formato colunar otimizado para análise     |
 |     💹    |       `.xlsx`       |                 Planilhas Excel                 |
-|     💹    |        `.xls`       |                 Planilhas Excel                 |
 |     📓    |       `.ipynb`      |                Notebooks Jupyter                |
 |     🐍    |        `.py`        |                  Código Python                  |
 |     🧊    |        `.ico`       |                 Ícones/favicons                 |
@@ -331,68 +330,127 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 
 ## 🗃️ Estrutura dos DataFrames
 
-### 📆 df_semana_merged — Presença semanal consolidada
-- `Cadastro` (str)
-- `Nome` (str)
-- `Area` (str)
-- `Departamento` (str)
-- `Heranca` (str)
-- `Cargo Especifico` (str)
-- `Cargo` (str)
-- `Desligado` (str)
-- `Ano` (int)
-- `Semana por Ano` (int)
-- `Contagem Presença` (float/int)
->*As colunas `Início da Semana` e `Fim da Semana` existem na base mas não são utilizadas.<br>
->*O campo `Viaja` não está presente no* DataFrame, apenas inferido via herança/área.*
+### 📆 `df_registros_semanais` — Presença semanal (fato)
 
-### 🗓️ df_datas — Presença diária (usado para validar co-presença, acessos e controle de entrada)
-- `Cadastro` (str)
-- `Planta` (array)
-- `Data` (datetime)
-- `Dia Semana` (str)
-- `Semana por Ano` (int)
-- `Ano` (int)
->*As demais colunas originais (`Nome`, `Area`, `Departamento`, `Heranca`, `Cargo Especifico`, `Dir`, `Tipo`, `Acesso`, `Coletor`, `Descricao Coletor`, `Uso Acesso`, `Cargo`, `Desligado` e `Hora`) não são utilizadas pelo app.*
+**Chave lógica:** (`Cadastro`, `Ano`, `Semana por Ano`) → **1 linha por semana por pessoa**
 
-### 🍽️ df_almoco — Acesso ao refeitório (base auxiliar)
-- `Cadastro` (str)
-- `Nome` (str)
-- `Data` (datetime)
-- `Hora` (object)
-- `Dir` (str)
-- `Planta` (array)
-- `Coletor` (int)
-- `Descricao Coletor` (str)
-- `Cargo` (str)
-- `Desligado` (str)
-- `Departamento` (str) (str)
-- `Heranca` (str)
-- `Cargo Especifico` (str)
->*As colunas de controle de acesso (`Filial`, `Tipo`, `Acesso`, `Uso Acesso` e `Area`) não são utilizadas.*
+* `Cadastro` (string / Int64 — escolha e mantenha consistente)
+* `Ano` (int)
+* `Semana por Ano` (int)
+* `Data` (datetime)
 
-### 🏢 df_ativos — Estrutura hierárquica de áreas
-- `Cadastro` (str)
-- `Cargo` (str)
-- `Departamento` (str)
-- `Area` (str)
-- `Data_Admissão` (datetime)
->*Demais colunas (`Nome completo`, `Heranca`, `Cargo Especifico`, `Local` e `Afast_RH`) não são usadas.<br>
->*Serve como base auxiliar para montar* o DataFrame `her` (hierarquia de áreas).*
+  > *Data representativa da semana (recomendado: **segunda-feira** da semana). Mantida para preservar comportamentos antigos (slider/range/plots).*
+* `Contagem Presença` (int/float)
 
-### 🚑 df_desligados (opcional) — Cadastro de colaboradores desligados
-- `Cadastro` (str)
-- `Departamento` (str)
-- `Area` (str)
-- `Data_Adm` (datetime)
-- `Data_Dem` (datetime)
->*Outras colunas (`Nome completo`, `Heranca`, `Cargo Especifico` e `Local`) não são utilizadas.*
+  > *Contagem de dias de presença na semana (ex.: 0..7), conforme já era no app.*
 
-### 🏆 df_gptw — Indicadores de clima e satisfação
-- `Área` (str)
-- `2025` (float/int)
-- `2024` (float/int)
-- `2023` (float/int)
+**Observações**
+
+* Não deve conter colunas de dimensão (Nome/Área/Depto/etc.). Isso vem de `df_colaboradores` **apenas quando necessário**.
+* Se existir `Data` duplicada para a mesma (`Cadastro`,`Ano`,`Semana por Ano`), há risco de duplicar métricas em merges.
+
+
+### 🗓️ `df_diarios` — Presença diária (fato)
+
+**Chave lógica:** (`Cadastro`, `Data`, `Planta`) ou (`Cadastro`,`Data`) dependendo da sua regra real
+
+* `Cadastro` (string / Int64)
+* `Planta` (string/int/categorical)
+
+  > *Código/identificador da planta.*
+* `Data` (datetime)
+
+**Observações**
+
+* Colunas como `Dia Semana`, `Semana por Ano`, `Ano` **não precisam existir na base** (podem ser derivadas via `.dt` quando o app precisar).
+* Se o app usa “copresença”/validações por dia, esse é o fato correto e enxuto.
+
+
+### 🍽️ `df_almoco` — Registros de refeitório (fato auxiliar)
+
+**Chave lógica típica:** (`Cadastro`, `Data`, `Hora`, `Coletor`) (pode variar)
+
+* `Cadastro` (string / Int64)
+* `Data` (datetime)
+* `Hora` (string ou `datetime.time`)
+* `Dir` (string)
+* `Planta` (string/int/categorical)
+* `Coletor` (int/string)
+* `Descricao Coletor` (string)
+
+**Observações**
+
+* **Não** carrega mais dimensão (Nome, Área, Depto, Cargo, Desligado…).
+  Se o app precisar exibir esses atributos junto de um registro de almoço, deve fazer `merge` com `df_colaboradores` por `Cadastro` **apenas no momento necessário** (ou criar uma “view enriquecida” pontual).
+
+
+### 🧑‍💼 `df_colaboradores` — Dimensão de colaboradores (1:1 por pessoa)
+
+**Chave:** `Cadastro` (deve ser única; se não for, tratar com `drop_duplicates` + regra)
+
+* `Cadastro` (string / Int64)
+* `Nome` (string)
+* `Área` (string)
+* `Departamento` (string)
+* `Heranca` (string)
+* `Cargo` (string)
+
+  > **Regra:** `Cargo` == `SgEmp` (código vindo de ativos).
+* `Cargo Especifico` (string)
+* `Desligado` (string/bool, conforme já era)
+
+  > *Não inventar regra nova: apenas preservar como sua base define.*
+* `Data_Admissão` (datetime)
+* `Data_Demissão` (datetime)
+
+  > *Vem de `df_desligados['Data_Dem']` renomeada (quando existir).*
+
+**Mapeamento opcional de categoria de Cargo (somente se necessário)**
+Se em algum lugar do app o “Cargo” era usado como **categoria** (Horista/Mensalista/Executivo), crie uma coluna extra (ex.: `Tipo_Cargo`) baseada na 1ª letra:
+
+* `H` → `Horista`
+* `M` → `Mensalista`
+* `E` → `Executivo`
+* outro → `Outros`
+
+> **Importante:** não substitua `Cargo` por essa categoria se o script antigo esperava o **código** (`H/M/E`). Nesse caso, `Cargo` continua código e `Tipo_Cargo` é a categoria.
+Adicione a seção abaixo na sua documentação **“## 🗃️ Estrutura dos DataFrames”** (no mesmo padrão das outras), incluindo o `df_movimentacoes`:
+
+
+### 🔄 `df_movimentacoes` — Movimentações (fato)
+
+**Chave lógica:** (`Cadastro`, `Data de alteração`, `Tipo da Movimentação`) → **1 linha por evento de movimentação por pessoa**
+
+* `Cadastro` (string / Int64 — escolha e mantenha consistente)
+* `Tipo da Movimentação` (string)
+
+  > *Ex.: Admissão, Transferência, Promoção, Desligamento (depende do seu arquivo).*
+* `Data de alteração` (datetime)
+
+  > *Data em que a mudança organizacional foi registrada.*
+
+* `Abreviação UO antiga` (string)
+* `Desc. UO antiga` (string)
+* `Desc. Cargo antigo` (string)
+* `Abreviação UO` (string)
+* `Desc. UO` (string)
+* `Desc. Cargo` (string)
+
+**Observações**
+
+* Não deve conter colunas de dimensão (ex.: `Nome`, `Área`, `Departamento`). Isso vem de `df_colaboradores` **apenas quando necessário**.
+* Pode existir mais de 1 movimentação no mesmo dia para o mesmo `Cadastro`. Nesse caso, a combinação acima ainda funciona como chave lógica, mas **pode não ser única** se o arquivo repetir eventos. Se ocorrer, tratar duplicados (`drop_duplicates`) ou criar uma chave técnica.
+* Para exibir **Nome do colaborador** (em drilldowns/“3 setinhas”), faça `merge` com `df_colaboradores[['Cadastro','Nome']]` por `Cadastro` (garantindo `Cadastro` único em `df_colaboradores`).
+* Evite merge direto com fatos diários/semanais sem uma regra temporal clara (risco de explodir linhas e duplicar métricas).
+
+
+### 🏆 `df_gptw` — Indicadores GPTW (dimensão/indicador)
+
+* `Área` (string)
+* `2025` (float/int)
+* `2024` (float/int)
+* `2023` (float/int)
+
 >*Estrutura em formato largo (cada ano como coluna).*<br>
 >*Caso seja convertida para formato longo, ficaria: `Área`, `Ano`, `Nota`.*
 
