@@ -293,7 +293,7 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 │   │ ├── 🎨 login.css
 │   │ └── 🎨 styles.css
 │   │
-│   └── 📂 ui/
+│   └── 📂 views/
 │     ├── 🧱 index.html
 │     └── 🧱 login.html
 │  
