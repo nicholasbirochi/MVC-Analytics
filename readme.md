@@ -2,16 +2,16 @@
 background: linear-gradient(90deg, #030033ff 0%, #18145eff 50%, #030033ff 100%); 
 display:flex; align-items:center; justify-content:center; 
 box-shadow: 0 4px 14px rgba(0,0,0,0.12); margin: 8px 0 16px 0;">
-  <images src="Projeto/Front-End/images/logo_white.png" alt="VW" width="130" height="100" style="vertical-align:middle; margin-right:8px; border-radius:8px; opacity:0.85;" />
+  <img src="Projeto/Front-End/images/logo_white.png" alt="VW" width="130" height="100" style="vertical-align:middle; margin-right:8px; border-radius:8px; opacity:0.85;" />
   <h1 style="color:White; margin:0; font-size:28px; letter-spacing:0.3px; border-bottom: 1px solid #ffffffff">
     Dashboard de Presença — Volkswagen do Brasil
   </h1>
 </div>
 
 <p align="center">
-  <images src="https://images.shields.io/badge/Python-3.11-blue" />
-  <images src="https://images.shields.io/badge/Dash-2.18-3EB489" />
-  <images src="https://images.shields.io/badge/Status-Em%20Uso-brightgreen" />
+  <img src="https://img.shields.io/badge/Python-3.11-blue" />
+  <img src="https://img.shields.io/badge/Dash-2.18-3EB489" />
+  <img src="https://img.shields.io/badge/Status-Em%20Uso-brightgreen" />
 </p>
 <p align="center" style="font-size:14px; color:#f0f0f0; margin-top:-6px;">
   Desenvolvido por <b>Nicholas Birochi</b> — Data Analytics | Volkswagen do Brasil
@@ -277,16 +277,10 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 │ │ └── 🐍 security_login.py
 │ │
 │ ├── 📂 database/
-│ │ ├── 🪶 Desligados.parquet
-│ │ ├── 🪶 Almoco.parquet
-│ │ ├── 🪶 ArquivoFinal.parquet
-│ │ ├── 🪶 ArquivoFinalDatas.parquet
-│ │ ├── 🪶 ArquivoFinalSemana.parquet
-│ │ ├── 🗄️ Banco Login.sqlite
-│ │ ├── 🪶 Ativos.parquet
-│ │ └── 🪶 GPTW.parquet
+│ │ ├── 🗄️ db_login.sqlite
+│ │ └── 🗄️ dw_ronda.sqlite
 │ │
-│ └── 📂 web/
+│ └── 📂 website/
 │   ├── 📂 images/
 │   │ ├── 🖼️ logo_white.png
 │   │ └── 🧊 logo_blue.ico
@@ -325,7 +319,7 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 |     ⚡    |        `.js`        |                Scripts JavaScript               |
 |     🎨    |        `.css`       |                 Estilos visuais                 |
 |     🧱    |       `.html`       |                   ui/front-end                  |
-|     🗄️    |      `.sqlite`      |               Banco de dados local              |
+|     🗄️    |      `.sqlite`      |               Banco de Dados local              |
 |     ⚙️    |     `.gitignore`    |            Regras de ignorados do Git           |
 |     📖    |        `.md`        |              Documentação Markdown              |
 |     📦    |  `requirements.txt` |              Dependências do Python             |
@@ -621,7 +615,7 @@ Projeto interno — uso corporativo.
 <table style="font-family: 'Segoe UI', Arial, sans-serif; border: none; border-collapse: collapse;">
   <tr>
     <td style="padding-right: 0px; vertical-align: middle;">
-      <images src="Projeto/Front-End/images/logo_white.png"
+      <img src="Projeto/Front-End/images/logo_white.png"
            width="150"
            style="vertical-align: middle;"
            alt="logo_blue VW">
