@@ -5,7 +5,7 @@ app = Flask(__name__)
 
 # Função para autenticar o usuário
 def autenticar(username, senha):
-    conn = sqlite3.connect('Banco Login.sqlite')
+    conn = sqlite3.connect('db_login.sqlite')
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM usuarios WHERE username=? AND senha=?', (username, senha))
     usuario = cursor.fetchone()
