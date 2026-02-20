@@ -278,7 +278,9 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 │ │
 │ ├── 📂 database/
 │ │ ├── 🗄️ db_login.sqlite
-│ │ └── 🗄️ dw_ronda.sqlite
+│ │ ├── 🗄️ dw_ronda.sqlite
+│ │ ├── 🗄️ dw_ronda.sqlite-shm
+│ │ └── 🗄️ dw_ronda.sqlite-wal
 │ │
 │ └── 📂 website/
 │   ├── 📂 images/
