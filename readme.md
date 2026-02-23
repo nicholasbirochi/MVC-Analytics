@@ -155,6 +155,8 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 │ ├── 📂 Documentação/
 │ │ ├── 📂 Analisando Fraudes dos Registros/
 │ │ │ ├── 📓 Análise das Fraudes.ipynb
+│ │ │ ├── 🪶 df_ronda.parquet
+│ │ │ ├── 🪶 df_fraudes.parquet
 │ │ │ └── 📝 Termo de Adesão ao Trabalho Remoto.pdf
 │ │ │
 │ │ ├── 📂 Análise feita com PDFs/
