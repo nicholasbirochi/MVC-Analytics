@@ -152,75 +152,6 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 │ │ ├── 📓 Transformando de csv para parquet.ipynb
 │ │ └── 📓 Transformando de xlsx para parquet.ipynb
 │ │
-│ ├── 📂 Documentação/
-│ │ ├── 📂 Analisando Fraudes dos Registros/
-│ │ │ ├── 📓 Análise das Fraudes.ipynb
-│ │ │ ├── 🪶 df_ronda.parquet
-│ │ │ ├── 🪶 df_fraudes.parquet
-│ │ │ └── 📝 Termo de Adesão ao Trabalho Remoto.pdf
-│ │ │
-│ │ ├── 📂 Análise feita com PDFs/
-│ │ │ ├── 📂 Base de Dados/
-│ │ │ │ ├── 📝 relatorio A.M.N.M.  01.24_31.03.pdf
-│ │ │ │ └── 📝 relatorio N.P.N.I.  01.24_31.03.pdf
-│ │ │ │
-│ │ │ └── 📂 Códigos/
-│ │ │   ├── 📓 Análise Dias Presenciais A.M.N.M. - Nicholas.ipynb
-│ │ │   ├── 📓 Análise Dias Presenciais N.P.N.I. - Nicholas.ipynb
-│ │ │   ├── 💹 presenca_por_semana A.M.N.M. 01.24_31.03.xlsx
-│ │ │   └── 💹 presenca_por_semana N.P.N.I. 01.24_31.03.xlsx
-│ │ │
-│ │ ├── 📂 Análise feita pelo Antigo Colaborador/
-│ │ │ ├── 📂 Análise - Antigo Colaborador/
-│ │ │ │ ├── 📝 Análise Dias Presenciais A.M.N.M. Python Script.pdf
-│ │ │ │ └── 📝 Análise Dias Presenciais N.P.N.I. Python Script.pdf
-│ │ │ │
-│ │ │ ├── 📓 Análise Dias Presenciais A.M.N.M..ipynb
-│ │ │ ├── 📓 Análise Dias Presenciais N.P.N.I..ipynb
-│ │ │ ├── 💹 presenca_por_semana A.M.N.M. 01.24_31.03.xlsx
-│ │ │ ├── 📝 relatorio A.M.N.M.  01.24_31.03.pdf
-│ │ │ └── 📝 relatorio N.P.N.I.  01.24_31.03.pdf
-│ │ │
-│ │ ├── 📂 Análise por Colaborador para Horas Extras/
-│ │ │ ├── 📂 validation_base/
-│ │ │ │ ├── 📂 csv
-│ │ │ │ │ └── 🧾 Colaboradores.csv
-│ │ │ │ │
-│ │ │ │ └── 📂 parquet
-│ │ │ │   └── 🪶 Colaboradores.parquet
-│ │ │ │
-│ │ │ ├── 📂 xlsx/
-│ │ │ │ └── 💹 Horas Registradas.xlsx
-│ │ │ │
-│ │ │ ├── 📓 Análise das horas dos colaboradores.ipynb
-│ │ │ ├── 💹 Arquivo Solicitado - Colaboradores não Presentes.xlsx
-│ │ │ └── 📓 Transformando de csv para parquet.ipynb
-│ │ │
-│ │ ├── 📂 Análise Tempo de Casa/
-│ │ │ ├── 🖼️ code.png
-│ │ │ └── 🖼️ resultado.png
-│ │ │
-│ │ ├── 📂 Consolidando as Planilhas do Excel/
-│ │ │ ├── 📂 data
-│ │ │ │ ├── 💹 Backlog 2025_consolidado.xlsx
-│ │ │ │ └── 💹 Backlog 2025.xlsx
-│ │ │ │
-│ │ │ └── 📓 Análise das Planilhas.ipynb
-│ │ │
-│ │ ├── 📂 Corrigindo CSV/
-│ │ │ ├── 📂 Executivos_SQL/
-│ │ │ │ └── 🧾 Executivos_SQL.csv
-│ │ │ │
-│ │ │ ├── 📂 Mensalistas_SQL/
-│ │ │ │ └── 🧾 Mensalistas_SQL.csv
-│ │ │ │
-│ │ │ └── 📓 Corrigindo o csv novo.ipynb
-│ │ │
-│ │ └── 📂 EDA das Bases/
-│ │   ├── 📓 Análise das movimentacoes.ipynb
-│ │   ├── 📓 Análise geral.ipynb
-│ │   └── 💹 Colaboradores e Áreas com Problemas.xlsx
-│ │
 │ ├── 📂 Tratando Base Misturada/
 │ │ ├── 📂 Ativos e Desligados
 │ │ │ ├── 📂 xlsx
@@ -237,12 +168,12 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 │ │   │
 │ │   └── 📓 Validando novas bases.ipynb
 │ │
-│ ├── 📓 ETL.ipynb
-│ └── 📓 Projeto unificado.ipynb
+│ ├── 📓 DDL.ipynb
+│ ├── 📓 Projeto unificado.ipynb
+│ └── 🖼️ Visualização da Estrutura DW.png
 │
 ├── 📁 project/
 │ ├── 📂 scripts/
-│ │ ├── 📂 src/
 │ │ │ ├── 📂 api/
 │ │ │ │ ├── 🐍 area.py
 │ │ │ │ ├── 🐍 general.py
@@ -329,10 +260,14 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 |     📦    |  `requirements.txt` |              Dependências do Python             |
 
 
+## 🗃️ Estrutura dos DataFrames (atualizado)
 
-## 🗃️ Estrutura dos DataFrames
+> Referência: DW otimizado **serving-only** (sem `evento_acesso_flat` no arquivo final) + `agg_semana_enriquecida` virou **VIEW** (não é mais tabela materializada).
+> Regra geral: **fatos/aggs não carregam dimensão**; enriquecimento acontece via **views** ou `merge` pontual com `df_colaboradores`.
 
-### 📆 `df_registros_semanais` — Presença semanal (fato)
+---
+
+### 📆 `df_registros_semanais` — Presença semanal (fato/agg)
 
 **Chave lógica:** (`Cadastro`, `Ano`, `Semana por Ano`) → **1 linha por semana por pessoa**
 
@@ -341,36 +276,37 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 * `Semana por Ano` (int)
 * `Data` (datetime)
 
-  > *Data representativa da semana (recomendado: **segunda-feira** da semana). Mantida para preservar comportamentos antigos (slider/range/plots).*
-* `Contagem Presença` (int/float)
+  > *Data âncora da semana (recomendado: **segunda-feira** ou outro “anchor” fixo). Mantida para preservar comportamentos antigos (slider/range/plots).*
+* `Contagem Presença` (int)
 
   > *Contagem de dias de presença na semana (ex.: 0..7), conforme já era no app.*
 
 **Observações**
 
-* Não deve conter colunas de dimensão (Nome/Área/Depto/etc.). Isso vem de `df_colaboradores` **apenas quando necessário**.
-* Se existir `Data` duplicada para a mesma (`Cadastro`,`Ano`,`Semana por Ano`), há risco de duplicar métricas em merges.
+* Não deve conter colunas de dimensão (Nome/Área/Depto/etc.). Isso vem de `df_colaboradores` **apenas quando necessário** (ou via view).
+* `Data` deve ser **determinística** para (`Cadastro`,`Ano`,`Semana por Ano`). Se variar, pode quebrar filtros/plots e causar duplicação em merges.
 
+---
 
-### 🗓️ `df_diarios` — Presença diária (fato)
+### 🗓️ `df_diarios` — Presença diária (fato/agg)
 
-**Chave lógica:** (`Cadastro`, `Data`, `Planta`) ou (`Cadastro`,`Data`) dependendo da sua regra real
+**Chave lógica recomendada:** (`Cadastro`, `Data`)
+*(se existir necessidade real de múltiplas plantas por dia, então (`Cadastro`, `Data`, `Planta`))*
 
 * `Cadastro` (string / Int64)
-* `Planta` (string/int/categorical)
-
-  > *Código/identificador da planta.*
+* `Planta` (string/int/categorical) *(se aplicável)*
 * `Data` (datetime)
 
 **Observações**
 
 * Colunas como `Dia Semana`, `Semana por Ano`, `Ano` **não precisam existir na base** (podem ser derivadas via `.dt` quando o app precisar).
-* Se o app usa “copresença”/validações por dia, esse é o fato correto e enxuto.
+* Esse é o fato enxuto para presença diária. Evite enriquecer com dimensões aqui.
 
+---
 
 ### 🍽️ `df_almoco` — Registros de refeitório (fato auxiliar)
 
-**Chave lógica típica:** (`Cadastro`, `Data`, `Hora`, `Coletor`) (pode variar)
+**Chave lógica típica:** (`Cadastro`, `Data`, `Hora`, `Coletor`) *(pode variar)*
 
 * `Cadastro` (string / Int64)
 * `Data` (datetime)
@@ -383,8 +319,9 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 **Observações**
 
 * **Não** carrega mais dimensão (Nome, Área, Depto, Cargo, Desligado…).
-  Se o app precisar exibir esses atributos junto de um registro de almoço, deve fazer `merge` com `df_colaboradores` por `Cadastro` **apenas no momento necessário** (ou criar uma “view enriquecida” pontual).
+* Se o app precisar exibir atributos do colaborador, faça `merge` com `df_colaboradores` por `Cadastro` **somente quando necessário** (ou crie uma view enriquecida pontual).
 
+---
 
 ### 🧑‍💼 `df_colaboradores` — Dimensão de colaboradores (1:1 por pessoa)
 
@@ -400,8 +337,6 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
   > **Regra:** `Cargo` == `SgEmp` (código vindo de ativos).
 * `Cargo Especifico` (string)
 * `Desligado` (string/bool, conforme já era)
-
-  > *Não inventar regra nova: apenas preservar como sua base define.*
 * `Data_Admissão` (datetime)
 * `Data_Demissão` (datetime)
 
@@ -415,22 +350,21 @@ Se em algum lugar do app o “Cargo” era usado como **categoria** (Horista/Men
 * `E` → `Executivo`
 * outro → `Outros`
 
-> **Importante:** não substitua `Cargo` por essa categoria se o script antigo esperava o **código** (`H/M/E`). Nesse caso, `Cargo` continua código e `Tipo_Cargo` é a categoria.
-Adicione a seção abaixo na sua documentação **“## 🗃️ Estrutura dos DataFrames”** (no mesmo padrão das outras), incluindo o `df_movimentacoes`:
+> **Importante:** não substitua `Cargo` (código) por essa categoria.
 
+---
 
 ### 🔄 `df_movimentacoes` — Movimentações (fato)
 
-**Chave lógica:** (`Cadastro`, `Data de alteração`, `Tipo da Movimentação`) → **1 linha por evento de movimentação por pessoa**
+**Chave lógica:** (`Cadastro`, `Data de alteração`, `Tipo da Movimentação`) → **1 linha por evento por pessoa**
 
 * `Cadastro` (string / Int64 — escolha e mantenha consistente)
 * `Tipo da Movimentação` (string)
 
-  > *Ex.: Admissão, Transferência, Promoção, Desligamento (depende do seu arquivo).*
+  > *Ex.: Admissão, Transferência, Promoção, Desligamento (depende do arquivo).*
 * `Data de alteração` (datetime)
 
   > *Data em que a mudança organizacional foi registrada.*
-
 * `Abreviação UO antiga` (string)
 * `Desc. UO antiga` (string)
 * `Desc. Cargo antigo` (string)
@@ -440,11 +374,11 @@ Adicione a seção abaixo na sua documentação **“## 🗃️ Estrutura dos Da
 
 **Observações**
 
-* Não deve conter colunas de dimensão (ex.: `Nome`, `Área`, `Departamento`). Isso vem de `df_colaboradores` **apenas quando necessário**.
-* Pode existir mais de 1 movimentação no mesmo dia para o mesmo `Cadastro`. Nesse caso, a combinação acima ainda funciona como chave lógica, mas **pode não ser única** se o arquivo repetir eventos. Se ocorrer, tratar duplicados (`drop_duplicates`) ou criar uma chave técnica.
-* Para exibir **Nome do colaborador** (em drilldowns/“3 setinhas”), faça `merge` com `df_colaboradores[['Cadastro','Nome']]` por `Cadastro` (garantindo `Cadastro` único em `df_colaboradores`).
-* Evite merge direto com fatos diários/semanais sem uma regra temporal clara (risco de explodir linhas e duplicar métricas).
+* Não deve conter colunas de dimensão (Nome/Área/Departamento). Isso vem de `df_colaboradores` **apenas quando necessário**.
+* Pode existir mais de 1 movimentação no mesmo dia para o mesmo `Cadastro`. Se ocorrer repetição, trate duplicados (`drop_duplicates`) ou crie uma chave técnica.
+* Para exibir **Nome do colaborador**, faça `merge` com `df_colaboradores[['Cadastro','Nome']]` por `Cadastro` (garantindo unicidade).
 
+---
 
 ### 🏆 `df_gptw` — Indicadores GPTW (dimensão/indicador)
 
@@ -453,8 +387,24 @@ Adicione a seção abaixo na sua documentação **“## 🗃️ Estrutura dos Da
 * `2024` (float/int)
 * `2023` (float/int)
 
->*Estrutura em formato largo (cada ano como coluna).*<br>
->*Caso seja convertida para formato longo, ficaria: `Área`, `Ano`, `Nota`.*
+> *Estrutura em formato largo (cada ano como coluna).*
+> *Opcional (recomendado para evolução): converter para formato longo:* `Área`, `Ano`, `Nota`.
+
+---
+
+### ⭐ `df_semana_enriquecida` — **VIEW** (não materializada)
+
+> **Atualização importante:** `df_semana_enriquecida` agora deve ser tratada como **view** (`vw_semana_enriquecida`) construída a partir de:
+
+* `df_registros_semanais` (fato/agg “skinny”)
+* `df_colaboradores` (dimensão)
+
+**Objetivo:** disponibilizar campos de dimensão (Nome/Área/Depto/Herança/Cargo) **sem duplicar** essas colunas em uma tabela grande.
+
+**Observações**
+
+* Não use essa view como “fonte” para gerar novas tabelas grandes sem necessidade.
+* A performance depende dos índices das tabelas base (`df_registros_semanais` e `df_colaboradores`), não de índice na view.
 
 ## 🔁 Lógica “Mesma Planta”
 
