@@ -564,12 +564,6 @@ O teste valida:
 - Comentários de seção em bloco: `# '''~~~~~~~~~~~~~~~~~~~~~~~ Seção ~~~~~~~~~~~~~~~~~~~~~~~'''`
 - IDs do Dash seguem o padrão: `grafico-aba-elemento`
 
-## 🧪 Testes e Validação
-- Cada aba possui callback de *sanity check* para verificar:  
-  - Se as colunas obrigatórias existem  
-  - Se o DataFrame retornado não está vazio  
-- O módulo `domain/validators.py` (opcional) pode conter verificações automáticas
-
 ## 🛠️ Solução de Problemas
 
 | Problema | Causa | Solução |
