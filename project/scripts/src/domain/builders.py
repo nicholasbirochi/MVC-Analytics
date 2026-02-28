@@ -16,6 +16,10 @@ import pandas as pd
 
 from ..core import repo_global as repo
 from .filters import normalizar_str
+from .pipeline import (
+    build_dataframe_almoco_area_sql,
+    build_dataframe_diario_area_sql,
+)
 
 
 def build_df_count_por_semana(df_semana_merged: pd.DataFrame) -> pd.DataFrame:
@@ -137,6 +141,14 @@ def build_dataframe_diario_area(
     dt_ini: pd.Timestamp | str | None = None,
     dt_fim: pd.Timestamp | str | None = None,
 ) -> pd.DataFrame:
+    if getattr(repo, "USING_DW_SQLITE", False):
+        return build_dataframe_diario_area_sql(
+            area=area,
+            subarea=subarea,
+            dt_ini=dt_ini,
+            dt_fim=dt_fim,
+        )
+
     her_df = her_df.copy() if her_df is not None else repo.her.copy()
     df_datas_local = (
         df_datas_local.copy() if df_datas_local is not None else repo.df_datas.copy()
@@ -252,6 +264,14 @@ def build_dataframe_almoco_area(
     dt_ini: pd.Timestamp | str | None = None,
     dt_fim: pd.Timestamp | str | None = None,
 ) -> pd.DataFrame:
+    if getattr(repo, "USING_DW_SQLITE", False):
+        return build_dataframe_almoco_area_sql(
+            area=area,
+            subarea=subarea,
+            dt_ini=dt_ini,
+            dt_fim=dt_fim,
+        )
+
     if df_almoco_local is None or df_almoco_local.empty:
         return pd.DataFrame(
             columns=[

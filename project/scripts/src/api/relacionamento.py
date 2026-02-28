@@ -17,7 +17,7 @@ import numpy as np
 import plotly.graph_objects as go
 
 from ..core.repo_global import df_datas, df_semana_merged, df_df_gptw, her
-from ..ui.df_gptw import df_gptw_tabela_empilhada
+from ..ui.gptw import df_gptw_tabela_empilhada
 from ..ui.theme import ESTILO_EXIBIR, ESTILO_OCULTO
 
 
