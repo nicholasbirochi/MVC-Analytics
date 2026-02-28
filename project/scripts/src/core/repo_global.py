@@ -7,15 +7,7 @@ from __future__ import annotations
 import pandas as pd
 
 from .config import SETTINGS, configure_runtime
-from ..data.datasets import (
-    load_df_df_desligados,
-    load_df_almoco,
-    load_df_datas,
-    load_df_df_ativos,
-    load_df_df_gptw,
-    load_df_headcount,
-    load_df_semana,
-)
+from ..data.datasets import load_all
 from ..domain.builders import (
     build_df_count_por_semana,
     build_dropdown_options,
@@ -24,15 +16,17 @@ from ..domain.builders import (
 
 # Configura ambiente global (locale, pandas etc.)
 configure_runtime(SETTINGS)
+USING_DW_SQLITE: bool = bool(SETTINGS.dw_path and SETTINGS.dw_path.exists())
 
 # Carregamento principal -------------------------------------------------------
-df_df_ativos: pd.DataFrame = load_df_df_ativos(SETTINGS)
-df_datas: pd.DataFrame = load_df_datas(SETTINGS)
-df_semana_merged: pd.DataFrame = load_df_semana(SETTINGS)
-df_df_desligados: pd.DataFrame = load_df_df_desligados(SETTINGS)
-df_df_gptw: pd.DataFrame = load_df_df_gptw(SETTINGS)
-df_almoco: pd.DataFrame = load_df_almoco(SETTINGS)
-df_headcount: pd.DataFrame = load_df_headcount(SETTINGS)
+_frames = load_all(SETTINGS)
+df_df_ativos: pd.DataFrame = _frames["df_df_ativos"]
+df_datas: pd.DataFrame = _frames["df_datas"]
+df_semana_merged: pd.DataFrame = _frames["df_semana_merged"]
+df_df_desligados: pd.DataFrame = _frames["df_df_desligados"]
+df_df_gptw: pd.DataFrame = _frames["df_df_gptw"]
+df_almoco: pd.DataFrame = _frames["df_almoco"]
+df_headcount: pd.DataFrame = _frames["df_headcount"]
 
 # Derivados globais -----------------------------------------------------------
 df_count_por_semana: pd.DataFrame = build_df_count_por_semana(df_semana_merged)
@@ -50,4 +44,5 @@ __all__ = [
     "df_count_por_semana",
     "her",
     "dropdown_options",
+    "USING_DW_SQLITE",
 ]

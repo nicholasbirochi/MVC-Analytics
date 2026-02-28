@@ -43,7 +43,7 @@ from ..ui.figures import (
     grafico_rede_encontros_exec,
     _sanitize_object_columns,
 )
-from ..ui.df_gptw import mini_tabela_df_gptw
+from ..ui.gptw import mini_tabela_df_gptw
 from ..ui.theme import ESTILO_EXIBIR, ESTILO_OCULTO, aplicar_tema_pb
 
 estilo_exibir = ESTILO_EXIBIR
