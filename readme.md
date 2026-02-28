@@ -579,7 +579,7 @@ Projeto interno — uso corporativo.
       <p style="margin: 2px 0; color: #444; font-size: 14px;">Estagiário de Análise de Dados | Data Analytics</p>
       <p style="margin: 2px 0; color: #444; font-size: 14px;">Volkswagen do Brasil</p>
       <p style="margin: 6px 0; font-size: 13px;">
-        <a href="mailto:seu_email@exemplo.com" style="color: #0055A5; text-decoration: none; font-weight: 500;">Email</a> &nbsp;•&nbsp;
+        <a href="mailto:nicholas.birochi@gmail.com" style="color: #0055A5; text-decoration: none; font-weight: 500;">Email</a> &nbsp;•&nbsp;
         <a href="https://www.linkedin.com/in/nicholas-birochi/" style="color: #0A66C2; text-decoration: none; font-weight: 500;">LinkedIn</a> &nbsp;•&nbsp;
         <a href="https://github.com/nicholasbirochi" style="color: #181717; text-decoration: none; font-weight: 500;">GitHub</a> &nbsp;•&nbsp;
         <a href="https://app.rocketseat.com.br/me/nicholas-birochi-1501" style="color: #8257E5; text-decoration: none; font-weight: 500;">Rocketseat</a>
