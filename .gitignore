@@ -35,6 +35,7 @@ Códigos Extras/Documentação/
 # Arquivos de configuração sensíveis
 .env
 .env.*
+!.env.example
 
 # Chaves e certificados
 *.pem
