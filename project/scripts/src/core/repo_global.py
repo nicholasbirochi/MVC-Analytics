@@ -8,11 +8,71 @@ import pandas as pd
 
 from .config import SETTINGS, configure_runtime
 from ..data.datasets import load_all
-from ..domain.builders import (
-    build_df_count_por_semana,
-    build_dropdown_options,
-    build_her,
-)
+
+
+def _build_df_count_por_semana(df_semana_merged: pd.DataFrame) -> pd.DataFrame:
+    if "Dia Semana" in df_semana_merged.columns:
+        out = (
+            df_semana_merged.groupby(
+                [
+                    "Cadastro",
+                    "Nome",
+                    "Área",
+                    "Departamento",
+                    "Heranca",
+                    "Cargo Especifico",
+                    "Desligado",
+                ]
+            )["Dia Semana"]
+            .value_counts()
+            .reset_index()
+        )
+        out.columns = [
+            "Cadastro",
+            "Nome",
+            "Área",
+            "Departamento",
+            "Heranca",
+            "Cargo Especifico",
+            "Desligado",
+            "Dia Semana",
+            "Contagem Presença",
+        ]
+        return out
+    return pd.DataFrame(
+        columns=[
+            "Cadastro",
+            "Nome",
+            "Área",
+            "Departamento",
+            "Heranca",
+            "Cargo Especifico",
+            "Desligado",
+            "Dia Semana",
+            "Contagem Presença",
+        ]
+    )
+
+
+def _build_her(df_semana_merged: pd.DataFrame) -> pd.DataFrame:
+    if df_semana_merged is None or df_semana_merged.empty:
+        return pd.DataFrame(columns=["Área", "Departamento", "Heranca"])
+    return (
+        df_semana_merged[["Área", "Departamento", "Heranca"]]
+        .drop_duplicates()
+        .sort_values("Área")
+    )
+
+
+def _build_dropdown_options(her_df: pd.DataFrame) -> list[dict]:
+    if her_df is None or her_df.empty:
+        return [{"label": "Geral (todas as areas)", "value": "GERAL"}]
+    base = [{"label": "Geral (todas as areas)", "value": "GERAL"}]
+    options = [
+        {"label": f"{row['Área']} {row['Departamento']}", "value": row["Área"]}
+        for _, row in her_df.iterrows()
+    ]
+    return base + options
 
 # Configura ambiente global (locale, pandas etc.)
 configure_runtime(SETTINGS)
@@ -29,9 +89,9 @@ df_almoco: pd.DataFrame = _frames["df_almoco"]
 df_headcount: pd.DataFrame = _frames["df_headcount"]
 
 # Derivados globais -----------------------------------------------------------
-df_count_por_semana: pd.DataFrame = build_df_count_por_semana(df_semana_merged)
-her: pd.DataFrame = build_her(df_semana_merged)
-dropdown_options: list[dict] = build_dropdown_options(her)
+df_count_por_semana: pd.DataFrame = _build_df_count_por_semana(df_semana_merged)
+her: pd.DataFrame = _build_her(df_semana_merged)
+dropdown_options: list[dict] = _build_dropdown_options(her)
 
 __all__ = [
     "df_df_ativos",
