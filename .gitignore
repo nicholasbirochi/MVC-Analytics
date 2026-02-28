@@ -18,6 +18,31 @@ venv/
 *.parquet
 *.db
 *.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.db-wal
+*.db-shm
+*.sql
+*.dump
+*.bak
+*.zip
+*.7z
+*.tar.gz
 
 # Pasta específica do projeto
 Códigos Extras/Documentação/
+
+# Arquivos de configuração sensíveis
+.env
+.env.*
+
+# Chaves e certificados
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.der
+
+# Jupyter
+.ipynb_checkpoints/
