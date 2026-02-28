@@ -43,6 +43,9 @@ class Settings:
 
     base_dir: Path
     data_dir: Path
+    dw_path: Path | None
+    login_db_path: Path | None
+    raw_data_dir: Path | None
     pasta_df_desligados: Path
     pasta_df_ativos: Path
     caminho_df_gptw: Path
@@ -112,6 +115,32 @@ def get_settings() -> Settings:
         default_data_dir,
         bases=(repo_root, base_dir, external_data_dir, internal_data_dir),
     )
+    dw_default = (data_dir / "dw_ronda.sqlite").resolve()
+    dw_path = _resolve_path(
+        os.getenv("RONDA_DW_PATH"),
+        dw_default,
+        bases=(repo_root, base_dir, data_dir, external_data_dir, internal_data_dir),
+    )
+    if not dw_path.exists():
+        dw_path = None
+
+    login_default = (data_dir / "db_login.sqlite").resolve()
+    login_db_path = _resolve_path(
+        os.getenv("RONDA_LOGIN_DB_PATH"),
+        login_default,
+        bases=(repo_root, base_dir, data_dir, external_data_dir, internal_data_dir),
+    )
+    if not login_db_path.exists():
+        login_db_path = None
+
+    raw_default = (repo_root.parent / "_dados_ronda_local" / "Base de Dados Original").resolve()
+    raw_data_dir = _resolve_path(
+        os.getenv("RONDA_RAW_DATA_DIR"),
+        raw_default,
+        bases=(repo_root, base_dir, repo_root.parent),
+    )
+    if not raw_data_dir.exists():
+        raw_data_dir = None
 
     bases = (repo_root, base_dir, data_dir)
     pasta_df_desligados = _resolve_path(
@@ -169,6 +198,9 @@ def get_settings() -> Settings:
     return Settings(
         base_dir=base_dir,
         data_dir=data_dir,
+        dw_path=dw_path,
+        login_db_path=login_db_path,
+        raw_data_dir=raw_data_dir,
         pasta_df_desligados=pasta_df_desligados,
         pasta_df_ativos=pasta_df_ativos,
         caminho_df_gptw=caminho_df_gptw,
@@ -191,6 +223,9 @@ def get_settings() -> Settings:
 SETTINGS = get_settings()
 BASE_DIR: Final[Path] = SETTINGS.base_dir
 DATA_DIR: Final[Path] = SETTINGS.data_dir
+DW_SQLITE_PATH: Final[Path] | None = SETTINGS.dw_path
+LOGIN_DB_PATH: Final[Path] | None = SETTINGS.login_db_path
+RAW_DATA_DIR: Final[Path] | None = SETTINGS.raw_data_dir
 DEPARTAMENTOS_PARQUET: Final[Path] = SETTINGS.pasta_df_ativos
 DATAS_PARQUET: Final[Path] = SETTINGS.caminho_datas
 SEMANA_PARQUET: Final[Path] = SETTINGS.caminho_semana
@@ -230,8 +265,11 @@ def validate_data_files(
     required: tuple[Path, ...] | None = None,
     settings: Settings | None = None,
 ) -> None:
-    """Valida a existencia dos arquivos .parquet essenciais."""
+    """Valida a existencia das fontes de dados essenciais."""
     settings = settings or SETTINGS
+    if settings.dw_path and settings.dw_path.exists():
+        return
+
     if required is None:
         required = (
             DEPARTAMENTOS_PARQUET,
@@ -243,4 +281,8 @@ def validate_data_files(
         )
     missing = [p for p in required if p and not p.exists()]
     if missing:
-        raise FileNotFoundError("Arquivos ausentes: " + " | ".join(str(m) for m in missing))
+        raise FileNotFoundError(
+            "Arquivos ausentes: "
+            + " | ".join(str(m) for m in missing)
+            + " (ou configure RONDA_DW_PATH para usar o DW SQLite canonico)"
+        )

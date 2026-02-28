@@ -15,7 +15,14 @@ import pandas as pd
 from dash import html
 
 from ..core import repo_global as repo
-from ..domain.df_gptw import (ARROW_UP, ARROW_DOWN, ARROW_NONE, COLOR_UP, COLOR_DOWN, COLOR_NONE)
+from ..domain.gptw import (
+    ARROW_DOWN,
+    ARROW_NONE,
+    ARROW_UP,
+    COLOR_DOWN,
+    COLOR_NONE,
+    COLOR_UP,
+)
 
 
 

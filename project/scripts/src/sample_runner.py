@@ -1,8 +1,10 @@
-"""CLI para reproduzir o fluxo do notebook via MVC controllers."""
+"""CLI utilitario para validar o bootstrap do app MVC."""
 from __future__ import annotations
 
-from .mvc.controllers.sample_controller import run_sample
+from .main import create_app
 
 
 if __name__ == "__main__":
-    run_sample(area="GERAL", subarea=None, periodo_idx=None, max_rows=5)
+    app = create_app()
+    print("App carregado com sucesso.")
+    print("Routes:", sorted({str(page.get("path", "")) for page in app._pages.values()}) if hasattr(app, "_pages") else "n/a")
