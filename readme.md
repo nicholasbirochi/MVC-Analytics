@@ -418,19 +418,26 @@ Implementação:
 
 ## ⚙️ Configuração via `.env`
 
-```python
-pasta_desligados=Projeto/Banco de Dados/Desligados.parquet
-pasta_ativos=Projeto/Banco de Dados/Ativos.parquet
-caminho_gptw=Projeto/Banco de Dados/GPTW.parquet
-caminho_semana=Projeto/Banco de Dados/ArquivoFinal.parquet
-caminho_datas=Projeto/Banco de Dados/ArquivoFinalDatas.parquet
+Use `.env` local (ignorado pelo Git) com as variáveis abaixo:
 
-ND_PANDAS_LOCALE=pt_BR
+```dotenv
+# Fonte canonica (obrigatoria para equivalencia com o notebook)
+RONDA_DW_PATH=../_dados_ronda_local/project/database/dw_ronda.sqlite
+
+# Opcional: base de login (evite usar no modo publico)
+RONDA_LOGIN_DB_PATH=../_dados_ronda_local/project/database/db_login.sqlite
+
+# Opcional: pasta de dados brutos locais (csv/xlsx fora do repo)
+RONDA_RAW_DATA_DIR=../_dados_ronda_local/Base de Dados Original
+
+# Runtime
+ND_PANDAS_LOCALE=pt_BR.utf8
 ND_CACHE_TTL=900
-ND_DEBUG=true
+ND_DEBUG=false
 ND_PORT=8050
 ```
-Edite `src/settings.py` se precisar de valores padrão diferentes.
+
+Sem `RONDA_DW_PATH`, o app tenta fallback parquet legado.
 
 ## 🧰 Dependências
 
@@ -450,27 +457,51 @@ python-dateutil>=2.9
 
 ## 🚀 Como rodar o projeto
 
-```cmd
-# 1️⃣ Criar o ambiente virtual
-python -m venv .venv
+```powershell
+# 1) Ambiente virtual
+py -3 -m venv .venv
+.\.venv\Scripts\Activate.ps1
 
-# 2️⃣ Ativar o ambiente virtual
-# Windows
-.\.venv\Scripts\activate
-# Linux / macOS
-source .venv/bin/activate
-
-# 3️⃣ Instalar dependências
+# 2) Dependencias
 pip install -r requirements.txt
 
-# 4️⃣ Executar o projeto
-cd Projeto\app
-python -m src.main
+# 3) Configurar .env local (baseado no .env.example)
 
-# 5️⃣ Acesse em:  
-http://localhost:8050
+# 4) Subir o MVC
+py -3 -m project.scripts.src.main
 ```
->*Atenção: Execute sempre a partir da raiz do projeto, não de dentro da pasta `src/`.*
+
+App: `http://localhost:8050`
+
+Comando unico alternativo (bootstrap rapido):
+
+```powershell
+py -3 -c "import project.scripts.src.main as m; m.create_app(); print('ok')"
+```
+
+## 🧪 Testes e Validação
+
+Teste de equivalencia notebook vs MVC:
+
+```powershell
+# unittest (disponivel por padrao)
+py -3 -m unittest tests.test_equivalence_notebook_vs_mvc -v
+
+# pytest (se instalado no ambiente)
+pytest tests/test_equivalence_notebook_vs_mvc.py -v
+```
+
+O teste valida:
+- mesmas colunas/ordem
+- mesmos valores numéricos
+- delegacao dos builders para SQL canonica
+
+## 🔐 Publicação Segura (repo público)
+
+- Não versione dados reais, SQLite, WAL/SHM, dumps ou `.env` real.
+- Mantenha dados locais fora do repositório em `../_dados_ronda_local/`.
+- Use somente `.env.example` no Git.
+- O MVC agora lê `RONDA_DW_PATH` externamente para reproduzir o notebook sem copiar base para dentro do repo.
 
 ## 🧠 Cache & Performance
 - Cache leve (Flask-Caching) para DataFrames semanais  
