@@ -725,7 +725,7 @@ def build_dataframe_almoco_area_sql(
       SELECT
         a."Data" AS "Data",
         a."Cadastro" AS "Cadastro",
-        GROUP_CONCAT(DISTINCT a."Planta", '|') AS "Planta"
+        REPLACE(GROUP_CONCAT(DISTINCT a."Planta"), ',', '|') AS "Planta"
       FROM vw_almoco_cluster a
       JOIN cad ON cad."Cadastro" = a."Cadastro"
       WHERE a."Data" BETWEEN ? AND ?
@@ -770,4 +770,3 @@ def build_dataframe_almoco_area_sql(
     )
     df["Planta"] = df["Planta"].astype(str).fillna("")
     return df
-
