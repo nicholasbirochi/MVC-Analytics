@@ -95,14 +95,22 @@ def get_settings() -> Settings:
     repo_root = Path(__file__).resolve().parents[4]
     project_dir = Path(__file__).resolve().parents[3]
 
-    for candidate in (repo_root / ".env", project_dir / ".env"):
+    for candidate in (
+        repo_root / ".env",
+        repo_root / ".env.local",
+        project_dir / ".env",
+        project_dir / ".env.local",
+    ):
         _load_env_file(candidate)
 
     base_dir = project_dir
+    external_data_dir = (repo_root.parent / "_dados_ronda_local" / "project" / "database").resolve()
+    internal_data_dir = (base_dir / "database").resolve()
+    default_data_dir = external_data_dir if external_data_dir.exists() else internal_data_dir
     data_dir = _resolve_path(
         os.getenv("ND_DATA_DIR"),
-        (base_dir / "database").resolve(),
-        bases=(repo_root, base_dir),
+        default_data_dir,
+        bases=(repo_root, base_dir, external_data_dir, internal_data_dir),
     )
 
     bases = (repo_root, base_dir, data_dir)
