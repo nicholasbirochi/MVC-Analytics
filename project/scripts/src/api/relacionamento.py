@@ -16,7 +16,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 
-from ..core.repo_global import df_datas, df_semana_merged, df_df_gptw, her
+from ..core.repo_global import df_datas, df_semana_merged, df_df_ativos, df_df_gptw, her
 from ..ui.gptw import df_gptw_tabela_empilhada
 from ..ui.theme import ESTILO_EXIBIR, ESTILO_OCULTO
 
@@ -26,6 +26,13 @@ estilo_oculto = ESTILO_OCULTO
 
 
 def register(app):
+    def _people_base_df() -> pd.DataFrame:
+        if {"Cadastro", "Nome"}.issubset(df_semana_merged.columns) and not df_semana_merged.empty:
+            return df_semana_merged[["Cadastro", "Nome"]].copy()
+        if {"Cadastro", "Nome"}.issubset(df_df_ativos.columns) and not df_df_ativos.empty:
+            return df_df_ativos[["Cadastro", "Nome"]].copy()
+        return pd.DataFrame(columns=["Cadastro", "Nome"])
+
     @app.callback(
         Output('tabela-df_gptw-rel', 'children'),
         Input('dropdown-area-df_gptw', 'value')
@@ -384,7 +391,7 @@ def register(app):
         Input('url', 'pathname')
     )
     def carregar_opcoes_pessoas(_):
-        df_p = (df_semana_merged[['Cadastro','Nome']]
+        df_p = (_people_base_df()
                 .dropna()
                 .drop_duplicates())
         df_p['Cadastro'] = df_p['Cadastro'].astype(str)
@@ -408,7 +415,7 @@ def register(app):
         if not pessoas_ids:
             return []
 
-        cad_to_nome = (df_semana_merged[['Cadastro','Nome']]
+        cad_to_nome = (_people_base_df()
                        .drop_duplicates()
                        .assign(Cadastro=lambda d: d['Cadastro'].astype(str))
                        .set_index('Cadastro')['Nome']
@@ -501,7 +508,7 @@ def register(app):
             return info, fig_msg("—")
 
         # ------------------ nomes ------------------
-        cad_to_nome = (df_semana_merged[['Cadastro','Nome']]
+        cad_to_nome = (_people_base_df()
                        .drop_duplicates()
                        .assign(Cadastro=lambda d: d['Cadastro'].astype(str))
                        .set_index('Cadastro')['Nome']
@@ -681,7 +688,11 @@ def register(app):
         if 'Área' in df_df_ativos.columns:
             todas = sorted(df_df_ativos['Área'].dropna().unique().tolist())
         else:
-            todas = sorted(df_semana_merged['Área'].dropna().unique().tolist())
+            todas = (
+                sorted(df_semana_merged['Área'].dropna().unique().tolist())
+                if 'Área' in df_semana_merged.columns
+                else []
+            )
 
         her_df = globals().get('her', pd.DataFrame())
         selecionadas = [str(a).strip() for a in (selecionadas or [])]
