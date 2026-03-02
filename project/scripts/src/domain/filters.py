@@ -168,7 +168,12 @@ def filtrar_base(
     her_df = her_df if her_df is not None else getattr(repo, "her", pd.DataFrame())
 
     dt_ini, dt_fim = periodo_limites(periodo_idx)
-    df_filtrado = filtrar_por_periodo(df_semana_merged, dt_ini, dt_fim).copy()
+    if getattr(repo, "USING_DW_SQLITE", False):
+        from .pipeline import dw_fetch_semana_enriquecida
+
+        df_filtrado = dw_fetch_semana_enriquecida(dt_ini=dt_ini, dt_fim=dt_fim).copy()
+    else:
+        df_filtrado = filtrar_por_periodo(df_semana_merged, dt_ini, dt_fim).copy()
 
     adm_cache, dem_cache = carregar_adm_dem_cache(
         repo.df_df_desligados if hasattr(repo, "df_df_desligados") else None,

@@ -187,7 +187,9 @@ def load_sources(config: Settings | None = None) -> dict[str, pd.DataFrame]:
         )
         if vw_sem == "vw_semana_enriquecida":
             df_registros_semanais = _load_view(conn, "vw_df_registros_semanais")
-            df_semana_enriquecida = _load_view(conn, "vw_semana_enriquecida")
+            # Evita carregar uma view já denormalizada muito grande no bootstrap do app.
+            # A versão enriquecida é buscada sob demanda em `dw_fetch_semana_enriquecida`.
+            df_semana_enriquecida = pd.DataFrame()
         else:
             df_registros_semanais = _load_view(conn, "vw_df_registros_semanais")
             df_semana_enriquecida = pd.DataFrame()
@@ -323,24 +325,8 @@ def build_facts(
     if not df_semana_enriquecida.empty:
         df_semana_merged = df_semana_enriquecida
     else:
-        cols_dim_ui = [
-            col
-            for col in [
-                "Cadastro",
-                "Nome",
-                "Cargo",
-                "Cargo Especifico",
-                "Área",
-                "Departamento",
-                "Heranca",
-                "Desligado",
-            ]
-            if col in df_colaboradores.columns
-        ]
-        dim_ui = df_colaboradores[cols_dim_ui].drop_duplicates(subset=["Cadastro"])
-        df_semana_merged = df_registros_semanais.merge(
-            dim_ui, on="Cadastro", how="left", validate="m:1"
-        )
+        # Mantem bootstrap leve: evita denormalizar 1+ milhao de linhas em memoria.
+        df_semana_merged = df_registros_semanais.copy()
 
     for dff in (df_semana_merged, raw["df_diarios"], raw["df_almoco"]):
         if "Cadastro" in dff.columns:
@@ -394,19 +380,22 @@ def compute_metrics(
     """Calcula agregacoes canônicas usadas pelo MVC."""
     del dims, params
     df_semana_merged = facts["df_semana_merged"]
+    count_cols = [
+        "Cadastro",
+        "Nome",
+        "Área",
+        "Departamento",
+        "Heranca",
+        "Cargo Especifico",
+        "Desligado",
+    ]
 
-    if "Dia Semana" in df_semana_merged.columns:
+    if "Dia Semana" in df_semana_merged.columns and all(
+        col in df_semana_merged.columns for col in count_cols
+    ):
         df_count_por_semana = (
             df_semana_merged.groupby(
-                [
-                    "Cadastro",
-                    "Nome",
-                    "Área",
-                    "Departamento",
-                    "Heranca",
-                    "Cargo Especifico",
-                    "Desligado",
-                ]
+                count_cols
             )["Dia Semana"]
             .value_counts()
             .reset_index()
@@ -437,7 +426,12 @@ def compute_metrics(
             ]
         )
 
-    if df_semana_merged.empty:
+    if (
+        df_semana_merged.empty
+        or "Área" not in df_semana_merged.columns
+        or "Departamento" not in df_semana_merged.columns
+        or "Heranca" not in df_semana_merged.columns
+    ):
         her = pd.DataFrame(columns=["Área", "Departamento", "Heranca"])
     else:
         her = (

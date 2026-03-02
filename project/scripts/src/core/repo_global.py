@@ -11,7 +11,17 @@ from ..data.datasets import load_all
 
 
 def _build_df_count_por_semana(df_semana_merged: pd.DataFrame) -> pd.DataFrame:
-    if "Dia Semana" in df_semana_merged.columns:
+    required = [
+        "Cadastro",
+        "Nome",
+        "Área",
+        "Departamento",
+        "Heranca",
+        "Cargo Especifico",
+        "Desligado",
+        "Dia Semana",
+    ]
+    if all(col in df_semana_merged.columns for col in required):
         out = (
             df_semana_merged.groupby(
                 [
@@ -54,14 +64,33 @@ def _build_df_count_por_semana(df_semana_merged: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def _build_her(df_semana_merged: pd.DataFrame) -> pd.DataFrame:
-    if df_semana_merged is None or df_semana_merged.empty:
-        return pd.DataFrame(columns=["Área", "Departamento", "Heranca"])
-    return (
-        df_semana_merged[["Área", "Departamento", "Heranca"]]
-        .drop_duplicates()
-        .sort_values("Área")
+def _build_her(
+    df_semana_merged: pd.DataFrame,
+    df_df_ativos: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    has_cols_semana = (
+        df_semana_merged is not None
+        and not df_semana_merged.empty
+        and {"Área", "Departamento", "Heranca"}.issubset(df_semana_merged.columns)
     )
+    if has_cols_semana:
+        return (
+            df_semana_merged[["Área", "Departamento", "Heranca"]]
+            .drop_duplicates()
+            .sort_values("Área")
+        )
+
+    if (
+        df_df_ativos is not None
+        and not df_df_ativos.empty
+        and {"Área", "Departamento", "Heranca"}.issubset(df_df_ativos.columns)
+    ):
+        return (
+            df_df_ativos[["Área", "Departamento", "Heranca"]]
+            .drop_duplicates()
+            .sort_values("Área")
+        )
+    return pd.DataFrame(columns=["Área", "Departamento", "Heranca"])
 
 
 def _build_dropdown_options(her_df: pd.DataFrame) -> list[dict]:
@@ -90,7 +119,7 @@ df_headcount: pd.DataFrame = _frames["df_headcount"]
 
 # Derivados globais -----------------------------------------------------------
 df_count_por_semana: pd.DataFrame = _build_df_count_por_semana(df_semana_merged)
-her: pd.DataFrame = _build_her(df_semana_merged)
+her: pd.DataFrame = _build_her(df_semana_merged, df_df_ativos)
 dropdown_options: list[dict] = _build_dropdown_options(her)
 
 __all__ = [
