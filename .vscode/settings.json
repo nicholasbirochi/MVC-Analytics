@@ -3,7 +3,6 @@
         ".git": true,
         ".venv": true,
         "venv": true,
-        ".env": true,
         "__pycache__": true,
         "**/__pycache__": true,
         "**/__init__.py": true,

@@ -13,10 +13,24 @@ from __future__ import annotations
 from dash import Dash
 from flask_caching import Cache
 
-from .api.router import register_all
-from .core.config import SETTINGS, configure_runtime, validate_data_files
-from .domain.cache_utils import CacheOptions, as_dict
-from .ui.layout import LAYOUT
+if __package__:
+    from .api.router import register_all
+    from .core.config import SETTINGS, configure_runtime, validate_data_files
+    from .domain.cache_utils import CacheOptions, as_dict
+    from .ui.layout import LAYOUT
+else:
+    # Suporta execucao direta: `py .\scripts\src\main.py`
+    import sys
+    from pathlib import Path
+
+    scripts_dir = Path(__file__).resolve().parent.parent
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+
+    from src.api.router import register_all
+    from src.core.config import SETTINGS, configure_runtime, validate_data_files
+    from src.domain.cache_utils import CacheOptions, as_dict
+    from src.ui.layout import LAYOUT
 
 
 def create_app() -> Dash:
