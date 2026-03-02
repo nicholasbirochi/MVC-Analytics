@@ -32,15 +32,15 @@ from ..domain.builders import (
 from ..domain.periods import (
     LT_MONTHS, LT_MARKS,
     LT_C1_MIN, LT_C1_MAX, LT_C2_MIN, LT_C2_MAX,
+    LT_FIM_ABS, lt_idx_of,
     periodo_limites,
 )
 from ..domain.filters import slug
 from ..ui.figures import (
     grafico_heatmap_encontros_men,
     grafico_heatmap_encontros_exec,
-    grafico_pentagono_rel_exec,
     grafico_pentagonos_rel_exec_multiplos,
-    grafico_rede_encontros_exec,
+    grafico_pentagonos_exec_exec_multiplos,
     _sanitize_object_columns,
 )
 from ..ui.gptw import mini_tabela_df_gptw
@@ -54,9 +54,9 @@ def areas_toggle_ui():
     """Toggle simples para alternar Teia (radar) e Heatmap."""
     return html.Div(
         [
-            dcc.Store(id="areas_vis_state", data="teia"),
+            dcc.Store(id="areas_vis_state", data="heatmap"),
             html.Button(
-                "Modo: Teia (rede)",
+                "Modo: Heatmap (detalhe)",
                 id="areas_vis_btn",
                 n_clicks=0,
                 style={
@@ -122,7 +122,11 @@ def register(app):
         elif cenario == 'c2':
             min_i, max_i = LT_C2_MIN, LT_C2_MAX
         else:  # 'all'
-            min_i, max_i = 0, len(LT_MONTHS)-1
+            min_i = 0
+            try:
+                max_i = lt_idx_of(LT_FIM_ABS.year, LT_FIM_ABS.month)
+            except Exception:
+                max_i = len(LT_MONTHS) - 1
 
         # valor atual do slider, também “clampado”
         if slider_val_state:
@@ -212,9 +216,13 @@ def register(app):
 
         if precisa_df:
             if is_almoco:
-                df_full = build_dataframe_almoco_area(area_base, sub_val_out, her, df_almoco, df_df_ativos)
+                df_full = build_dataframe_almoco_area(
+                    area_base, sub_val_out, her, df_almoco, df_df_ativos, dt_ini=dt_ini, dt_fim=dt_fim
+                )
             else:
-                df_full = build_dataframe_diario_area(area_base, sub_val_out, her, df_datas, df_df_ativos)
+                df_full = build_dataframe_diario_area(
+                    area_base, sub_val_out, her, df_datas, df_df_ativos, dt_ini=dt_ini, dt_fim=dt_fim
+                )
 
             # filtros opcionais (df_desligados/viajam) – mantenha como já estava, se fizer sentido para almoço
             if (df_desligados_area == 'right' and not df_full.empty and
@@ -241,9 +249,9 @@ def register(app):
 
         # --- TÍTULO amigável por modo ---
         periodo = f"{m0}/{y0} a {m1}/{y1}"
-        titulo_men = (f"Almoços e Saídas — Mensalistas × Executivos ({periodo})"
+        titulo_men = (f"Almoços e Saídas — Mensalistas e Horistas × Executivos ({periodo})"
                       if is_almoco else
-                      f"Presença Percentual dos Mensalistas com os seus Executivos ({periodo})")
+                      f"Presença Percentual de Mensalistas e Horistas com os seus Executivos ({periodo})")
         titulo_exec = (f"Almoços e Saídas — Executivos × Executivos ({periodo})"
                        if is_almoco else
                        f"Presença Percentual entre Executivos ({periodo})")
@@ -252,21 +260,20 @@ def register(app):
         fig_men_out = no_update
         fig_exec_out = no_update
 
-        vis_mode = (areas_vis_state or "teia")
+        vis_mode = (areas_vis_state or "heatmap")
         if isinstance(vis_mode, str):
             vis_mode = vis_mode.lower()
         else:
-            vis_mode = "teia"
-        if vis_mode == "teia":
-            vis_mode = "network"
+            vis_mode = "heatmap"
 
         if precisa_df:
             if vis_mode == "network":
                 try:
                     df_net = _sanitize_object_columns(df_full)
-
                     fig_men_full = grafico_pentagonos_rel_exec_multiplos(df_net, titulo_men, max_exec=999)
-                    fig_exec_full = grafico_rede_encontros_exec(df_net, titulo_exec, validar_mesma_planta=True)
+                    fig_exec_full = grafico_pentagonos_exec_exec_multiplos(
+                        df_net, titulo_exec, max_exec=999
+                    )
                 except Exception:
                     fig_men_full = aplicar_tema_pb(
                         grafico_heatmap_encontros_men(df_full, titulo_men, validar_mesma_planta=True),
@@ -277,7 +284,7 @@ def register(app):
                         grafico_heatmap_encontros_exec(df_full, titulo_exec, validar_mesma_planta=True),
                         so_y_boxplot=False,
                         grade=False,
-                        clean=False,
+                        clean=True,
                     )
             else:
                 fig_men_full = aplicar_tema_pb(
@@ -289,7 +296,7 @@ def register(app):
                     grafico_heatmap_encontros_exec(df_full, titulo_exec, validar_mesma_planta=True),
                     so_y_boxplot=False,
                     grade=False,
-                    clean=False,
+                    clean=True,
                 )
 
             fig_men_full.update_layout(uirevision="area-vis-men")
@@ -623,12 +630,12 @@ def register(app):
         prevent_initial_call=False
     )
     def _toggle_areas_vis(n_clicks, current):
-        current = (current or "network").lower()
+        current = (current or "heatmap").lower()
         if current == "teia":
             current = "network"
-        next_state = current if (n_clicks or 0) == 0 else ("heatmap" if current == "network" else "network")
+        next_state = current if (n_clicks or 0) == 0 else ("network" if current == "heatmap" else "heatmap")
         label = (
-            "Modo: Teia (rede)" if next_state == "network"
-            else "Modo: Heatmap (detalhe)"
+            "Modo: Heatmap (detalhe)" if next_state == "heatmap"
+            else "Modo: Teia (rede)"
         )
         return next_state, label
