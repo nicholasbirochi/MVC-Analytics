@@ -487,6 +487,190 @@ def grafico_pentagonos_rel_exec_multiplos(
     return fig
 
 
+def _construir_encontros_exec_exec(df_full: pd.DataFrame) -> pd.DataFrame:
+    """Cria pares (Data, ExecA, ExecB) com co-presença na mesma planta/dia."""
+    if df_full is None or df_full.empty:
+        return pd.DataFrame(columns=["Data", "ExecA", "ExecB"])
+
+    df = _sanitize_object_columns(df_full.copy())
+    df["Data"] = pd.to_datetime(df.get("Data"), errors="coerce").dt.normalize()
+    df = df.dropna(subset=["Data"])
+    if df.empty:
+        return pd.DataFrame(columns=["Data", "ExecA", "ExecB"])
+
+    if "Cadastro" not in df.columns:
+        return pd.DataFrame(columns=["Data", "ExecA", "ExecB"])
+    if "Cargo" not in df.columns:
+        return pd.DataFrame(columns=["Data", "ExecA", "ExecB"])
+
+    df["Cadastro"] = df["Cadastro"].astype(str)
+    df["Cargo"] = df["Cargo"].astype(str).str.upper().str[:1]
+    df = df[df["Cargo"].eq("E")].copy()
+    if df.empty:
+        return pd.DataFrame(columns=["Data", "ExecA", "ExecB"])
+
+    if "Planta" in df.columns:
+        df["Planta"] = df["Planta"].apply(_normalizar_planta_cell)
+    else:
+        df["Planta"] = [frozenset(["x"])] * len(df)
+
+    pares: list[tuple[pd.Timestamp, str, str]] = []
+    for _, grupo in df.groupby("Data"):
+        grupo = grupo.sort_values("Cadastro").drop_duplicates(subset=["Cadastro"], keep="last")
+        if grupo.empty:
+            continue
+        registros = list(zip(grupo["Cadastro"].tolist(), grupo["Planta"].tolist()))
+        for i in range(len(registros)):
+            cid_a, pl_a = registros[i]
+            for j in range(i + 1, len(registros)):
+                cid_b, pl_b = registros[j]
+                if not pl_a or not pl_b:
+                    continue
+                if pl_a.isdisjoint(pl_b):
+                    continue
+                pares.append((grupo["Data"].iloc[0], str(cid_a), str(cid_b)))
+
+    return pd.DataFrame(pares, columns=["Data", "ExecA", "ExecB"])
+
+
+def grafico_pentagonos_exec_exec_multiplos(
+    df_full: pd.DataFrame,
+    titulo: str,
+    max_exec: int = 999,
+) -> go.Figure:
+    """Radar dinâmico: 1 polar por executivo, eixos = executivos relacionados."""
+    from plotly.subplots import make_subplots
+
+    fig_empty = go.Figure()
+    fig_empty.update_layout(
+        title={"text": titulo, "font": {"family": "VW Text", "size": 22}},
+        height=420,
+        showlegend=False,
+    )
+
+    if df_full is None or getattr(df_full, "empty", True):
+        return fig_empty
+
+    df_rel = _sanitize_object_columns(df_full.copy())
+    df_rel["Data"] = pd.to_datetime(df_rel.get("Data"), errors="coerce")
+    df_rel = df_rel.dropna(subset=["Data"])
+    if df_rel.empty:
+        return fig_empty
+
+    if "Cadastro" in df_rel.columns:
+        df_rel["Cadastro"] = df_rel["Cadastro"].map(_safe_hashable).astype(str)
+    if "Cargo" in df_rel.columns:
+        df_rel["Cargo"] = df_rel["Cargo"].map(_safe_hashable).astype(str).str.upper().str[:1]
+
+    meta_src = df_rel.sort_values("Data").drop_duplicates("Cadastro", keep="last")
+    name_map = {
+        str(row["Cadastro"]): ("" if pd.isna(row.get("Nome")) else str(row.get("Nome")))
+        for _, row in meta_src.iterrows()
+    }
+
+    rel_df = _construir_encontros_exec_exec(df_rel)
+    if rel_df.empty:
+        return fig_empty
+
+    counts_base = rel_df.groupby(["ExecA", "ExecB"]).size().reset_index(name="encontros")
+    counts_rev = counts_base.rename(columns={"ExecA": "ExecB", "ExecB": "ExecA"})
+    counts = pd.concat([counts_base, counts_rev], ignore_index=True)
+    if counts.empty:
+        return fig_empty
+
+    totais_exec = counts.groupby("ExecA")["encontros"].sum().sort_values(ascending=False)
+    exec_ids = totais_exec.index.tolist()
+    if len(exec_ids) > int(max_exec):
+        exec_ids = exec_ids[: int(max_exec)]
+    n = int(len(exec_ids))
+    if n == 0:
+        return fig_empty
+
+    cols = 3 if n > 1 else 1
+    rows = int(math.ceil(n / cols))
+    specs = [[{"type": "polar"} for _ in range(cols)] for _ in range(rows)]
+
+    titles = []
+    for eid in exec_ids:
+        base_nm = name_map.get(eid, eid) or str(eid)
+        titles.append(base_nm)
+    while len(titles) < rows * cols:
+        titles.append("")
+
+    fig = make_subplots(
+        rows=rows,
+        cols=cols,
+        specs=specs,
+        subplot_titles=titles,
+        horizontal_spacing=0.08,
+        vertical_spacing=0.12,
+    )
+
+    max_r = max(float(counts["encontros"].max()), 1.0)
+
+    for i, eid in enumerate(exec_ids):
+        rels = counts[counts["ExecA"] == eid].sort_values("encontros", ascending=False)
+        if rels.empty:
+            continue
+
+        cats: list[str] = []
+        labels_full: list[str] = []
+        rvals: list[float] = []
+        for _, row in rels.iterrows():
+            outro = str(row["ExecB"])
+            full_nm = name_map.get(outro, outro)
+            cats.append(_abbr_nome_vw(full_nm) if full_nm else outro)
+            labels_full.append(full_nm or outro)
+            rvals.append(float(row["encontros"]))
+
+        if not rvals:
+            continue
+
+        theta = cats + cats[:1]
+        r_plot = rvals + rvals[:1]
+        hover_labels = labels_full + labels_full[:1]
+        base_nm = name_map.get(eid, eid) or str(eid)
+
+        fig.add_trace(
+            go.Scatterpolar(
+                r=r_plot,
+                theta=theta,
+                fill="toself",
+                name=base_nm,
+                legendgroup=str(eid),
+                hovertemplate="<b>%{text}</b><br>%{customdata}: %{r}<extra></extra>",
+                text=[base_nm] * len(theta),
+                customdata=hover_labels,
+                opacity=0.78,
+                showlegend=True,
+            ),
+            row=(i // cols) + 1,
+            col=(i % cols) + 1,
+        )
+
+    if not fig.data:
+        return fig_empty
+
+    fig.update_polars(
+        radialaxis=dict(
+            visible=True,
+            range=[0, max_r * 1.05],
+            gridcolor="rgba(0,0,0,0.06)",
+            linecolor="rgba(0,0,0,0.2)",
+        ),
+        angularaxis=dict(showline=False),
+    )
+    fig.update_layout(
+        title={"text": titulo, "font": {"family": "VW Text", "size": 22}},
+        showlegend=True,
+        legend_title_text="Executivo base",
+        height=max(420, 320 * rows),
+        margin=dict(l=60, r=60, t=90, b=50),
+        font=dict(family="VW Text"),
+    )
+    return fig
+
+
 def grafico_heatmap_encontros_men(
     df_full: pd.DataFrame,
     titulo: str,
