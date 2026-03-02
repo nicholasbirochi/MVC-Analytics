@@ -406,7 +406,7 @@ def register(app):
         ax_heatmap2 = fig.add_subplot(gs_heatmaps[1])
 
         # Fonte diária de presença
-        df_chapa_data = df_datas[df_datas['Cadastro'].astype(str) == str(chapa_input)][['Data']].copy()
+        df_chapa_data = dw_fetch_diarios([str(chapa_input)])[['Data']].copy()
         df_chapa_data['Data'] = pd.to_datetime(df_chapa_data['Data'], errors='coerce')
         df_chapa_data = df_chapa_data.dropna(subset=['Data'])
 
