@@ -173,6 +173,12 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 │ └── 🖼️ Visualização da Estrutura DW.png
 │
 ├── 📁 project/
+│ ├── 📂 database/
+│ │ ├── 🗄️ db_login.sqlite
+│ │ ├── 🗄️ dw_ronda.sqlite
+│ │ ├── 🗄️ dw_ronda.sqlite-shm
+│ │ └── 🗄️ dw_ronda.sqlite-wal
+│ │
 │ ├── 📂 scripts/
 │ │ │ ├── 📂 api/
 │ │ │ │ ├── 🐍 area.py
@@ -205,15 +211,10 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 │ │ │ │ ├── 🐍 tables.py
 │ │ │ │ └── 🐍 theme.py
 │ │ │ │
-│ │ │ └── 🐍 main.py
+│ │ │ ├── 🐍 main.py
+│ │ │ └── 🐍 sample_runner.py
 │ │ │
 │ │ └── 🐍 security_login.py
-│ │
-│ ├── 📂 database/
-│ │ ├── 🗄️ db_login.sqlite
-│ │ ├── 🗄️ dw_ronda.sqlite
-│ │ ├── 🗄️ dw_ronda.sqlite-shm
-│ │ └── 🗄️ dw_ronda.sqlite-wal
 │ │
 │ └── 📂 website/
 │   ├── 📂 images/
