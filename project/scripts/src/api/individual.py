@@ -13,7 +13,7 @@ from __future__ import annotations
 from dash import Input, Output, State, dcc, html, no_update
 
 import base64
-import io
+from collections import defaultdict
 import pandas as pd
 import numpy as np
 import seaborn as sns
@@ -27,16 +27,16 @@ import matplotlib.patheffects as patheffects
 from ..core.repo_global import (
     df_semana_merged,
     df_datas,
-    df_df_ativos,
-    df_df_desligados,
-    df_count_por_semana,
 )
 from ..domain.exports import (
     fig_to_base64,
     fig_to_bytes,
     gerar_relatorio_formatado,
     calcular_percentual_presenca,
+    min_presencial_exigido,
+    MIN_PRESENCIAL_APOS_MUDANCA,
 )
+from ..domain.pipeline import dw_fetch_diarios, dw_fetch_semana_enriquecida
 from ..domain.tenure import obter_periodo_admissao
 from ..ui.theme import (
     ESTILO_EXIBIR,
@@ -75,7 +75,7 @@ def register(app):
             return None, estilo_oculto, estilo_exibir
 
         # Filtra dados da pessoa
-        df_chapa_semana = df_semana_merged[df_semana_merged['Cadastro'] == str(chapa_input)].copy()
+        df_chapa_semana = dw_fetch_semana_enriquecida(cadastro=str(chapa_input))
         if df_chapa_semana.empty:
             return None, estilo_oculto, estilo_exibir
 
@@ -89,7 +89,16 @@ def register(app):
         # Presenças por semana
         dias_presenca_por_semana = df_chapa_semana.groupby('Semana_Ano')['Contagem Presença'].mean()
         media_presenca_semana = round(dias_presenca_por_semana.mean(), 2)
-        percentual_da_media = round(((media_presenca_semana / 2) * 100) - 100, 2)
+        min_req_por_semana = dias_presenca_por_semana.index.to_series().apply(min_presencial_exigido)
+        media_min_req = (
+            round(min_req_por_semana.mean(), 2)
+            if len(min_req_por_semana)
+            else MIN_PRESENCIAL_APOS_MUDANCA
+        )
+        if pd.isna(media_min_req) or media_min_req <= 0:
+            media_min_req = MIN_PRESENCIAL_APOS_MUDANCA
+
+        percentual_da_media = round(((media_presenca_semana / media_min_req) * 100) - 100, 2)
         percentuais_presenca = calcular_percentual_presenca(dias_presenca_por_semana)
 
         # Distribuição de presenças (0..7)
@@ -110,11 +119,11 @@ def register(app):
         y_presenca_por_semana = dias_presenca_por_semana_ordenado.values
 
         # Datas do heatmap geral
-        df_chapa_data = df_datas[df_datas['Cadastro'] == str(chapa_input)][['Data', 'Cadastro']].copy()
+        df_chapa_data = dw_fetch_diarios([str(chapa_input)])[['Data', 'Cadastro']].copy()
         df_chapa_data['Data'] = pd.to_datetime(df_chapa_data['Data'])
 
         # Datas reais da chapa em df_datas
-        df_chapa_data = df_datas[df_datas['Cadastro'] == str(chapa_input)][['Data', 'Cadastro']].copy()
+        df_chapa_data = dw_fetch_diarios([str(chapa_input)])[['Data', 'Cadastro']].copy()
         df_chapa_data['Data'] = pd.to_datetime(df_chapa_data['Data'], errors='coerce')
 
         # Se quiser limitar por admissão/demissão, usa o range dentro desse intervalo:
@@ -242,11 +251,11 @@ def register(app):
                          transform=ax_clock.transAxes, zorder=10)
         ax_clock.add_patch(rect)
         ax_clock.set_title(f"\n\nFrequência da Contagem de Presencial\npor Semana ({periodo_label_curto})\n", va='bottom', fontsize=20, pad=35)
-        if current_val > 2:
+        if current_val > media_min_req:
             ax_clock.text(0.01, 0, f"\n\n\n\n\n Acima do necessário! \n+{percentual_da_media}%",
                           ha='center', va='center', fontsize=34, color='green', fontweight='bold',
                           path_effects=[patheffects.withStroke(linewidth=3, foreground='white')])
-        elif current_val < 2:
+        elif current_val < media_min_req:
             ax_clock.text(0.01, 0, f"\n\n\n\n\n Abaixo do esperado! \n{percentual_da_media}%",
                           ha='center', va='center', fontsize=34, color='red', fontweight='bold',
                           path_effects=[patheffects.withStroke(linewidth=3, foreground='white')])
@@ -285,7 +294,7 @@ def register(app):
             poly_fn = np.poly1d(coef_poly)
             x_pred = np.linspace(x_np[0], x_np[-1], 500)
             fim = poly_fn(x_pred[-1])
-            cor_tendencia = 'red' if fim < 2 else '#256b2b'
+            cor_tendencia = 'red' if fim < media_min_req else '#256b2b'
             ax_line2.plot(x_pred, poly_fn(x_pred), color=cor_tendencia, linestyle='--', linewidth=2, label='Tendência')
         ax_line2.set_xlim(x_np[0], x_np[-1] if len(x_np) else 1)
         anos = [label.split("-")[0] for label in dias_presenca_por_semana_ordenado.index]
@@ -358,7 +367,11 @@ def register(app):
         ax_report.text(0, 1.058, relatorio_formatado, fontsize=20, ha='left', va='top', wrap=True, usetex=False)
         ax_report.axis('off')
 
-        semanas_baixa = dias_presenca_por_semana[dias_presenca_por_semana < 2].index.tolist()
+        semanas_baixa = [
+            sem
+            for sem, qtd in dias_presenca_por_semana.items()
+            if (0.0 if pd.isna(qtd) else float(qtd)) < float(min_presencial_exigido(sem))
+        ]
         tabela_heatmap_baixa = tabela_heatmap[
             tabela_heatmap.index.str.split(r" \|").str[0].isin(semanas_baixa)
         ]
@@ -477,7 +490,7 @@ def register(app):
             ], style={"textAlign": "center", "marginTop": "10px"}),
 
             # Imagem inline
-            html.images(src=images_base64, style={
+            html.Img(src=images_base64, style={
                 'width': '100%', 'maxWidth': '1400px', 'marginTop': '20px', 'background': 'white',
                 'display': 'block', 'marginLeft': 'auto', 'marginRight': 'auto'
             })
