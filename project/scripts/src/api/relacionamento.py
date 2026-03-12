@@ -460,19 +460,7 @@ def register(app):
         def sanitize_tags(tag_list):
             fixed = []
             for t in (tag_list or []):
-                cor = t.get("cor") or "#3221cc"
-                # se vier '#fff' tá ok, se vier 'fff' corrige, se vier 'white' troca
-                if isinstance(cor, str):
-                    cor = cor.strip()
-                    if not cor:
-                        cor = "#3221cc"
-                    elif not cor.startswith("#"):
-                        # veio 'white' ou 'red' -> força padrão
-                        cor = "#3221cc"
-                    elif len(cor) not in (4, 7):
-                        cor = "#3221cc"
-                else:
-                    cor = "#3221cc"
+                cor = _fmt_hex(t.get("cor")) or "#3221cc"
 
                 fixed.append({
                     "id":   t.get("id"),
@@ -572,7 +560,8 @@ def register(app):
             xaxis_title="",
             yaxis_title="Dias presentes",
             showlegend=False,
-            margin=dict(t=110, r=20, b=60, l=60)
+            margin=dict(t=110, r=20, b=60, l=60),
+            hovermode='x unified',
         )
 
         # ------------------ ENCONTROS (% vs referência) → minis ------------------
@@ -619,13 +608,21 @@ def register(app):
         # 2) constrói o mini usando o mesmo X
         fig_mini_movel = go.Figure()
         fig_mini_movel.add_trace(go.Scatter(
-            x=semanas,                      # <- mesmo X do fig_pres
-            y=list(mm3_pct.values),
-            mode='lines',
-            line_shape='spline',            # (opcional) linha lisa
+            x=semanas,
+            y=list(mm3_pct.clip(lower=0, upper=100).values),
+            mode='lines+markers',
+            line_shape='spline',
             line=dict(width=2),
-            name=f'% encontros vs {ref_nome}'
+            marker=dict(size=6),
+            name='Média móvel (3) — % encontros vs referência',
+            hovertemplate="Semana: %{x|%Y-%m-%d}<br>Média móvel (3): %{y:.1f}%<extra></extra>"
         ))
+
+        fig_mini_movel.add_shape(
+            type='line', xref='paper', x0=0, x1=1,
+            yref='y', y0=50, y1=50,
+            line=dict(dash='dot', width=1, color='rgba(0,0,0,0.35)')
+        )
 
         # 2) fixa o mesmo range de X em ambos
         common_x_range = [semanas[0], semanas[-1]] if len(semanas) else None
@@ -633,16 +630,14 @@ def register(app):
         fig_mini_movel.update_xaxes(type='date', range=common_x_range, showgrid=True, gridcolor='rgba(0,0,0,0.05)')
 
 
-        # 3) (opcional) hover e margens iguais para “casar” visualmente
-        fig_pres.update_layout(hovermode='x unified')
         fig_mini_movel.update_layout(
             template="plotly_white",
-            title="Média móvel",
-            xaxis_title="", yaxis_title="Percentual",
-            yaxis=dict(ticksuffix="%", rangemode="tozero"),
+            title="Relacionamento com a referência — média móvel (3 semanas)",
+            xaxis_title="", yaxis_title="Percentual de coincidência",
+            yaxis=dict(ticksuffix="%", range=[0, 100]),
             showlegend=False,
             hovermode='x unified',
-            margin=dict(t=110, r=20, b=60, l=60)  # use as mesmas laterais do fig_pres
+            margin=dict(t=110, r=20, b=60, l=60)
         )
 
         # (garante que ambos usam o mesmo range já definido por você)
