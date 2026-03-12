@@ -41,6 +41,7 @@ from ..ui.figures import (
     grafico_heatmap_encontros_exec,
     grafico_pentagonos_rel_exec_multiplos,
     grafico_pentagonos_exec_exec_multiplos,
+    figura_vazia_linha,
     _sanitize_object_columns,
 )
 from ..ui.gptw import mini_tabela_df_gptw
@@ -348,8 +349,8 @@ def register(app):
         else:
             df_full = build_dataframe_diario_area(area, subarea, her, df_datas, df_df_ativos)
 
-        fig_heatmap_men = None
-        fig_heatmap_exec = None
+        fig_heatmap_men = figura_vazia_linha("Carregando informações de relacionamento da área...")
+        fig_heatmap_exec = figura_vazia_linha("Carregando informações de relacionamento da área...")
 
         # ======= BARRA DE FILTROS (mesmo conteúdo, mas pode ficar oculta no modo almoço) =======
         filter_block_style = {
