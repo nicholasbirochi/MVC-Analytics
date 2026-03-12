@@ -101,15 +101,8 @@ def register(app):
         percentual_da_media = round(((media_presenca_semana / media_min_req) * 100) - 100, 2)
         percentuais_presenca = calcular_percentual_presenca(dias_presenca_por_semana)
 
-        # Distribuição de presenças (0..7)
-        df_filtrado_presenca = df_semana_merged[
-            df_semana_merged['Cadastro'].astype(str) == str(chapa_input)
-        ]
-        distribuicao_presencas = (
-            df_filtrado_presenca['Contagem Presença'].value_counts().sort_index()
-            if not df_filtrado_presenca.empty
-            else df_chapa_semana['Contagem Presença'].value_counts().sort_index()
-        )
+        # Distribuição de presenças (0..7) baseada na fonte canônica SQL do colaborador.
+        distribuicao_presencas = df_chapa_semana['Contagem Presença'].value_counts().sort_index()
         x = sorted(set(distribuicao_presencas.index))
         y_presencas = distribuicao_presencas.reindex(x, fill_value=0)
 
@@ -156,10 +149,12 @@ def register(app):
 
         # Se quiser cruzar com adm/dem, aplique aqui:
         data_adm, data_dem = obter_periodo_admissao(chapa_input)
-        if data_adm is not None:
-            min_real = max(min_real.normalize(), pd.to_datetime(data_adm).normalize())
-        if data_dem is not None:
-            max_real = min(max_real.normalize(), pd.to_datetime(data_dem).normalize())
+        adm_ts = pd.to_datetime(data_adm, errors="coerce")
+        dem_ts = pd.to_datetime(data_dem, errors="coerce")
+        if pd.notna(adm_ts):
+            min_real = max(min_real.normalize(), adm_ts.normalize())
+        if pd.notna(dem_ts):
+            max_real = min(max_real.normalize(), dem_ts.normalize())
 
         # Gera TODAS as datas no período [min_real .. max_real]
         todas_datas = pd.date_range(min_real.normalize(), max_real.normalize(), freq='D')

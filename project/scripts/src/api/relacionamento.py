@@ -18,6 +18,8 @@ import numpy as np
 import plotly.graph_objects as go
 
 from ..core.repo_global import df_datas, df_semana_merged, df_df_ativos, df_df_gptw, her
+from ..core import repo_global as repo
+from ..domain.pipeline import dw_fetch_diarios
 from ..ui.gptw import df_gptw_tabela_empilhada
 from ..ui.theme import ESTILO_EXIBIR, ESTILO_OCULTO
 
@@ -490,14 +492,20 @@ def register(app):
             msg = fig_msg("Selecione pelo menos 1 pessoa")
             return msg, fig_msg("—")
 
-        # ------------------ base df_datas segura ------------------
-        if 'df_datas' not in globals() or not isinstance(globals()['df_datas'], pd.DataFrame):
-            info = fig_msg("Base df_datas ausente")
-            return info, fig_msg("—")
+        # ------------------ base diária canônica ------------------
+        if bool(getattr(repo, "USING_DW_SQLITE", False)):
+            dfp = dw_fetch_diarios(cad_list).copy()
+        else:
+            if 'df_datas' not in globals() or not isinstance(globals()['df_datas'], pd.DataFrame):
+                info = fig_msg("Base df_datas ausente")
+                return info, fig_msg("—")
+            dfp = globals()['df_datas'].copy()
 
-        dfp = globals()['df_datas'].copy()
         if 'Data' not in dfp.columns:
-            info = fig_msg("df_datas sem coluna 'Data'")
+            info = fig_msg("Base diária sem coluna 'Data'")
+            return info, fig_msg("—")
+        if 'Cadastro' not in dfp.columns:
+            info = fig_msg("Base diária sem coluna 'Cadastro'")
             return info, fig_msg("—")
 
         dfp['Cadastro'] = dfp['Cadastro'].astype(str)
