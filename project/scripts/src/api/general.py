@@ -485,10 +485,14 @@ def register(app):
         media_presenca_detalhada = media_df[['Cadastro', 'Média Presença']].copy()
 
         media_presenca_detalhada = aplicar_filtro_faixas(media_presenca_detalhada, 'Média Presença', faixas)
+        if media_presenca_detalhada.empty:
+            return figura_vazia_linha("Sem dados para o período e filtros selecionados.")
         media_presenca_detalhada['Média Presença Arred'] = media_presenca_detalhada['Média Presença'].round(1)
 
         dados_disp = media_presenca_detalhada.groupby('Média Presença Arred')['Cadastro'].count().reset_index()
         dados_disp.columns = ['Média Presença', 'Qtd Pessoas']
+        if dados_disp.empty:
+            return figura_vazia_linha("Sem dados para montar a dispersão no período selecionado.")
 
         fig_dispersao = go.Figure()
         fig_dispersao.add_trace(go.Scatter(
@@ -529,6 +533,8 @@ def register(app):
         )
         media_presenca_detalhada = media_df[['Cadastro', 'Média Presença', 'Cargo']].copy()
         media_presenca_detalhada = aplicar_filtro_faixas(media_presenca_detalhada, 'Média Presença', faixas)
+        if media_presenca_detalhada.empty:
+            return figura_vazia_linha("Sem dados para o período e filtros selecionados.")
 
         fig_cargo = go.Figure()
         for cod, nome, cor in [('M', 'Mensalistas', '#7cc3e9'), ('E', 'Executivos', "#1574b3")]:
@@ -546,6 +552,8 @@ def register(app):
                 marker=dict(size=12, color=cor),
                 hovertemplate=(f"{nome}<br>Qtd Pessoas: %{{y}}<br>Média Presença: %{{x:.1f}}<extra></extra>")
             ))
+        if not fig_cargo.data:
+            return figura_vazia_linha("Sem dados por cargo para o período e filtros selecionados.")
 
         fig_cargo.update_layout(
             title={'text': f"Presença por Cargo ({', '.join(faixas) if faixas else 'Todos'})", 'font': {'family': 'VW Text', 'color': '#000000', 'size': 24}},
@@ -592,6 +600,8 @@ def register(app):
                 medias_individuais = medias_individuais[medias_individuais['Área'].str.startswith(area_selecionada)]
 
         medias_individuais = aplicar_filtro_faixas(medias_individuais, 'Média Presença', faixas)
+        if medias_individuais.empty:
+            return figura_vazia_linha("Sem dados para montar o boxplot no período e filtros selecionados.")
 
         fig_boxplot = go.Figure()
         AZUL_LINHA = "#3299dd"
@@ -615,6 +625,8 @@ def register(app):
                     fillcolor=cor_fill,
                     hovertemplate=area_nome + "<br>Média: %{y:.2f}<extra></extra>"
                 ))
+        if not fig_boxplot.data:
+            return figura_vazia_linha("Sem dados para montar o boxplot no período e filtros selecionados.")
 
         titulo_bp = f"Boxplot de Presença por Área ({', '.join(faixas) if faixas else 'Todos'})"
         fig_boxplot.update_layout(
