@@ -110,3 +110,4 @@ def aplicar_tema_pb(fig, *, largura_borda=2, so_y_boxplot=False, grade=False, cl
 
     if clean:
         fig.update_layout(showlegend=False)
+    return fig
