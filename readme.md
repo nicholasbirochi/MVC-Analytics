@@ -1,10 +1,44 @@
-<div style="width:100%; height:96px; border-radius:12px; 
-background: linear-gradient(90deg, #030033ff 0%, #18145eff 50%, #030033ff 100%); 
-display:flex; align-items:center; justify-content:center; 
-box-shadow: 0 4px 14px rgba(0,0,0,0.12); margin: 8px 0 16px 0;">
-  <img src="Projeto/Front-End/images/logo_white.png" alt="VW" width="130" height="100" style="vertical-align:middle; margin-right:8px; border-radius:8px; opacity:0.85;" />
-  <h1 style="color:White; margin:0; font-size:28px; letter-spacing:0.3px; border-bottom: 1px solid #ffffffff">
-    Dashboard de Presença — Volkswagen do Brasil
+<div style="
+  width:100%;
+  min-height:96px;
+  border-radius:12px;
+  background:linear-gradient(90deg,#030033 0%,#18145e 50%,#030033 100%);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:12px;
+  padding:12px 16px;
+  box-shadow:0 4px 14px rgba(0,0,0,.12);
+  margin:8px 0 16px 0;
+  box-sizing:border-box;
+  flex-wrap:wrap;
+  text-align:center;
+">
+  <img
+    src="project/website/images/logo_white.png"
+    alt="VW"
+    style="
+      width:clamp(88px, 12vw, 130px);
+      height:auto;
+      max-height:72px;
+      object-fit:contain;
+      border-radius:10px;
+      opacity:.9;
+      flex:0 0 auto;
+    "
+  />
+
+  <h1 style="
+    color:#fff;
+    margin:0;
+    font-size:clamp(18px, 2.2vw, 28px);
+    line-height:1.15;
+    letter-spacing:.2px;
+    padding-bottom:6px;
+    border-bottom:1px solid rgba(255,255,255,.75);
+    max-width:1100px;
+  ">
+    Dashboard sobre Monitoramento Comportamentais — Volkswagen do Brasil
   </h1>
 </div>
 
@@ -232,6 +266,9 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 │   └── 📂 views/
 │     ├── 🧱 index.html
 │     └── 🧱 login.html
+│  
+├── 📂 tests
+│ └── 🐍 test_equivalence_notebook_vs_mvc.py
 │  
 ├── ⚙️ .gitignore
 ├── 📖 readme.md
@@ -595,7 +632,7 @@ Projeto interno — uso corporativo.
 <table style="font-family: 'Segoe UI', Arial, sans-serif; border: none; border-collapse: collapse;">
   <tr>
     <td style="padding-right: 0px; vertical-align: middle;">
-      <img src="Projeto/Front-End/images/logo_white.png"
+      <img src="project\website\images\logo_white.png"
            width="150"
            style="vertical-align: middle;"
            alt="logo_blue VW">
