@@ -79,6 +79,19 @@ def _finalizar_heatmap(fig: go.Figure, titulo: str, altura: int = 420) -> go.Fig
     return fig
 
 
+def _figure_info(fig: go.Figure, message: str) -> go.Figure:
+    fig.add_annotation(
+        text=message,
+        showarrow=False,
+        xref="paper",
+        yref="paper",
+        x=0.5,
+        y=0.5,
+        font=dict(size=13, color="#555"),
+    )
+    return fig
+
+
 def _normalizar_planta_cell(valor) -> frozenset:
     if valor is None or (isinstance(valor, float) and pd.isna(valor)):
         return frozenset()
@@ -107,9 +120,13 @@ def _montar_labels(meta: pd.DataFrame, cadastros: Iterable[str], tenure: dict[st
     custom = []
 
     for cadastro in cadastros:
-        info = meta.loc[cadastro]
-        nome = info.get("Nome", "")
-        area = info.get("ÁreaNorm", "")
+        if cadastro in meta.index:
+            info = meta.loc[cadastro]
+            nome = info.get("Nome", "")
+            area = info.get("ÁreaNorm", "")
+        else:
+            nome = cadastro
+            area = ""
         tenure_label = tenure.get(str(cadastro), "-")
         label = (
             f"{_abbr(nome)} <span style='font-size:10px;opacity:.85'><b>({tenure_label})</b></span>"
@@ -118,8 +135,16 @@ def _montar_labels(meta: pd.DataFrame, cadastros: Iterable[str], tenure: dict[st
         x_labels.append(label)
         y_labels.append(label.split("<br>")[0])
 
-    x_full = [f"{str(meta.loc[c, 'Nome']).title()} ({c})" for c in cadastros]
-    y_full = [f"{str(meta.loc[c, 'Nome']).title()} ({c})" for c in cadastros]
+    x_full = []
+    y_full = []
+    for cadastro in cadastros:
+        if cadastro in meta.index:
+            nome = str(meta.loc[cadastro, "Nome"]).title()
+        else:
+            nome = str(cadastro)
+        label = f"{nome} ({cadastro})"
+        x_full.append(label)
+        y_full.append(label)
     custom = [[(x_full[x], y_full[y]) for x in range(len(cadastros))] for y in range(len(cadastros))]
     return x_labels, y_labels, custom
 
@@ -168,16 +193,23 @@ def _construir_encontros_exec_men(df_full: pd.DataFrame) -> pd.DataFrame:
     df["Cargo"] = df["Cargo"].astype(str).str.upper().str[:1]
 
     pares: list[tuple[pd.Timestamp, str, str]] = []
-    for (dia, planta), grupo in df.groupby(["Data", "Planta"]):
-        if not planta:
+    for dia, grupo in df.groupby("Data"):
+        grupo = grupo.sort_values("Cadastro").drop_duplicates(subset=["Cadastro"], keep="last")
+        if grupo.empty:
             continue
-        execs = grupo.loc[grupo["Cargo"].eq("E"), "Cadastro"].unique().tolist()
-        mens = grupo.loc[~grupo["Cargo"].eq("E"), "Cadastro"].unique().tolist()
-        if not execs or not mens:
+        execs = grupo.loc[grupo["Cargo"].eq("E"), ["Cadastro", "Planta"]]
+        mens = grupo.loc[~grupo["Cargo"].eq("E"), ["Cadastro", "Planta"]]
+        if execs.empty or mens.empty:
             continue
-        for e in execs:
-            for m in mens:
-                pares.append((dia, e, m))
+        for _, ex in execs.iterrows():
+            pl_exec = _normalizar_planta_cell(ex.get("Planta"))
+            if not pl_exec:
+                continue
+            for _, men in mens.iterrows():
+                pl_men = _normalizar_planta_cell(men.get("Planta"))
+                if not pl_men or pl_exec.isdisjoint(pl_men):
+                    continue
+                pares.append((dia, str(ex["Cadastro"]), str(men["Cadastro"])))
 
     return pd.DataFrame(pares, columns=["Data", "Exec", "Men"])
 
@@ -359,15 +391,16 @@ def grafico_pentagonos_rel_exec_multiplos(
         height=420,
         showlegend=False,
     )
+    info_msg = "Sem encontros suficientes para montar a teia no período selecionado."
 
     if df_full is None or getattr(df_full, "empty", True):
-        return fig_empty
+        return _figure_info(fig_empty, info_msg)
 
     df_rel = _sanitize_object_columns(df_full)
     df_rel["Data"] = pd.to_datetime(df_rel.get("Data"), errors="coerce")
     df_rel = df_rel.dropna(subset=["Data"])
     if df_rel.empty:
-        return fig_empty
+        return _figure_info(fig_empty, info_msg)
 
     if "Cadastro" in df_rel.columns:
         df_rel["Cadastro"] = df_rel["Cadastro"].map(_safe_hashable).astype(str)
@@ -384,14 +417,14 @@ def grafico_pentagonos_rel_exec_multiplos(
 
     rel_df = _construir_encontros_exec_men(df_rel)
     if rel_df is None or rel_df.empty:
-        return fig_empty
+        return _figure_info(fig_empty, info_msg)
 
     rel_df["Exec"] = rel_df["Exec"].astype(str)
     rel_df["Men"] = rel_df["Men"].astype(str)
 
     counts = rel_df.groupby(["Exec", "Men"]).size().reset_index(name="encontros")
     if counts.empty:
-        return fig_empty
+        return _figure_info(fig_empty, info_msg)
 
     totais_exec = counts.groupby("Exec")["encontros"].sum().sort_values(ascending=False)
     exec_ids = totais_exec.index.tolist()
@@ -400,7 +433,7 @@ def grafico_pentagonos_rel_exec_multiplos(
 
     n = int(len(exec_ids))
     if n == 0:
-        return fig_empty
+        return _figure_info(fig_empty, info_msg)
 
     cols = 3 if n > 1 else 1
     rows = int(math.ceil(n / cols))
@@ -465,7 +498,7 @@ def grafico_pentagonos_rel_exec_multiplos(
         )
 
     if not fig.data:
-        return fig_empty
+        return _figure_info(fig_empty, info_msg)
 
     fig.update_polars(
         radialaxis=dict(
@@ -547,15 +580,16 @@ def grafico_pentagonos_exec_exec_multiplos(
         height=420,
         showlegend=False,
     )
+    info_msg = "Sem encontros entre executivos no período selecionado."
 
     if df_full is None or getattr(df_full, "empty", True):
-        return fig_empty
+        return _figure_info(fig_empty, info_msg)
 
     df_rel = _sanitize_object_columns(df_full.copy())
     df_rel["Data"] = pd.to_datetime(df_rel.get("Data"), errors="coerce")
     df_rel = df_rel.dropna(subset=["Data"])
     if df_rel.empty:
-        return fig_empty
+        return _figure_info(fig_empty, info_msg)
 
     if "Cadastro" in df_rel.columns:
         df_rel["Cadastro"] = df_rel["Cadastro"].map(_safe_hashable).astype(str)
@@ -570,13 +604,13 @@ def grafico_pentagonos_exec_exec_multiplos(
 
     rel_df = _construir_encontros_exec_exec(df_rel)
     if rel_df.empty:
-        return fig_empty
+        return _figure_info(fig_empty, info_msg)
 
     counts_base = rel_df.groupby(["ExecA", "ExecB"]).size().reset_index(name="encontros")
     counts_rev = counts_base.rename(columns={"ExecA": "ExecB", "ExecB": "ExecA"})
     counts = pd.concat([counts_base, counts_rev], ignore_index=True)
     if counts.empty:
-        return fig_empty
+        return _figure_info(fig_empty, info_msg)
 
     totais_exec = counts.groupby("ExecA")["encontros"].sum().sort_values(ascending=False)
     exec_ids = totais_exec.index.tolist()
@@ -584,7 +618,7 @@ def grafico_pentagonos_exec_exec_multiplos(
         exec_ids = exec_ids[: int(max_exec)]
     n = int(len(exec_ids))
     if n == 0:
-        return fig_empty
+        return _figure_info(fig_empty, info_msg)
 
     cols = 3 if n > 1 else 1
     rows = int(math.ceil(n / cols))
@@ -649,7 +683,7 @@ def grafico_pentagonos_exec_exec_multiplos(
         )
 
     if not fig.data:
-        return fig_empty
+        return _figure_info(fig_empty, info_msg)
 
     fig.update_polars(
         radialaxis=dict(
@@ -678,13 +712,15 @@ def grafico_heatmap_encontros_men(
 ) -> go.Figure:
     fig = go.Figure()
     if df_full is None or df_full.empty:
-        return _finalizar_heatmap(fig, titulo)
+        return _figure_info(_finalizar_heatmap(fig, titulo), "Sem dados no período selecionado.")
 
     dfp = df_full.copy()
+    if "Cadastro" in dfp.columns:
+        dfp["Cadastro"] = dfp["Cadastro"].astype(str)
     dfp["Data"] = pd.to_datetime(dfp["Data"], errors="coerce")
     dfp = dfp.dropna(subset=["Data"])
     if dfp.empty:
-        return _finalizar_heatmap(fig, titulo)
+        return _figure_info(_finalizar_heatmap(fig, titulo), "Sem datas válidas no período selecionado.")
 
     days = pd.date_range(
         dfp["Data"].min().normalize(), dfp["Data"].max().normalize(), freq="D"
@@ -706,6 +742,7 @@ def grafico_heatmap_encontros_men(
         .drop_duplicates("Cadastro", keep="last")[meta_cols]
     )
     meta = meta_src.set_index("Cadastro").copy()
+    meta.index = meta.index.astype(str)
     if area_col:
         meta = meta.rename(columns={area_col: "ÁreaNorm"})
     else:
@@ -720,16 +757,38 @@ def grafico_heatmap_encontros_men(
         dem_ts = dem_cache.get(cid, None)
         tenure[cid] = tempo_de_casa_str(adm_ts, ref=ref_dt, dem_ts=dem_ts)
 
-    mask_M = meta["Cargo"].astype(str).eq("M")
-    mask_E = meta["Cargo"].astype(str).eq("E")
+    cargo_norm = meta["Cargo"].astype(str).str.upper().str[:1]
+    mask_E = cargo_norm.eq("E")
+    mask_M = ~mask_E
     cad_M = meta.index[mask_M].tolist()
     cad_E = meta.index[mask_E].tolist()
     if not cad_M or not cad_E:
-        return _finalizar_heatmap(fig, titulo)
+        cargos = cargo_norm.replace("", "N/D").value_counts()
+        if not cargos.empty:
+            fig.add_trace(
+                go.Bar(
+                    x=cargos.index.tolist(),
+                    y=cargos.values.tolist(),
+                    marker_color="#1574b3",
+                    hovertemplate="Cargo: %{x}<br>Colaboradores: %{y}<extra></extra>",
+                )
+            )
+            fig.update_layout(
+                title={"text": titulo, "font": {"family": "VW Text", "size": 22}},
+                xaxis_title="Cargo",
+                yaxis_title="Qtd. colaboradores",
+                height=420,
+            )
+        return _figure_info(
+            fig,
+            "Sem combinação entre executivos e mensalistas/horistas para montar o heatmap.",
+        )
 
     cad_M_ord, cad_E_ord = calcular_ordem_heatmap(dfp)
-    cad_M = cad_M_ord or [str(c) for c in cad_M]
-    cad_E = cad_E_ord or [str(c) for c in cad_E]
+    cad_M = [c for c in (cad_M_ord or [str(c) for c in cad_M]) if c in set(meta.index)]
+    cad_E = [c for c in (cad_E_ord or [str(c) for c in cad_E]) if c in set(meta.index)]
+    if not cad_M or not cad_E:
+        return _figure_info(_finalizar_heatmap(fig, titulo), "Sem pares válidos para exibição.")
 
     if validar_mesma_planta and ("Planta" in dfp.columns):
         df_day = dfp[["Data", "Cadastro", "Planta"]].copy()
@@ -787,6 +846,8 @@ def grafico_heatmap_encontros_men(
                 out=np.full_like(encontros, np.nan),
                 where=denom > 0,
             ) * 100
+    if np.isnan(percent).all():
+        return _figure_info(_finalizar_heatmap(fig, titulo), "Sem encontros válidos para o período selecionado.")
 
     x_labels, y_labels, custom = _montar_labels(meta, cad_E, tenure)
 
@@ -1109,13 +1170,50 @@ def grafico_heatmap_encontros_exec(
 ) -> go.Figure:
     fig = go.Figure()
     if df_full is None or df_full.empty:
-        return _finalizar_heatmap(fig, titulo, altura=520)
+        return _figure_info(
+            _finalizar_heatmap(fig, titulo, altura=520),
+            "Sem dados no período selecionado.",
+        )
 
     dfp = df_full.copy()
+    if "Cadastro" in dfp.columns:
+        dfp["Cadastro"] = dfp["Cadastro"].astype(str)
     dfp["Data"] = pd.to_datetime(dfp["Data"], errors="coerce")
     dfp = dfp.dropna(subset=["Data"])
     if dfp.empty:
-        return _finalizar_heatmap(fig, titulo, altura=520)
+        return _figure_info(
+            _finalizar_heatmap(fig, titulo, altura=520),
+            "Sem datas válidas no período selecionado.",
+        )
+
+    cargo_base = (
+        dfp["Cargo"].astype(str).str.upper().str[:1]
+        if "Cargo" in dfp.columns
+        else pd.Series(dtype=str)
+    )
+    if "Cargo" in dfp.columns:
+        dfp = dfp[cargo_base.eq("E")].copy()
+    if dfp.empty:
+        cargos = cargo_base.replace("", "N/D").value_counts()
+        if not cargos.empty:
+            fig.add_trace(
+                go.Bar(
+                    x=cargos.index.tolist(),
+                    y=cargos.values.tolist(),
+                    marker_color="#1574b3",
+                    hovertemplate="Cargo: %{x}<br>Colaboradores: %{y}<extra></extra>",
+                )
+            )
+            fig.update_layout(
+                title={"text": titulo, "font": {"family": "VW Text", "size": 22}},
+                xaxis_title="Cargo",
+                yaxis_title="Qtd. colaboradores",
+                height=420,
+            )
+        return _figure_info(
+            fig,
+            "Sem executivos suficientes para montar o heatmap entre executivos.",
+        )
 
     days = pd.date_range(
         dfp["Data"].min().normalize(), dfp["Data"].max().normalize(), freq="D"
@@ -1134,6 +1232,7 @@ def grafico_heatmap_encontros_exec(
         .drop_duplicates("Cadastro", keep="last")[meta_cols]
         .set_index("Cadastro")
     )
+    meta.index = meta.index.astype(str)
     meta = meta.rename(columns={"Área": "ÁreaNorm"})
 
     adm_cache, dem_cache = carregar_adm_dem_cache()
@@ -1147,11 +1246,19 @@ def grafico_heatmap_encontros_exec(
 
     cadastros = meta.index.tolist()
     if len(cadastros) < 2:
-        return _finalizar_heatmap(fig, titulo, altura=520)
+        return _figure_info(
+            _finalizar_heatmap(fig, titulo, altura=520),
+            "Sem executivos suficientes para montar o heatmap.",
+        )
 
     cad_ord, _ = calcular_ordem_heatmap(dfp)
     if cad_ord:
-        cadastros = cad_ord
+        cadastros = [cad for cad in cad_ord if cad in set(meta.index)]
+    if len(cadastros) < 2:
+        return _figure_info(
+            _finalizar_heatmap(fig, titulo, altura=520),
+            "Sem pares de executivos válidos para o período selecionado.",
+        )
 
     if validar_mesma_planta and ("Planta" in dfp.columns):
         df_day = dfp[["Data", "Cadastro", "Planta"]].copy()
@@ -1205,6 +1312,11 @@ def grafico_heatmap_encontros_exec(
                 out=np.full_like(encontros, np.nan),
                 where=denom > 0,
             ) * 100
+    if np.isnan(percent).all():
+        return _figure_info(
+            _finalizar_heatmap(fig, titulo, altura=520),
+            "Sem encontros válidos entre executivos para o período selecionado.",
+        )
 
     x_labels, y_labels, custom = _montar_labels(meta, cadastros, tenure)
 
