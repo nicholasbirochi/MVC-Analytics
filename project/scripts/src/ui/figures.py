@@ -711,8 +711,16 @@ def grafico_heatmap_encontros_men(
     validar_mesma_planta: bool = True,
 ) -> go.Figure:
     fig = go.Figure()
+
+    def _final(_fig: go.Figure) -> go.Figure:
+        _fig.update_layout(
+            title={"text": titulo, "font": {"family": "VW Text", "size": 22}},
+            height=420,
+        )
+        return _fig
+
     if df_full is None or df_full.empty:
-        return _figure_info(_finalizar_heatmap(fig, titulo), "Sem dados no período selecionado.")
+        return _final(fig)
 
     dfp = df_full.copy()
     if "Cadastro" in dfp.columns:
@@ -720,11 +728,16 @@ def grafico_heatmap_encontros_men(
     dfp["Data"] = pd.to_datetime(dfp["Data"], errors="coerce")
     dfp = dfp.dropna(subset=["Data"])
     if dfp.empty:
-        return _figure_info(_finalizar_heatmap(fig, titulo), "Sem datas válidas no período selecionado.")
+        return _final(fig)
+
+    area_col = "Área" if "Área" in dfp.columns else None
 
     days = pd.date_range(
-        dfp["Data"].min().normalize(), dfp["Data"].max().normalize(), freq="D"
+        dfp["Data"].min().normalize(),
+        dfp["Data"].max().normalize(),
+        freq="D",
     )
+
     pres = (
         dfp.groupby(["Data", "Cadastro"])["Contagem Presença"]
         .max()
@@ -733,124 +746,206 @@ def grafico_heatmap_encontros_men(
         .fillna(0)
     )
 
-    area_col = "Área" if "Área" in dfp.columns else None
-    meta_cols = ["Cadastro", "Nome", "Cargo"]
-    if area_col:
-        meta_cols.append(area_col)
+    meta_cols = ["Cadastro", "Nome", "Cargo"] + ([area_col] if area_col else [])
     meta_src = (
         dfp.sort_values("Data")
         .drop_duplicates("Cadastro", keep="last")[meta_cols]
     )
     meta = meta_src.set_index("Cadastro").copy()
-    meta.index = meta.index.astype(str)
     if area_col:
         meta = meta.rename(columns={area_col: "ÁreaNorm"})
     else:
         meta["ÁreaNorm"] = ""
 
     adm_cache, dem_cache = carregar_adm_dem_cache()
-    ref_dt = days.max() if len(days) else pd.Timestamp.today().normalize()
-    tenure = {}
-    for cadastro in meta.index:
-        cid = str(cadastro)
+    ref_dt = pd.Timestamp.today().normalize()
+    tenure: dict[str, str] = {}
+    for cad in meta.index:
+        cid = str(cad)
         adm_ts = adm_cache.get(cid, None)
         dem_ts = dem_cache.get(cid, None)
         tenure[cid] = tempo_de_casa_str(adm_ts, ref=ref_dt, dem_ts=dem_ts)
 
-    cargo_norm = meta["Cargo"].astype(str).str.upper().str[:1]
-    mask_E = cargo_norm.eq("E")
-    mask_M = ~mask_E
-    cad_M = meta.index[mask_M].tolist()
-    cad_E = meta.index[mask_E].tolist()
-    if not cad_M or not cad_E:
-        cargos = cargo_norm.replace("", "N/D").value_counts()
-        if not cargos.empty:
-            fig.add_trace(
-                go.Bar(
-                    x=cargos.index.tolist(),
-                    y=cargos.values.tolist(),
-                    marker_color="#1574b3",
-                    hovertemplate="Cargo: %{x}<br>Colaboradores: %{y}<extra></extra>",
-                )
-            )
-            fig.update_layout(
-                title={"text": titulo, "font": {"family": "VW Text", "size": 22}},
-                xaxis_title="Cargo",
-                yaxis_title="Qtd. colaboradores",
-                height=420,
-            )
-        return _figure_info(
-            fig,
-            "Sem combinação entre executivos e mensalistas/horistas para montar o heatmap.",
-        )
+    def _tok(texto: object) -> list[str]:
+        return [t.strip() for t in str(texto).replace("/", "-").split("-") if t.strip()]
 
-    cad_M_ord, cad_E_ord = calcular_ordem_heatmap(dfp)
-    cad_M = [c for c in (cad_M_ord or [str(c) for c in cad_M]) if c in set(meta.index)]
-    cad_E = [c for c in (cad_E_ord or [str(c) for c in cad_E]) if c in set(meta.index)]
-    if not cad_M or not cad_E:
-        return _figure_info(_finalizar_heatmap(fig, titulo), "Sem pares válidos para exibição.")
+    def _akey(area: object) -> tuple[int, tuple[str, ...]]:
+        tokens = _tok(area)
+        return (len(tokens), tuple(tokens))
+
+    def _rel(area_m: object, area_e: object) -> bool:
+        if pd.isna(area_m) or pd.isna(area_e):
+            return False
+        sm = str(area_m).replace("/", "-").lower().strip()
+        se = str(area_e).replace("/", "-").lower().strip()
+        return bool(se) and sm.startswith(se)
+
+    mask_m = meta["Cargo"].astype(str).isin(["M", "H"])
+    mask_e = meta["Cargo"].astype(str).eq("E")
+
+    cad_m = sorted(
+        meta.index[mask_m],
+        key=lambda c: (
+            _akey(meta.loc[c, "ÁreaNorm"]),
+            str(meta.loc[c, "Nome"]).lower(),
+            str(c),
+        ),
+    )
+    cad_e = sorted(
+        meta.index[mask_e],
+        key=lambda c: (
+            _akey(meta.loc[c, "ÁreaNorm"]),
+            str(meta.loc[c, "Nome"]).lower(),
+            str(c),
+        ),
+    )
+
+    if not cad_m or not cad_e:
+        return _final(fig)
 
     if validar_mesma_planta and ("Planta" in dfp.columns):
         df_day = dfp[["Data", "Cadastro", "Planta"]].copy()
         df_day["Data"] = pd.to_datetime(df_day["Data"], errors="coerce").dt.normalize()
         df_day = df_day.dropna(subset=["Data", "Cadastro"])
-        encontros_same = np.zeros((len(cad_M), len(cad_E)), dtype=float)
-        dias_pres_m = np.zeros((len(cad_M),), dtype=float)
 
-        for _, grupo in df_day.groupby("Data"):
-            grupo = grupo.sort_values("Cadastro").drop_duplicates(
-                subset=["Cadastro"], keep="last"
-            )
-            serie = grupo.set_index("Cadastro")["Planta"]
-            plantas_M = serie.reindex(cad_M)
-            plantas_E = serie.reindex(cad_E)
+        encontros_same = np.zeros((len(cad_m), len(cad_e)), dtype=float)
+        dias_pres_m = np.zeros((len(cad_m),), dtype=float)
 
-            conjuntos_M = [_normalizar_planta_cell(valor) for valor in plantas_M.tolist()]
-            conjuntos_E = [_normalizar_planta_cell(valor) for valor in plantas_E.tolist()]
+        for _, g in df_day.groupby("Data"):
+            g = g.sort_values("Cadastro").drop_duplicates(subset=["Cadastro"], keep="last")
+            serie = g.set_index("Cadastro")["Planta"]
+            plantas_m = serie.reindex(cad_m)
+            plantas_e = serie.reindex(cad_e)
 
-            presM = np.array([len(conjunto) > 0 for conjunto in conjuntos_M], dtype=bool)
-            presE = np.array([len(conjunto) > 0 for conjunto in conjuntos_E], dtype=bool)
-            matriz = np.array(
+            m_sets = [_normalizar_planta_cell(val) for val in plantas_m.tolist()]
+            e_sets = [_normalizar_planta_cell(val) for val in plantas_e.tolist()]
+
+            pres_m = np.array([len(ms) > 0 for ms in m_sets], dtype=bool)
+            pres_e = np.array([len(es) > 0 for es in e_sets], dtype=bool)
+            same = np.array(
                 [
                     [
-                        len(conjunto_m) > 0
-                        and len(conjunto_e) > 0
-                        and not conjunto_m.isdisjoint(conjunto_e)
-                        for conjunto_e in conjuntos_E
+                        len(ms) > 0
+                        and len(es) > 0
+                        and not ms.isdisjoint(es)
+                        for es in e_sets
                     ]
-                    for conjunto_m in conjuntos_M
+                    for ms in m_sets
                 ],
                 dtype=bool,
             )
 
-            validos = matriz & presM[:, None] & presE[None, :]
-            encontros_same += validos.astype(float)
-            dias_pres_m += presM.astype(float)
+            valid = same & pres_m[:, None] & pres_e[None, :]
+            encontros_same += valid.astype(float)
+            dias_pres_m += pres_m.astype(float)
 
+        denom = dias_pres_m[:, None]
         with np.errstate(invalid="ignore", divide="ignore"):
             percent = np.divide(
                 encontros_same,
-                dias_pres_m[:, None],
-                out=np.full_like(encontros_same, np.nan),
-                where=dias_pres_m[:, None] > 0,
-            ) * 100
+                denom,
+                out=np.full_like(encontros_same, np.nan, dtype=float),
+                where=(denom > 0),
+            ) * 100.0
     else:
-        pres_M = pres.reindex(columns=cad_M).fillna(0).to_numpy(float)
-        pres_E = pres.reindex(columns=cad_E).fillna(0).to_numpy(float)
-        encontros = pres_M.T @ pres_E
-        denom = pres_M.sum(axis=0)[:, None]
+        arr_m = pres.reindex(columns=cad_m).fillna(0).to_numpy(float)
+        arr_e = pres.reindex(columns=cad_e).fillna(0).to_numpy(float)
+        encontros = arr_m.T @ arr_e
+        denom = arr_m.sum(axis=0)[:, None]
         with np.errstate(invalid="ignore", divide="ignore"):
             percent = np.divide(
                 encontros,
                 denom,
-                out=np.full_like(encontros, np.nan),
-                where=denom > 0,
-            ) * 100
+                out=np.full_like(encontros, np.nan, dtype=float),
+                where=(denom > 0),
+            ) * 100.0
+
+    allowed = np.array(
+        [
+            [_rel(meta.loc[m, "ÁreaNorm"], meta.loc[e, "ÁreaNorm"]) for e in cad_e]
+            for m in cad_m
+        ],
+        dtype=bool,
+    )
+    percent = np.where(allowed, percent, np.nan)
     if np.isnan(percent).all():
-        return _figure_info(_finalizar_heatmap(fig, titulo), "Sem encontros válidos para o período selecionado.")
+        return _final(fig)
 
-    x_labels, y_labels, custom = _montar_labels(meta, cad_E, tenure)
+    areas_m = [meta.loc[c, "ÁreaNorm"] for c in cad_m]
+    areas_e = [meta.loc[c, "ÁreaNorm"] for c in cad_e]
 
+    m_scores: list[float] = []
+    for i, area_m in enumerate(areas_m):
+        mask_cols = [area_e == area_m for area_e in areas_e]
+        vals = percent[i, mask_cols]
+        with np.errstate(invalid="ignore"):
+            score = np.nanmean(vals) if np.any(mask_cols) else np.nan
+        m_scores.append(-1e9 if np.isnan(score) else float(score))
+
+    e_scores: list[float] = []
+    for j, area_e in enumerate(areas_e):
+        mask_rows = [area_m == area_e for area_m in areas_m]
+        vals = percent[mask_rows, j]
+        with np.errstate(invalid="ignore"):
+            score = np.nanmean(vals) if np.any(mask_rows) else np.nan
+        e_scores.append(-1e9 if np.isnan(score) else float(score))
+
+    order_m = sorted(
+        range(len(cad_m)),
+        key=lambda i: (
+            _akey(areas_m[i]),
+            -m_scores[i],
+            str(meta.loc[cad_m[i], "Nome"]).lower(),
+            str(cad_m[i]),
+        ),
+    )
+    order_e = sorted(
+        range(len(cad_e)),
+        key=lambda j: (
+            _akey(areas_e[j]),
+            -e_scores[j],
+            str(meta.loc[cad_e[j], "Nome"]).lower(),
+            str(cad_e[j]),
+        ),
+    )
+
+    cad_m = [cad_m[i] for i in order_m]
+    cad_e = [cad_e[j] for j in order_e]
+    percent = percent[np.ix_(order_m, order_e)]
+
+    def _abbr(nome: object) -> str:
+        partes = str(nome).split()
+        if not partes:
+            return ""
+        return " ".join([partes[0].capitalize()] + [p[0].upper() + "." for p in partes[1:]])
+
+    y_labels = [
+        f"{_abbr(meta.loc[c, 'Nome'])} "
+        f"<span style='font-size:10px;opacity:.85'><b>[{meta.loc[c, 'Cargo']}]</b></span> "
+        f"<span style='font-size:10px;opacity:.85'><b>- {tenure.get(str(c), '—')}</b></span>"
+        for c in cad_m
+    ]
+
+    x_labels = [
+        f"{_abbr(meta.loc[c, 'Nome'])} "
+        f"<span style='font-size:10px;opacity:.85'><b>[{meta.loc[c, 'Cargo']}]</b></span> "
+        f"<span style='font-size:10px;opacity:.85'><b>- {tenure.get(str(c), '—')}</b></span>"
+        f"<br>({str(meta.loc[c, 'ÁreaNorm'])})"
+        for c in cad_e
+    ]
+
+    y_full = [f"{str(meta.loc[c, 'Nome']).title()} ({c})" for c in cad_m]
+    x_full = [f"{str(meta.loc[c, 'Nome']).title()} ({c})" for c in cad_e]
+    customdata = [[(xe, ye) for xe in x_full] for ye in y_full]
+
+    colors = [
+        [0.00, "#af3333"],
+        [0.35, "#fc9898"],
+        [0.35, "#ffef09"],
+        [0.60, "#fff9a9"],
+        [0.60, "#9effd0"],
+        [1.00, "#267951"],
+    ]
     text = np.vectorize(
         lambda v: "" if (v is None or (isinstance(v, float) and np.isnan(v))) else f"{v:.1f}%"
     )(percent)
@@ -861,30 +956,29 @@ def grafico_heatmap_encontros_men(
         else "Encontros (co-presença)"
     )
 
-    fig.add_trace(
-        go.Heatmap(
+    fig = go.Figure(
+        data=go.Heatmap(
             z=percent,
             x=x_labels,
             y=y_labels,
-            customdata=custom,
-            colorscale=_heatmap_colorscale(),
+            customdata=customdata,
+            colorscale=colors,
             zmin=0,
             zmax=100,
             text=text,
             texttemplate="%{text}",
-        hovertemplate=(
-            "<b>%{customdata[1]}</b> x <b>%{customdata[0]}</b><br>"
-            f"{hover_title}: %{{z:.1f}}%<extra></extra>"
-        ),
-        showscale=True,
-        colorbar=dict(title="Presença (%)", ticksuffix="%", len=0.82, thickness=14),
-        hoverongaps=False,
-        hoverlabel=dict(bgcolor="white", font=dict(color="black")),
+            hovertemplate=(
+                "<b>%{customdata[1]}</b> × <b>%{customdata[0]}</b><br>"
+                f"{hover_title}: %{{z:.1f}}%<extra></extra>"
+            ),
+            showscale=False,
+            hoverongaps=False,
+            hoverlabel=dict(bgcolor="white", font=dict(color="black")),
+        )
     )
-)
 
     linhas = max(len(y_labels), 1)
-    altura = max(460, 40 + 22 * max(linhas, 10))
+    altura = max(460, 40 + 23 * max(linhas, 10))
     fig.update_layout(
         title={"text": titulo, "font": {"family": "VW Text", "size": 22}},
         xaxis_title="",
@@ -892,8 +986,8 @@ def grafico_heatmap_encontros_men(
         height=altura,
         margin=dict(l=200, r=40, t=70, b=150),
     )
-    fig.update_xaxes(tickangle=-45, automargin=True, autorange="reversed")
-    fig.update_yaxes(autorange="reversed", automargin=True)
+    fig.update_xaxes(tickangle=-45, autorange="reversed", automargin=True)
+    fig.update_yaxes(automargin=True)
     return fig
 
 
@@ -1169,197 +1263,234 @@ def grafico_heatmap_encontros_exec(
     validar_mesma_planta: bool = True,
 ) -> go.Figure:
     fig = go.Figure()
-    if df_full is None or df_full.empty:
-        return _figure_info(
-            _finalizar_heatmap(fig, titulo, altura=520),
-            "Sem dados no período selecionado.",
+
+    def _final(_fig: go.Figure) -> go.Figure:
+        _fig.update_layout(
+            title={"text": titulo, "font": {"family": "VW Text", "size": 22}},
+            height=420,
         )
+        return _fig
+
+    if df_full is None or df_full.empty:
+        return _final(fig)
 
     dfp = df_full.copy()
+
+    for col in ["Cadastro", "Cargo", "Nome", "Planta", "Área", "Departamento", "Setor"]:
+        if col in dfp.columns:
+            dfp[col] = dfp[col].map(_safe_hashable)
     if "Cadastro" in dfp.columns:
         dfp["Cadastro"] = dfp["Cadastro"].astype(str)
+    if "Cargo" in dfp.columns:
+        dfp["Cargo"] = dfp["Cargo"].astype(str)
+
     dfp["Data"] = pd.to_datetime(dfp["Data"], errors="coerce")
     dfp = dfp.dropna(subset=["Data"])
     if dfp.empty:
-        return _figure_info(
-            _finalizar_heatmap(fig, titulo, altura=520),
-            "Sem datas válidas no período selecionado.",
-        )
+        return _final(fig)
 
-    cargo_base = (
-        dfp["Cargo"].astype(str).str.upper().str[:1]
-        if "Cargo" in dfp.columns
-        else pd.Series(dtype=str)
-    )
-    if "Cargo" in dfp.columns:
-        dfp = dfp[cargo_base.eq("E")].copy()
-    if dfp.empty:
-        cargos = cargo_base.replace("", "N/D").value_counts()
-        if not cargos.empty:
-            fig.add_trace(
-                go.Bar(
-                    x=cargos.index.tolist(),
-                    y=cargos.values.tolist(),
-                    marker_color="#1574b3",
-                    hovertemplate="Cargo: %{x}<br>Colaboradores: %{y}<extra></extra>",
-                )
-            )
-            fig.update_layout(
-                title={"text": titulo, "font": {"family": "VW Text", "size": 22}},
-                xaxis_title="Cargo",
-                yaxis_title="Qtd. colaboradores",
-                height=420,
-            )
-        return _figure_info(
-            fig,
-            "Sem executivos suficientes para montar o heatmap entre executivos.",
-        )
+    area_col = "Área" if "Área" in dfp.columns else None
+
+    df_exec = dfp[dfp["Cargo"].astype(str).eq("E")].copy()
+    if df_exec.empty:
+        return _final(fig)
 
     days = pd.date_range(
-        dfp["Data"].min().normalize(), dfp["Data"].max().normalize(), freq="D"
+        dfp["Data"].min().normalize(),
+        dfp["Data"].max().normalize(),
+        freq="D",
     )
+
     pres = (
-        dfp.groupby(["Data", "Cadastro"])["Contagem Presença"]
+        df_exec.groupby(["Data", "Cadastro"])["Contagem Presença"]
         .max()
         .unstack("Cadastro")
         .reindex(days)
         .fillna(0)
     )
 
-    meta_cols = ["Cadastro", "Nome", "Cargo", "Área"]
-    meta = (
-        dfp.sort_values("Data")
-        .drop_duplicates("Cadastro", keep="last")[meta_cols]
-        .set_index("Cadastro")
-    )
-    meta.index = meta.index.astype(str)
-    meta = meta.rename(columns={"Área": "ÁreaNorm"})
+    meta_src = df_exec.sort_values("Data").drop_duplicates("Cadastro", keep="last")
+    if area_col:
+        meta = (
+            meta_src[["Cadastro", "Nome", "Cargo", area_col]]
+            .set_index("Cadastro")
+            .rename(columns={area_col: "ÁreaNorm"})
+        )
+    else:
+        meta = meta_src[["Cadastro", "Nome", "Cargo"]].set_index("Cadastro")
+        meta["ÁreaNorm"] = ""
 
     adm_cache, dem_cache = carregar_adm_dem_cache()
-    ref_dt = days.max() if len(days) else pd.Timestamp.today().normalize()
-    tenure = {}
-    for cadastro in meta.index:
-        cid = str(cadastro)
+    ref_dt = pd.Timestamp.today().normalize()
+    tenure: dict[str, str] = {}
+    for cad in meta.index:
+        cid = str(cad)
         adm_ts = adm_cache.get(cid, None)
         dem_ts = dem_cache.get(cid, None)
         tenure[cid] = tempo_de_casa_str(adm_ts, ref=ref_dt, dem_ts=dem_ts)
 
-    cadastros = meta.index.tolist()
-    if len(cadastros) < 2:
-        return _figure_info(
-            _finalizar_heatmap(fig, titulo, altura=520),
-            "Sem executivos suficientes para montar o heatmap.",
-        )
+    def _tok(texto: object) -> list[str]:
+        return [t.strip() for t in str(texto).replace("/", "-").split("-") if t.strip()]
 
-    cad_ord, _ = calcular_ordem_heatmap(dfp)
-    if cad_ord:
-        cadastros = [cad for cad in cad_ord if cad in set(meta.index)]
-    if len(cadastros) < 2:
-        return _figure_info(
-            _finalizar_heatmap(fig, titulo, altura=520),
-            "Sem pares de executivos válidos para o período selecionado.",
-        )
+    def _akey(area: object) -> tuple[int, tuple[str, ...]]:
+        tokens = _tok(area)
+        return (len(tokens), tuple(tokens))
 
-    if validar_mesma_planta and ("Planta" in dfp.columns):
-        df_day = dfp[["Data", "Cadastro", "Planta"]].copy()
+    cads = sorted(
+        meta.index,
+        key=lambda c: (
+            _akey(meta.loc[c, "ÁreaNorm"]),
+            str(meta.loc[c, "Nome"]).lower(),
+            str(c),
+        ),
+    )
+    if not cads:
+        return _final(fig)
+
+    if validar_mesma_planta and ("Planta" in df_exec.columns):
+        df_day = df_exec[["Data", "Cadastro", "Planta"]].copy()
         df_day["Data"] = pd.to_datetime(df_day["Data"], errors="coerce").dt.normalize()
         df_day = df_day.dropna(subset=["Data", "Cadastro"])
-        encontros = np.zeros((len(cadastros), len(cadastros)), dtype=float)
-        dias_pres = np.zeros((len(cadastros),), dtype=float)
 
-        for _, grupo in df_day.groupby("Data"):
-            grupo = grupo.sort_values("Cadastro").drop_duplicates(
-                subset=["Cadastro"], keep="last"
-            )
-            serie = grupo.set_index("Cadastro")["Planta"]
-            plantas = serie.reindex(cadastros)
-            conjuntos = [_normalizar_planta_cell(valor) for valor in plantas.tolist()]
-            presentes = np.array(
-                [len(conjunto) > 0 for conjunto in conjuntos], dtype=bool
-            )
-            matriz = np.array(
+        n_exec = len(cads)
+        encontros_same = np.zeros((n_exec, n_exec), dtype=float)
+        dias_pres = np.zeros((n_exec,), dtype=float)
+
+        for _, g in df_day.groupby("Data"):
+            g = g.sort_values("Cadastro").drop_duplicates(subset=["Cadastro"], keep="last")
+            serie = g.set_index("Cadastro")["Planta"]
+            plantas = serie.reindex(cads)
+            sets_list = [_normalizar_planta_cell(val) for val in plantas.tolist()]
+            pres_mask = np.array([len(st) > 0 for st in sets_list], dtype=bool)
+            same = np.array(
                 [
                     [
-                        len(conj_i) > 0
-                        and len(conj_j) > 0
-                        and not conj_i.isdisjoint(conj_j)
-                        for conj_j in conjuntos
+                        len(sets_list[i]) > 0
+                        and len(sets_list[j]) > 0
+                        and not sets_list[i].isdisjoint(sets_list[j])
+                        for j in range(n_exec)
                     ]
-                    for conj_i in conjuntos
+                    for i in range(n_exec)
                 ],
                 dtype=bool,
             )
-            validos = matriz & presentes[:, None] & presentes[None, :]
-            encontros += validos.astype(float)
-            dias_pres += presentes.astype(float)
+            valid = same & pres_mask[:, None] & pres_mask[None, :]
+            encontros_same += valid.astype(float)
+            dias_pres += pres_mask.astype(float)
 
-        denom = np.where(dias_pres > 0, dias_pres[:, None], np.nan)
+        denom = dias_pres[:, None]
         with np.errstate(invalid="ignore", divide="ignore"):
             percent = np.divide(
-                encontros,
+                encontros_same,
                 denom,
-                out=np.full_like(encontros, np.nan),
-                where=~np.isnan(denom),
-            ) * 100
+                out=np.full_like(encontros_same, np.nan, dtype=float),
+                where=(denom > 0),
+            ) * 100.0
     else:
-        pres_mat = pres.reindex(columns=cadastros).fillna(0).to_numpy(float)
-        encontros = pres_mat.T @ pres_mat
-        denom = pres_mat.sum(axis=0)[:, None]
+        arr = pres.reindex(columns=cads).fillna(0).to_numpy(dtype=float)
+        encontros = arr.T @ arr
+        denom = arr.sum(axis=0)[:, None]
         with np.errstate(invalid="ignore", divide="ignore"):
             percent = np.divide(
                 encontros,
                 denom,
-                out=np.full_like(encontros, np.nan),
-                where=denom > 0,
-            ) * 100
-    if np.isnan(percent).all():
-        return _figure_info(
-            _finalizar_heatmap(fig, titulo, altura=520),
-            "Sem encontros válidos entre executivos para o período selecionado.",
-        )
+                out=np.full_like(encontros, np.nan, dtype=float),
+                where=(denom > 0),
+            ) * 100.0
 
-    x_labels, y_labels, custom = _montar_labels(meta, cadastros, tenure)
+    np.fill_diagonal(percent, np.nan)
 
+    areas = [meta.loc[c, "ÁreaNorm"] for c in cads]
+    e_scores: list[float] = []
+    for j in range(len(cads)):
+        col = percent[:, j].astype(float).copy()
+        col[j] = np.nan
+        score = np.nanmean(col) if np.any(~np.isnan(col)) else np.nan
+        e_scores.append(-1e9 if np.isnan(score) else float(score))
+
+    order = sorted(
+        range(len(cads)),
+        key=lambda j: (
+            _akey(areas[j]),
+            -e_scores[j],
+            str(meta.loc[cads[j], "Nome"]).lower(),
+            str(cads[j]),
+        ),
+    )
+    cads = [cads[j] for j in order]
+    percent = percent[np.ix_(order, order)]
+
+    def _abbr(nome: object) -> str:
+        partes = str(nome).split()
+        if not partes:
+            return ""
+        return " ".join([partes[0].capitalize()] + [p[0].upper() + "." for p in partes[1:]])
+
+    x_labels = [
+        f"{_abbr(meta.loc[c, 'Nome'])} "
+        f"<span style='font-size:10px;opacity:.85'><b>[{meta.loc[c, 'Cargo']}]</b></span> "
+        f"<span style='font-size:10px;opacity:.85'><b>- {tenure.get(str(c), '—')}</b></span>"
+        f"<br>({str(meta.loc[c, 'ÁreaNorm'])})"
+        for c in cads
+    ]
+    y_labels = [
+        f"{_abbr(meta.loc[c, 'Nome'])} "
+        f"<span style='font-size:10px;opacity:.85'><b>[{meta.loc[c, 'Cargo']}]</b></span> "
+        f"<span style='font-size:10px;opacity:.85'><b>- {tenure.get(str(c), '—')}</b></span>"
+        for c in cads
+    ]
+
+    x_full = [f"{str(meta.loc[c, 'Nome']).title()} ({c})" for c in cads]
+    y_full = [f"{str(meta.loc[c, 'Nome']).title()} ({c})" for c in cads]
+    custom = [[(x_full[x], y_full[y]) for x in range(len(cads))] for y in range(len(cads))]
+
+    colors = [
+        [0.00, "#af3333"],
+        [0.35, "#fc9898"],
+        [0.35, "#ffef09"],
+        [0.60, "#fff9a9"],
+        [0.60, "#9effd0"],
+        [1.00, "#267951"],
+    ]
     text = np.vectorize(
         lambda v: "" if (v is None or (isinstance(v, float) and np.isnan(v))) else f"{v:.1f}%"
     )(percent)
 
     hover_title = (
         "Encontros"
-        if validar_mesma_planta and ("Planta" in dfp.columns)
+        if validar_mesma_planta and ("Planta" in df_exec.columns)
         else "Encontros (co-presença)"
     )
 
-    fig.add_trace(
-        go.Heatmap(
+    fig = go.Figure(
+        data=go.Heatmap(
             z=percent,
             x=x_labels,
             y=y_labels,
             customdata=custom,
-            colorscale=_heatmap_colorscale(),
+            colorscale=colors,
             zmin=0,
             zmax=100,
             text=text,
             texttemplate="%{text}",
-        hovertemplate=(
-            "<b>%{customdata[1]}</b> x <b>%{customdata[0]}</b><br>"
-            f"{hover_title}: %{{z:.1f}}%<extra></extra>"
-        ),
-        showscale=True,
-        colorbar=dict(title="Presença (%)", ticksuffix="%", len=0.82, thickness=14),
-        hoverongaps=False,
-        hoverlabel=dict(bgcolor="white", font=dict(color="black")),
+            hovertemplate=(
+                "<b>%{customdata[1]}</b> × <b>%{customdata[0]}</b><br>"
+                f"{hover_title}: %{{z:.1f}}%<extra></extra>"
+            ),
+            showscale=False,
+            hoverongaps=False,
+            hoverlabel=dict(bgcolor="white", font=dict(color="black")),
+        )
     )
-)
 
     linhas = max(len(y_labels), 1)
-    altura = max(520, 40 + 22 * max(linhas, 10))
+    altura = max(460, 40 + 22 * max(linhas, 10))
     fig.update_layout(
         title={"text": titulo, "font": {"family": "VW Text", "size": 22}},
         xaxis_title="",
         yaxis_title="",
         height=altura,
-        margin=dict(l=120, r=40, t=70, b=120),
+        margin=dict(l=200, r=40, t=70, b=150),
     )
     fig.update_xaxes(tickangle=-45, automargin=True, autorange="reversed")
     fig.update_yaxes(autorange="reversed", automargin=True)
