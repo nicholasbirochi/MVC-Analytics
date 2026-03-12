@@ -72,12 +72,12 @@ def register(app):
 
         chapa_input = pathname.split('/pessoa/')[1]
         if not chapa_input:
-            return None, estilo_oculto, estilo_exibir
+            return None, estilo_oculto, estilo_exibir, no_update
 
         # Filtra dados da pessoa
         df_chapa_semana = dw_fetch_semana_enriquecida(cadastro=str(chapa_input))
         if df_chapa_semana.empty:
-            return None, estilo_oculto, estilo_exibir
+            return None, estilo_oculto, estilo_exibir, no_update
 
         nome_input = df_chapa_semana['Nome'].iloc[0].title()
 
@@ -131,11 +131,21 @@ def register(app):
         min_real = pd.Timestamp(df_chapa_data['Data'].min())
         max_real = pd.Timestamp(df_chapa_data['Data'].max())
 
-        m0 = min_real.month_name(locale='pt_BR').capitalize()
-        m1 = max_real.month_name(locale='pt_BR').capitalize()
+        if pd.isna(min_real) or pd.isna(max_real):
+            # Sem datas -> não há como montar o heatmap
+            return None, estilo_oculto, estilo_exibir, no_update
 
-        mes_ano_inicio = f"{m0} de {min_real.year}"
-        mes_ano_fim    = f"{m1} de {max_real.year}"
+        def _fmt_mes_ano(dt_ref: pd.Timestamp) -> str:
+            try:
+                return f"{dt_ref.month_name(locale='pt_BR').capitalize()} de {dt_ref.year}"
+            except Exception:
+                return dt_ref.strftime("%b de %Y").capitalize()
+
+        m0 = _fmt_mes_ano(min_real)
+        m1 = _fmt_mes_ano(max_real)
+
+        mes_ano_inicio = m0
+        mes_ano_fim    = m1
 
         # cria rótulos dinâmicos
         periodo_label_completo = f"{mes_ano_inicio} a {mes_ano_fim}"
@@ -143,11 +153,6 @@ def register(app):
         mes_ano_inicio = min_real.strftime("%b %Y").capitalize()
         mes_ano_fim    = max_real.strftime("%b %Y").capitalize()
         periodo_label_curto = f"{mes_ano_inicio} a {mes_ano_fim}"
-
-        # Guard contra base vazia
-        if pd.isna(min_real) or pd.isna(max_real):
-            # Sem datas -> não há como montar o heatmap
-            return None, estilo_oculto, estilo_exibir
 
         # Se quiser cruzar com adm/dem, aplique aqui:
         data_adm, data_dem = obter_periodo_admissao(chapa_input)
