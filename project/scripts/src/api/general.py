@@ -29,7 +29,9 @@ from ..core.repo_global import (
 from ..domain.filters import (
     aplicar_filtro_faixas,
     aplicar_filtro_por_area,
+    carregar_media_colaboradores,
     filtrar_base,
+    interpolar_cor_hex,
     slug,
 )
 from ..domain.periods import (
@@ -57,6 +59,45 @@ from ..ui.figures import (
     figura_vazia_linha,
 )
 from ..ui.theme import aplicar_tema_pb
+
+
+def _normalizar_faixas(faixas) -> list[str]:
+    if not faixas:
+        return []
+    if isinstance(faixas, str):
+        return [faixas]
+    return [str(f) for f in faixas]
+
+
+def _media_colaboradores(
+    df_desligados,
+    viajam,
+    area_selecionada,
+    subarea_selecionada,
+    periodo_idx,
+) -> pd.DataFrame:
+    return carregar_media_colaboradores(
+        df_desligados=df_desligados,
+        viajam=viajam,
+        area_selecionada=area_selecionada,
+        subarea_selecionada=subarea_selecionada,
+        periodo_idx=periodo_idx,
+    )
+
+
+def _media_ponderada(df: pd.DataFrame, cargo: str | None = None) -> float:
+    if df is None or df.empty:
+        return 0.0
+    dff = df.copy()
+    if cargo is not None and "Cargo" in dff.columns:
+        dff = dff[dff["Cargo"] == cargo]
+    if dff.empty:
+        return 0.0
+    dias_presenca = pd.to_numeric(dff["Dias Presenca"], errors="coerce").fillna(0).sum()
+    dias_monitorados = pd.to_numeric(dff["Dias Monitorados"], errors="coerce").fillna(0).sum()
+    if dias_monitorados <= 0:
+        return 0.0
+    return round(float(dias_presenca / dias_monitorados), 2)
 
 
 
@@ -203,20 +244,18 @@ def register(app):
         Input('periodo-indices', 'data')
     )
     def atualizar_tabela(df_desligados, viajam, chapa_selecionada, faixas, area_selecionada, subarea_selecionada, periodo_idx):
-        if not faixas:
-            faixas = []
-        elif isinstance(faixas, str):
-            faixas = [faixas]
-
-        df_filtrado = filtrar_base(df_desligados, viajam, area_selecionada, subarea_selecionada, periodo_idx, faixas)
-
-        media_colab = (
-            df_filtrado
-            .groupby(['Área', 'Departamento', 'Cadastro', 'Nome', 'Cargo Especifico'])['Contagem Presença']
-            .mean()
-            .reset_index()
+        faixas = _normalizar_faixas(faixas)
+        media_df = _media_colaboradores(
+            df_desligados,
+            viajam,
+            area_selecionada,
+            subarea_selecionada,
+            periodo_idx,
         )
-        media_colab.columns = ['Área', 'Departamento', 'Chapa', 'Nome', 'Cargo', 'Média Dia']
+        media_colab = media_df[
+            ["Área", "Departamento", "Cadastro", "Nome", "Cargo Especifico", "Média Presença"]
+        ].copy()
+        media_colab.columns = ["Área", "Departamento", "Chapa", "Nome", "Cargo", "Média Dia"]
         media_colab['Média Dia'] = media_colab['Média Dia'].round(2)
 
         if chapa_selecionada:
@@ -289,14 +328,15 @@ def register(app):
         Input('periodo-indices', 'data')
     )
     def atualizar_opcoes_chapa(df_desligados, viajam, faixas, area_selecionada, subarea_selecionada, periodo_idx):
-        if not faixas:
-            faixas = []
-        elif isinstance(faixas, str):
-            faixas = [faixas]
-
-        df_filtrado = filtrar_base(df_desligados, viajam, area_selecionada, subarea_selecionada, periodo_idx, faixas)
-
-        media_presenca = df_filtrado.groupby(['Cadastro', 'Nome'])['Contagem Presença'].mean().reset_index()
+        faixas = _normalizar_faixas(faixas)
+        media_df = _media_colaboradores(
+            df_desligados,
+            viajam,
+            area_selecionada,
+            subarea_selecionada,
+            periodo_idx,
+        )
+        media_presenca = media_df[['Cadastro', 'Nome', 'Média Presença']].copy()
         media_presenca.columns = ['Chapa', 'Nome', 'Média']
         media_presenca = aplicar_filtro_faixas(media_presenca, 'Média', faixas)
         media_presenca = media_presenca.sort_values(by='Nome')
@@ -314,15 +354,15 @@ def register(app):
         Input('periodo-indices', 'data')
     )
     def atualizar_heatmap(df_desligados, viajam, faixas, area_selecionada, subarea_selecionada, periodo_idx):
-        if not faixas:
-            faixas = []
-        elif isinstance(faixas, str):
-            faixas = [faixas]
-
-        df_filtrado = filtrar_base(df_desligados, viajam, area_selecionada, subarea_selecionada, periodo_idx, faixas)
-
-        media_presenca_detalhada = df_filtrado.groupby('Cadastro')['Contagem Presença'].mean().reset_index()
-        media_presenca_detalhada.columns = ['Cadastro', 'Média Presença']
+        faixas = _normalizar_faixas(faixas)
+        media_df = _media_colaboradores(
+            df_desligados,
+            viajam,
+            area_selecionada,
+            subarea_selecionada,
+            periodo_idx,
+        )
+        media_presenca_detalhada = media_df[['Cadastro', 'Média Presença']].copy()
 
         media_por_pessoa = media_presenca_detalhada[['Cadastro', 'Média Presença']].copy()
         media_por_pessoa['Média Presença'] = media_por_pessoa['Média Presença'].clip(lower=0, upper=7)
@@ -434,15 +474,15 @@ def register(app):
         Input('periodo-indices', 'data')
     )
     def atualizar_dispersao(df_desligados, viajam, faixas, area_selecionada, subarea_selecionada, periodo_idx):
-        if not faixas:
-            faixas = []
-        elif isinstance(faixas, str):
-            faixas = [faixas]
-
-        df_filtrado = filtrar_base(df_desligados, viajam, area_selecionada, subarea_selecionada, periodo_idx, faixas)
-
-        media_presenca_detalhada = df_filtrado.groupby('Cadastro')['Contagem Presença'].mean().reset_index()
-        media_presenca_detalhada.columns = ['Cadastro', 'Média Presença']
+        faixas = _normalizar_faixas(faixas)
+        media_df = _media_colaboradores(
+            df_desligados,
+            viajam,
+            area_selecionada,
+            subarea_selecionada,
+            periodo_idx,
+        )
+        media_presenca_detalhada = media_df[['Cadastro', 'Média Presença']].copy()
 
         media_presenca_detalhada = aplicar_filtro_faixas(media_presenca_detalhada, 'Média Presença', faixas)
         media_presenca_detalhada['Média Presença Arred'] = media_presenca_detalhada['Média Presença'].round(1)
@@ -479,20 +519,15 @@ def register(app):
         Input('periodo-indices', 'data')
     )
     def atualizar_presenca_cargo(df_desligados, viajam, faixas, area_selecionada, subarea_selecionada, periodo_idx):
-        if not faixas:
-            faixas = []
-        elif isinstance(faixas, str):
-            faixas = [faixas]
-
-        df_filtrado = filtrar_base(df_desligados, viajam, area_selecionada, subarea_selecionada, periodo_idx, faixas)
-
-        media_presenca_detalhada = df_filtrado.groupby('Cadastro')['Contagem Presença'].mean().reset_index()
-        media_presenca_detalhada.columns = ['Cadastro', 'Média Presença']
-        media_presenca_detalhada = media_presenca_detalhada.merge(
-            df_filtrado[['Cadastro', 'Cargo']].drop_duplicates(),
-            on='Cadastro',
-            how='left'
+        faixas = _normalizar_faixas(faixas)
+        media_df = _media_colaboradores(
+            df_desligados,
+            viajam,
+            area_selecionada,
+            subarea_selecionada,
+            periodo_idx,
         )
+        media_presenca_detalhada = media_df[['Cadastro', 'Média Presença', 'Cargo']].copy()
         media_presenca_detalhada = aplicar_filtro_faixas(media_presenca_detalhada, 'Média Presença', faixas)
 
         fig_cargo = go.Figure()
@@ -538,18 +573,17 @@ def register(app):
         if not area_selecionada or area_selecionada == "GERAL":
             # pode retornar um gráfico vazio ou simplesmente não atualizar
             return figura_vazia_linha("Selecione uma área no dropdown para visualizar o Boxplot.")
-        if not faixas:
-            faixas = []
-        elif isinstance(faixas, str):
-            faixas = [faixas]
-
-        df_filtrado = filtrar_base(df_desligados, viajam, area_selecionada, subarea_selecionada, periodo_idx, faixas)
-
-        medias_individuais = (
-            df_filtrado.groupby(['Cadastro', 'Nome', 'Área'])['Contagem Presença']
-            .mean().reset_index().round(2)
+        faixas = _normalizar_faixas(faixas)
+        media_df = _media_colaboradores(
+            df_desligados,
+            viajam,
+            area_selecionada,
+            subarea_selecionada,
+            periodo_idx,
         )
+        medias_individuais = media_df[['Cadastro', 'Nome', 'Área', 'Média Presença']].copy()
         medias_individuais.columns = ['Chapa', 'Nome', 'Área', 'Média Presença']
+        medias_individuais['Média Presença'] = medias_individuais['Média Presença'].round(2)
 
         if area_selecionada and area_selecionada != 'GERAL':
             if subarea_selecionada:
@@ -617,14 +651,20 @@ def register(app):
         Input('periodo-indices', 'data')
     )
     def atualizar_info(df_desligados, viajam, area_selecionada, subarea_selecionada, periodo_idx):
-        df_filtrado = filtrar_base(df_desligados, viajam, area_selecionada, subarea_selecionada, periodo_idx, [])
+        media_df = _media_colaboradores(
+            df_desligados,
+            viajam,
+            area_selecionada,
+            subarea_selecionada,
+            periodo_idx,
+        )
 
-        total_colaboradores = df_filtrado['Cadastro'].nunique()
-        total_mensalistas = df_filtrado[df_filtrado['Cargo'] == 'M']['Cadastro'].nunique() if 'Cargo' in df_filtrado.columns else 0
-        total_executivos = df_filtrado[df_filtrado['Cargo'] == 'E']['Cadastro'].nunique() if 'Cargo' in df_filtrado.columns else 0
-        media_presenca_geral = round(df_filtrado['Contagem Presença'].mean(), 2) if not df_filtrado.empty else 0.0
-        media_presenca_mensalistas = round(df_filtrado[df_filtrado['Cargo'] == 'M']['Contagem Presença'].mean(), 2) if 'Cargo' in df_filtrado.columns else 0.0
-        media_presenca_executivos = round(df_filtrado[df_filtrado['Cargo'] == 'E']['Contagem Presença'].mean(), 2) if 'Cargo' in df_filtrado.columns else 0.0
+        total_colaboradores = media_df['Cadastro'].nunique() if 'Cadastro' in media_df.columns else 0
+        total_mensalistas = media_df[media_df['Cargo'] == 'M']['Cadastro'].nunique() if 'Cargo' in media_df.columns else 0
+        total_executivos = media_df[media_df['Cargo'] == 'E']['Cadastro'].nunique() if 'Cargo' in media_df.columns else 0
+        media_presenca_geral = _media_ponderada(media_df)
+        media_presenca_mensalistas = _media_ponderada(media_df, cargo='M')
+        media_presenca_executivos = _media_ponderada(media_df, cargo='E')
 
         tabela_info = html.Table([
             html.Thead([html.Tr([html.Th("Informações de Colaboradores", colSpan=2)], style={'fontSize': '20px'})]),
@@ -652,23 +692,19 @@ def register(app):
         Input('periodo-indices', 'data')
     )
     def atualizar_resumo(df_desligados, viajam, faixas, area_selecionada, subarea_selecionada, periodo_idx):
-        if not faixas:
-            faixas = []
-        elif isinstance(faixas, str):
-            faixas = [faixas]
-
-        df_filtrado = filtrar_base(df_desligados, viajam, area_selecionada, subarea_selecionada, periodo_idx, faixas)
-
-        media_colab_resumo = (
-            df_filtrado.groupby(['Área', 'Departamento', 'Cadastro', 'Nome'])['Contagem Presença']
-            .mean().reset_index()
+        faixas = _normalizar_faixas(faixas)
+        media_df = _media_colaboradores(
+            df_desligados,
+            viajam,
+            area_selecionada,
+            subarea_selecionada,
+            periodo_idx,
         )
-        media_colab_resumo.columns = ['Área', 'Departamento', 'Chapa', 'Nome', 'Média Dia']
+        media_colab_resumo = media_df[
+            ['Área', 'Departamento', 'Cadastro', 'Nome', 'Cargo', 'Média Presença']
+        ].copy()
+        media_colab_resumo.columns = ['Área', 'Departamento', 'Chapa', 'Nome', 'Cargo', 'Média Dia']
         media_colab_resumo['Média Dia'] = media_colab_resumo['Média Dia'].round(2)
-        media_colab_resumo = media_colab_resumo.merge(
-            df_filtrado[['Cadastro', 'Cargo']].drop_duplicates(),
-            how='left', left_on='Chapa', right_on='Cadastro'
-        )
 
         resumo_area = media_colab_resumo.groupby(['Área', 'Departamento']).agg(
             Qtd_Pessoas=('Chapa', 'count'),
