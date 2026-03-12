@@ -579,7 +579,7 @@ def register(app):
             return figura_vazia_linha("Sem dados para o período e filtros selecionados.")
 
         fig_cargo = go.Figure()
-        for cod, nome, cor in [('M', 'Mensalistas', '#7cc3e9'), ('E', 'Executivos', "#1574b3")]:
+        for cod, nome, cor in [('E', 'Executivos', "#1574b3"), ('M', 'Mensalistas', '#7cc3e9'), ('H', 'Horistas', '#3fbe81')]:
             df_aux = media_presenca_detalhada[media_presenca_detalhada['Cargo'] == cod].copy()
             if df_aux.empty:
                 continue
@@ -602,7 +602,7 @@ def register(app):
             xaxis_title="Média de Presença Semanal",
             yaxis_title="Qtd de Pessoas",
             height=500,
-            legend=dict(x=1, y=0.88, orientation='v', xanchor='right', yanchor='bottom',
+            legend=dict(x=1, y=0.84, orientation='v', xanchor='right', yanchor='bottom',
                         font=dict(size=12), bgcolor='#ffffff')
         )
 
@@ -716,13 +716,16 @@ def register(app):
         total_colaboradores = media_df['Cadastro'].nunique() if 'Cadastro' in media_df.columns else 0
         total_mensalistas = media_df[media_df['Cargo'] == 'M']['Cadastro'].nunique() if 'Cargo' in media_df.columns else 0
         total_executivos = media_df[media_df['Cargo'] == 'E']['Cadastro'].nunique() if 'Cargo' in media_df.columns else 0
+        total_horistas = media_df[media_df['Cargo'] == 'H']['Cadastro'].nunique() if 'Cargo' in media_df.columns else 0
         media_presenca_geral = _media_ponderada(media_df)
         media_presenca_mensalistas = _media_ponderada(media_df, cargo='M')
         media_presenca_executivos = _media_ponderada(media_df, cargo='E')
+        media_presenca_horistas = _media_ponderada(media_df, cargo='H')
         hc = _resumo_headcount(area_selecionada, subarea_selecionada)
 
         rows = [
             html.Tr([html.Td("Total de Colaboradores:"), html.Td(total_colaboradores)]),
+            html.Tr([html.Td("Horistas:"), html.Td(total_horistas)]),
             html.Tr([html.Td("Mensalistas:"), html.Td(total_mensalistas)]),
             html.Tr([html.Td("Executivos:"), html.Td(total_executivos)]),
         ]
@@ -742,10 +745,11 @@ def register(app):
         rows.extend(
             [
                 html.Tr([html.Td(html.Br()), html.Td()]),
-                html.Tr([html.Th("Média(%) de Presença por Semana", colSpan=2)], style={'fontSize': '20px'}),
-                html.Tr([html.Td("Total:"), html.Td(f"{media_presenca_geral}%")]),
-                html.Tr([html.Td("Mensalistas:"), html.Td(f"{media_presenca_mensalistas}%")]),
-                html.Tr([html.Td("Executivos:"), html.Td(f"{media_presenca_executivos}%")]),
+                html.Tr([html.Th("Média de Presença por Semana", colSpan=2)], style={'fontSize': '20px'}),
+                html.Tr([html.Td("Total:"), html.Td(media_presenca_geral)]),
+                html.Tr([html.Td("Horistas:"), html.Td(media_presenca_horistas)]),
+                html.Tr([html.Td("Mensalistas:"), html.Td(media_presenca_mensalistas)]),
+                html.Tr([html.Td("Executivos:"), html.Td(media_presenca_executivos)]),
             ]
         )
 
@@ -786,7 +790,8 @@ def register(app):
         resumo_area = media_colab_resumo.groupby(['Área', 'Departamento']).agg(
             Qtd_Pessoas=('Chapa', 'count'),
             Qtd_Mensalistas=('Cargo', lambda x: (x == 'M').sum()),
-            Qtd_Executivos=('Cargo', lambda x: (x != 'M').sum()),
+            Qtd_Executivos=('Cargo', lambda x: (x == 'E').sum()),
+            Qtd_Horistas=('Cargo', lambda x: (x == 'H').sum()),
             Media_Dia=('Média Dia', 'mean')
         ).reset_index()
         resumo_area['Média Dia'] = resumo_area['Media_Dia'].round(2)
@@ -830,8 +835,9 @@ def register(app):
                         html.Tr([
                             html.Th('Área', style=th_style('left', '0%')),
                             html.Th('Departamento', style=th_style('left', '0%')),
-                            html.Th('Mensalistas', style=th_style('left', '0%')),
                             html.Th('Executivos', style=th_style('left', '0%')),
+                            html.Th('Mensalistas', style=th_style('left', '0%')),
+                            html.Th('Horistas', style=th_style('left', '0%')),
                             html.Th('Total', style=th_style('left', '0%')),
                             html.Th('Média Dia', style=th_style('left', '0%')),
                             html.Th('Média %', style=th_style('left', '0%')),
@@ -843,9 +849,11 @@ def register(app):
                                     style=td_style('left', '0%')),
                             html.Td(_td_link_area(row['Departamento'], row['Área']),
                                     style=td_style('left', '0%')),
+                            html.Td(_td_link_area(row['Qtd_Executivos'], row['Área']),
+                                    style=td_style('left', '0%')),
                             html.Td(_td_link_area(row['Qtd_Mensalistas'], row['Área']),
                                     style=td_style('left', '0%')),
-                            html.Td(_td_link_area(row['Qtd_Executivos'], row['Área']),
+                            html.Td(_td_link_area(row['Qtd_Horistas'], row['Área']),
                                     style=td_style('left', '0%')),
                             html.Td(_td_link_area(row['Qtd_Pessoas'], row['Área']),
                                     style=td_style('left', '0%')),
