@@ -12,6 +12,7 @@ Padronização:
 from __future__ import annotations
 from dash import Input, Output, State, dcc, html, dash_table, no_update, ALL
 from dash.exceptions import PreventUpdate
+import time
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
