@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from dash import Input, Output, State, callback_context, dcc, html, no_update
 import pandas as pd
+import plotly.graph_objects as go
 
 from ..core.repo_global import (
     df_datas,
@@ -261,44 +262,153 @@ def register(app):
         fig_men_out = no_update
         fig_exec_out = no_update
 
-        vis_mode = (areas_vis_state or "heatmap")
+        # --- Decide modo de visualização (Heatmap ou Teia/Network) ---
+        vis_mode = areas_vis_state or "heatmap"
         if isinstance(vis_mode, str):
             vis_mode = vis_mode.lower()
         else:
             vis_mode = "heatmap"
 
-        if precisa_df:
+        if not df_full.empty:
+            if not hasattr(callback_unificado, "_fig_cache"):
+                callback_unificado._fig_cache = {}
+            fig_cache = callback_unificado._fig_cache
+
             if vis_mode == "network":
-                try:
-                    df_net = _sanitize_object_columns(df_full)
-                    fig_men_full = grafico_pentagonos_rel_exec_multiplos(df_net, titulo_men, max_exec=999)
-                    fig_exec_full = grafico_pentagonos_exec_exec_multiplos(
-                        df_net, titulo_exec, max_exec=999
-                    )
-                except Exception:
+                fig_key = (df_key, "network_radar_v3")
+            else:
+                fig_key = (df_key, "heatmap")
+
+            if fig_key in fig_cache:
+                fig_men_full, fig_exec_full = fig_cache[fig_key]
+            else:
+                if vis_mode == "network":
+                    df_net = df_full.copy()
+                    try:
+                        df_net = _sanitize_object_columns(df_net)
+                    except Exception:
+                        pass
+
+                    if "Cargo" in df_net.columns:
+                        try:
+                            c = df_net["Cargo"].astype(str).str.strip()
+                            cu = c.str.upper()
+                            df_net["Cargo"] = (
+                                pd.Series(pd.NA, index=df_net.index, dtype="object")
+                                .where(False, other=cu.str[:1])
+                            )
+                            df_net["Cargo"] = df_net["Cargo"].where(
+                                ~(cu.str.startswith("E") | cu.str.contains("EXEC")), "E"
+                            )
+                            df_net["Cargo"] = df_net["Cargo"].where(
+                                ~(cu.str.startswith("M") | cu.str.contains("MENS")), "M"
+                            )
+                            df_net["Cargo"] = df_net["Cargo"].where(
+                                ~(cu.str.startswith("H") | cu.str.contains("HOR")), "H"
+                            )
+                            df_net["Cargo"] = df_net["Cargo"].astype(str)
+                        except Exception:
+                            df_net["Cargo"] = df_net["Cargo"].astype(str)
+
+                    if "Cadastro" in df_net.columns:
+                        df_net["Cadastro"] = df_net["Cadastro"].astype(str)
+                    if "Nome" not in df_net.columns and "Cadastro" in df_net.columns:
+                        df_net["Nome"] = df_net["Cadastro"]
+                    if "Data" in df_net.columns:
+                        df_net["Data"] = pd.to_datetime(df_net["Data"], errors="coerce")
+                    elif "Semana" in df_net.columns:
+                        df_net["Data"] = pd.to_datetime(df_net["Semana"], errors="coerce")
+                    if "Contagem Presença" in df_net.columns:
+                        df_net["Contagem Presença"] = pd.to_numeric(
+                            df_net["Contagem Presença"], errors="coerce"
+                        ).fillna(0.0)
+                    else:
+                        df_net["Contagem Presença"] = 1.0
+
+                    try:
+                        titulo_men_teia = (
+                            f"Pentágonos de relacionamento (Executivos × Mensalistas e Horistas) ({periodo})"
+                        )
+                        fig_men_full = grafico_pentagonos_rel_exec_multiplos(
+                            df_net,
+                            titulo=titulo_men_teia,
+                            max_exec=12,
+                            max_eixos=None,
+                            range_mode="global",
+                            validar_mesma_planta=True,
+                            df_hierarquia=df_df_ativos,
+                            is_almoco=is_almoco,
+                            strict=True,
+                        )
+                    except Exception as exc:
+                        fig_men_full = go.Figure()
+                        fig_men_full.update_layout(
+                            title={
+                                'text': f"{titulo_men} — erro ao gerar TEIA",
+                                'font': {'family': 'VW Text', 'size': 22}
+                            },
+                            height=420,
+                            font={'family': 'VW Text'}
+                        )
+                        fig_men_full.add_annotation(
+                            text=str(exc)[:200],
+                            x=0.5,
+                            y=0.5,
+                            xref='paper',
+                            yref='paper',
+                            showarrow=False
+                        )
+
+                    try:
+                        titulo_exec_teia = (
+                            f"Pentágonos de relacionamento (Executivos × Executivos) ({periodo})"
+                        )
+                        fig_exec_full = grafico_pentagonos_exec_exec_multiplos(
+                            df_net,
+                            titulo=titulo_exec_teia,
+                            max_exec=12,
+                            max_eixos=None,
+                            range_mode="global",
+                            validar_mesma_planta=True,
+                            df_hierarquia=df_df_ativos,
+                            is_almoco=is_almoco,
+                            strict=True,
+                        )
+                    except Exception as exc:
+                        fig_exec_full = go.Figure()
+                        fig_exec_full.update_layout(
+                            title={
+                                'text': f"{titulo_exec} — erro ao gerar TEIA",
+                                'font': {'family': 'VW Text', 'size': 22}
+                            },
+                            height=420,
+                            font={'family': 'VW Text'}
+                        )
+                        fig_exec_full.add_annotation(
+                            text=str(exc)[:200],
+                            x=0.5,
+                            y=0.5,
+                            xref='paper',
+                            yref='paper',
+                            showarrow=False
+                        )
+                else:
                     fig_men_full = aplicar_tema_pb(
-                        grafico_heatmap_encontros_men(df_full, titulo_men, validar_mesma_planta=True),
+                        grafico_heatmap_encontros_men(
+                            df_full, titulo_men, validar_mesma_planta=True
+                        ),
                         so_y_boxplot=False,
                         grade=True,
                     )
                     fig_exec_full = aplicar_tema_pb(
-                        grafico_heatmap_encontros_exec(df_full, titulo_exec, validar_mesma_planta=True),
+                        grafico_heatmap_encontros_exec(
+                            df_full, titulo_exec, validar_mesma_planta=True
+                        ),
                         so_y_boxplot=False,
                         grade=False,
                         clean=True,
                     )
-            else:
-                fig_men_full = aplicar_tema_pb(
-                    grafico_heatmap_encontros_men(df_full, titulo_men, validar_mesma_planta=True),
-                    so_y_boxplot=False,
-                    grade=True,
-                )
-                fig_exec_full = aplicar_tema_pb(
-                    grafico_heatmap_encontros_exec(df_full, titulo_exec, validar_mesma_planta=True),
-                    so_y_boxplot=False,
-                    grade=False,
-                    clean=True,
-                )
+                fig_cache[fig_key] = (fig_men_full, fig_exec_full)
 
             fig_men_full.update_layout(uirevision="area-vis-men")
             fig_exec_full.update_layout(uirevision="area-vis-exec")
