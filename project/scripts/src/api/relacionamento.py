@@ -19,13 +19,85 @@ import plotly.graph_objects as go
 
 from ..core.repo_global import df_datas, df_semana_merged, df_df_ativos, df_df_gptw, her
 from ..core import repo_global as repo
-from ..domain.pipeline import dw_fetch_diarios
+from ..domain.pipeline import dw_fetch_diarios, dw_almoco_min_max, query_dw
 from ..ui.gptw import df_gptw_tabela_empilhada
 from ..ui.theme import ESTILO_EXIBIR, ESTILO_OCULTO
 
 
 estilo_exibir = ESTILO_EXIBIR
 estilo_oculto = ESTILO_OCULTO
+
+
+def _semana_inicio(s: pd.Series) -> pd.Series:
+    """Retorna a segunda-feira ISO de cada data, preservando índice."""
+    s = pd.to_datetime(s, errors="coerce")
+    iso = s.dt.isocalendar()
+    y = iso["year"].astype(int).astype(str)
+    w = iso["week"].astype(int).astype(str).str.zfill(2)
+    out = pd.to_datetime(y + w + "1", format="%G%V%u", errors="coerce")
+    out.index = s.index
+    return out
+
+
+def _sql_in_clause(values) -> tuple[str, tuple[str, ...]]:
+    vals = [str(v) for v in (values or []) if str(v).strip()]
+    if not vals:
+        return "IN (NULL)", tuple()
+    placeholders = ",".join(["?"] * len(vals))
+    return f"IN ({placeholders})", tuple(vals)
+
+
+def build_dataframe_almoco_pessoas(
+    cad_list,
+    dt_ini=None,
+    dt_fim=None,
+) -> pd.DataFrame:
+    """Consulta clusters de almoço no DW para cálculo de co-presença por semana."""
+    empty = pd.DataFrame(columns=["Data", "Cadastro", "Clusters"])
+    if not cad_list:
+        return empty
+
+    if dt_ini is None or dt_fim is None:
+        _, dmax = dw_almoco_min_max()
+        if dmax is None:
+            return empty
+        dt_fim = pd.Timestamp(dmax).normalize()
+        dt_ini = (dt_fim - pd.DateOffset(months=3)).normalize()
+    else:
+        dt_ini = pd.Timestamp(dt_ini).normalize()
+        dt_fim = pd.Timestamp(dt_fim).normalize()
+        if dt_ini > dt_fim:
+            dt_ini, dt_fim = dt_fim, dt_ini
+
+    in_sql, in_params = _sql_in_clause(cad_list)
+    sql = f"""
+    SELECT
+      a."Data" AS "Data",
+      a."Cadastro" AS "Cadastro",
+      GROUP_CONCAT(DISTINCT a."Planta", '|') AS "Clusters"
+    FROM vw_almoco_cluster a
+    WHERE a."Cadastro" {in_sql}
+      AND a."Data" BETWEEN ? AND ?
+    GROUP BY a."Data", a."Cadastro"
+    ORDER BY a."Cadastro", a."Data";
+    """
+    params = tuple(in_params) + (
+        pd.Timestamp(dt_ini).strftime("%Y-%m-%d"),
+        pd.Timestamp(dt_fim).strftime("%Y-%m-%d"),
+    )
+    df = query_dw(sql, params=params, parse_dates=["Data"])
+    if df.empty:
+        return empty
+    df["Cadastro"] = df["Cadastro"].astype(str)
+    df["Data"] = pd.to_datetime(df["Data"], errors="coerce").dt.normalize()
+    df["Clusters"] = (
+        df["Clusters"]
+        .fillna("")
+        .astype(str)
+        .str.split("|")
+        .apply(lambda x: set([i for i in x if i]))
+    )
+    return df
 
 
 def register(app):
@@ -449,8 +521,9 @@ def register(app):
         Input('dropdown-pessoas-rel', 'value'),
         Input({'type':'cor-pessoa','index': ALL}, 'value'),
         Input('rel-tags', 'data'),
+        Input('modo-rel', 'data'),
     )
-    def atualizar_graficos(selecionados, cores, tags):
+    def atualizar_graficos(selecionados, cores, tags, modo_rel):
         def fig_msg(msg):
             f = go.Figure()
             f.update_layout(template="plotly_white", title=msg)
@@ -512,13 +585,7 @@ def register(app):
                        .to_dict())
 
         # ------------------ semana ISO ------------------
-        iso = dfp['Data'].dt.isocalendar()
-        dfp['AnoISO'] = iso.year.astype(int)
-        dfp['SemISO'] = iso.week.astype(int)
-        dfp['SemIni'] = pd.to_datetime(
-            dfp['AnoISO'].astype(str) + dfp['SemISO'].astype(str).str.zfill(2) + '1',
-            format='%G%V%u', errors='coerce'
-        )
+        dfp['SemIni'] = _semana_inicio(dfp['Data'])
 
         # ------------------ séries: presença semanal ------------------
         semanas = sorted(dfp['SemIni'].dropna().unique())
@@ -565,87 +632,135 @@ def register(app):
         )
 
         # ------------------ ENCONTROS (% vs referência) → minis ------------------
+        modo_rel = (modo_rel or 'geral').lower()
         ref = cad_list[0]
         outros = cad_list[1:]
-        ref_nome = cad_to_nome.get(ref, ref)
 
-        # mapa por semana: conjuntos de datas por pessoa (sem planta)
-        def mapa_datas_por_semana(df):
-            out = {}
-            for sem, g in df.groupby('SemIni'):
-                g = g[['Cadastro','Data']].dropna()
-                out[sem] = {cad: set(gc['Data'].tolist()) for cad, gc in g.groupby('Cadastro')}
-            return out
-
-        mapa = mapa_datas_por_semana(dfp)
-        semanas_mapa = sorted(mapa.keys())  # garante ordem a partir do mapa
-
-        # Série: média do percentual de encontros (0–100) por semana
-        pct_medias = []
-        for sem in semanas_mapa:
-            d = mapa.get(sem, {})
-            datas_ref = d.get(ref, set())
-            pcts = []
-            for cad in outros:
-                datas_outro = d.get(cad, set())
-                denom = len(datas_outro)
-                if denom > 0:
-                    num = len(datas_ref & datas_outro)
-                    pcts.append(100.0 * num / denom)
-            # média entre "outros" que tiveram presença na semana
-            if len(pcts) == 0:
-                pct_medias.append(float('nan'))
+        if modo_rel == 'almoco':
+            _, dmax = dw_almoco_min_max()
+            if dmax is None:
+                fig_mini_movel = fig_msg("Sem dados de almoço para as pessoas selecionadas")
             else:
-                pct_medias.append(round(float(np.nanmean(pcts)), 2))
+                dt_fim = pd.Timestamp(dmax).normalize()
+                dt_ini = (dt_fim - pd.DateOffset(months=3)).normalize()
+                dfal = build_dataframe_almoco_pessoas(cad_list, dt_ini=dt_ini, dt_fim=dt_fim)
+                if dfal is None or dfal.empty:
+                    fig_mini_movel = fig_msg("Sem dados de almoço para as pessoas selecionadas")
+                else:
+                    dfal['SemIni'] = _semana_inicio(dfal['Data'])
+                    dfal = dfal.dropna(subset=['SemIni'])
+                    sems = pd.Index(semanas)
 
-        # --- depois de calcular serie_pct / mm3_pct ---
-        serie_pct = pd.Series(pct_medias, index=semanas_mapa).astype(float).round(2)
-        mm3_pct = serie_pct.rolling(window=3, min_periods=1).mean().round(2)
+                    mapa_sem = {}
+                    for sem, gsem in dfal.groupby('SemIni'):
+                        m = {}
+                        for cad, gg in gsem.groupby('Cadastro'):
+                            m[str(cad)] = {d: cset for d, cset in zip(gg['Data'], gg['Clusters'])}
+                        mapa_sem[sem] = m
 
-        # 1) reindexa pro mesmo eixo X do gráfico de cima
-        mm3_pct = mm3_pct.reindex(semanas)
+                    pct_medias = []
+                    for sem in sems:
+                        m = mapa_sem.get(sem, {})
+                        datas_ref = m.get(str(ref), {})
+                        pcts = []
+                        for cad in outros:
+                            dias_outro = m.get(str(cad), {})
+                            denom = len(dias_outro)
+                            if denom > 0:
+                                num = 0
+                                for d, cset in dias_outro.items():
+                                    if d in datas_ref and len(cset & datas_ref[d]) > 0:
+                                        num += 1
+                                pcts.append(100.0 * num / denom)
+                        pct_medias.append(float(np.nanmean(pcts)) if pcts else float('nan'))
 
-        # 2) constrói o mini usando o mesmo X
-        fig_mini_movel = go.Figure()
-        fig_mini_movel.add_trace(go.Scatter(
-            x=semanas,
-            y=list(mm3_pct.clip(lower=0, upper=100).values),
-            mode='lines+markers',
-            line_shape='spline',
-            line=dict(width=2),
-            marker=dict(size=6),
-            name='Média móvel (3) — % encontros vs referência',
-            hovertemplate="Semana: %{x|%Y-%m-%d}<br>Média móvel (3): %{y:.1f}%<extra></extra>"
-        ))
+                    serie_pct = pd.Series(pct_medias, index=sems).astype(float)
+                    mm3_pct = serie_pct.rolling(window=3, min_periods=1).mean().round(2)
 
-        fig_mini_movel.add_shape(
-            type='line', xref='paper', x0=0, x1=1,
-            yref='y', y0=50, y1=50,
-            line=dict(dash='dot', width=1, color='rgba(0,0,0,0.35)')
-        )
+                    fig_mini_movel = go.Figure()
+                    fig_mini_movel.add_trace(go.Scatter(
+                        x=sems,
+                        y=list(mm3_pct.clip(lower=0, upper=100).values),
+                        mode='lines+markers',
+                        line_shape='spline',
+                        line=dict(width=2),
+                        marker=dict(size=6),
+                        name='Média móvel (3) — % encontros no almoço',
+                        hovertemplate="Semana: %{x|%Y-%m-%d}<br>Média móvel (3): %{y:.1f}%<extra></extra>"
+                    ))
+                    fig_mini_movel.add_shape(
+                        type='line', xref='paper', x0=0, x1=1,
+                        yref='y', y0=50, y1=50,
+                        line=dict(dash='dot', width=1, color='rgba(0,0,0,0.35)')
+                    )
+                    fig_mini_movel.update_layout(
+                        template="plotly_white",
+                        title="Encontros no almoço — média móvel (3 semanas)",
+                        xaxis_title="",
+                        yaxis_title="Percentual de coincidência",
+                        yaxis=dict(ticksuffix="%", range=[0, 100]),
+                        showlegend=False,
+                        hovermode='x unified',
+                        margin=dict(t=110, r=20, b=60, l=60),
+                    )
+        else:
+            def mapa_datas_por_semana(df):
+                out = {}
+                for sem, g in df.groupby('SemIni'):
+                    g = g[['Cadastro', 'Data']].dropna()
+                    out[sem] = {cad: set(gc['Data'].tolist()) for cad, gc in g.groupby('Cadastro')}
+                return out
 
-        # 2) fixa o mesmo range de X em ambos
+            mapa = mapa_datas_por_semana(dfp)
+            semanas_mapa = sorted(mapa.keys())
+            pct_medias = []
+            for sem in semanas_mapa:
+                d = mapa.get(sem, {})
+                datas_ref = d.get(ref, set())
+                pcts = []
+                for cad in outros:
+                    datas_outro = d.get(cad, set())
+                    denom = len(datas_outro)
+                    if denom > 0:
+                        num = len(datas_ref & datas_outro)
+                        pcts.append(100.0 * num / denom)
+                pct_medias.append(float(np.nanmean(pcts)) if pcts else float('nan'))
+
+            serie_pct = pd.Series(pct_medias, index=semanas_mapa).astype(float).round(2)
+            mm3_pct = serie_pct.rolling(window=3, min_periods=1).mean().round(2)
+            mm3_pct = mm3_pct.reindex(semanas)
+
+            fig_mini_movel = go.Figure()
+            fig_mini_movel.add_trace(go.Scatter(
+                x=semanas,
+                y=list(mm3_pct.clip(lower=0, upper=100).values),
+                mode='lines+markers',
+                line_shape='spline',
+                line=dict(width=2),
+                marker=dict(size=6),
+                name='Média móvel (3) — % encontros vs referência',
+                hovertemplate="Semana: %{x|%Y-%m-%d}<br>Média móvel (3): %{y:.1f}%<extra></extra>"
+            ))
+            fig_mini_movel.add_shape(
+                type='line', xref='paper', x0=0, x1=1,
+                yref='y', y0=50, y1=50,
+                line=dict(dash='dot', width=1, color='rgba(0,0,0,0.35)')
+            )
+            fig_mini_movel.update_layout(
+                template="plotly_white",
+                title="Relacionamento com a referência — média móvel (3 semanas)",
+                xaxis_title="",
+                yaxis_title="Percentual de coincidência",
+                yaxis=dict(ticksuffix="%", range=[0, 100]),
+                showlegend=False,
+                hovermode='x unified',
+                margin=dict(t=110, r=20, b=60, l=60),
+            )
+
         common_x_range = [semanas[0], semanas[-1]] if len(semanas) else None
         fig_pres.update_xaxes(type='date', range=common_x_range, showgrid=True, gridcolor='rgba(0,0,0,0.05)')
         fig_mini_movel.update_xaxes(type='date', range=common_x_range, showgrid=True, gridcolor='rgba(0,0,0,0.05)')
 
-
-        fig_mini_movel.update_layout(
-            template="plotly_white",
-            title="Relacionamento com a referência — média móvel (3 semanas)",
-            xaxis_title="", yaxis_title="Percentual de coincidência",
-            yaxis=dict(ticksuffix="%", range=[0, 100]),
-            showlegend=False,
-            hovermode='x unified',
-            margin=dict(t=110, r=20, b=60, l=60)
-        )
-
-        # (garante que ambos usam o mesmo range já definido por você)
-        common_x_range = [semanas[0], semanas[-1]] if len(semanas) else None
-        fig_pres.update_xaxes(type='date', range=common_x_range, showgrid=True, gridcolor='rgba(0,0,0,0.05)')
-        fig_mini_movel.update_xaxes(type='date', range=common_x_range, showgrid=True, gridcolor='rgba(0,0,0,0.05)')
-
-        # >>> AQUI: adiciona as 3 camadas de rótulos
         fig_pres = add_calendar_stack(
             fig_pres, semanas,
             week_font_size=8,month_font_size=12, year_font_size=14,
@@ -730,6 +845,35 @@ def register(app):
         raise PreventUpdate
 
     @app.callback(
+        Output('modo-rel', 'data'),
+        Input('btn-modo-rel', 'n_clicks'),
+        State('modo-rel', 'data'),
+        prevent_initial_call=True
+    )
+    def _toggle_modo(_n, modo_atual):
+        modo_atual = (modo_atual or 'geral').lower()
+        return 'almoco' if modo_atual == 'geral' else 'geral'
+
+    @app.callback(
+        Output('btn-modo-rel', 'children'),
+        Output('rel-obs-almoco', 'style'),
+        Output('rel-obs-almoco', 'open'),
+        Input('modo-rel', 'data')
+    )
+    def _render_ui_modo(modo):
+        base_style = {
+            'marginTop': '8px',
+            'background': '#f8f9fa',
+            'padding': '10px 12px',
+            'borderRadius': '6px',
+            'border': '1px solid #e0e0e0'
+        }
+        modo = (str(modo or 'geral')).lower()
+        if modo == 'almoco':
+            return "↩ Ver Geral", {**base_style, 'display': 'block'}, False
+        return "🍽️ Almoço", {**base_style, 'display': 'none'}, False
+
+    @app.callback(
         Output('conteudo-relacionamento', 'children'),
         Output('conteudo-relacionamento', 'style'),
         Output('pagina-geral', 'style', allow_duplicate=True),
@@ -742,24 +886,31 @@ def register(app):
             conteudo = html.Div([
                 # Sequenciador de loading da aba Relacionamento
                 dcc.Store(id='rel-load-step', data=0),
+                dcc.Store(id='modo-rel', data='geral'),
                 dcc.Interval(id='rel-load-interval', interval=500, n_intervals=0, disabled=False, max_intervals=2),
 
                 # Cabeçalho
                 html.Div([
-                    html.Button("Voltar", id='botao-voltar-relacionamento', n_clicks=0, style={
+                    html.Button(" ↩ ", id='botao-voltar-relacionamento', n_clicks=0, style={
                         'color': 'Black', 'fontFamily': 'VW Text', 'fontWeight': 'bold', 'margin': '0',
-                        'display': 'inline-block', 'padding': '10px 20px', 'fontSize': '14px',
+                        'display': 'inline-block', 'padding': '5px 10px', 'fontSize': '20px',
                         'backgroundColor': '#e0e0e0', 'border': 'none', 'borderRadius': '5px',
                         'cursor': 'pointer', 'boxShadow': '0px 2px 6px rgba(0,0,0,0.25)'
                     }),
                     html.H2("Relacionamento entre Colaboradores", style={
                         'margin': '0', 'fontFamily': 'VW Text', 'fontWeight': 'bold', 'textAlign': 'center', 'flex': '1'
                     }),
-                    html.Div(style={'width': '120px'})
+                    html.Button("🖨️ Imprimir", id='btn-print-relacionamento', n_clicks=0, style={
+                        'backgroundColor': 'transparent', 'border': 'none', 'color': 'Black',
+                        'fontFamily': 'VW Text', 'fontWeight': 'bold', 'cursor': 'pointer',
+                        'fontSize': '16px', 'padding': '0 16px', 'textDecoration': 'none'
+                    })
                 ], style={
                     'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between',
-                    'margin': '10px 0 10px 10px', 'gap': '12px', 'width': '100%'
+                    'margin': '10px 10px 10px 10px', 'gap': '14px', 'width': '100%'
                 }),
+
+                html.Div(id='dummy-print-relacionamento', style={'display': 'none'}),
 
                 # Seletor (pessoas/áreas) + gráfico de linhas
                 html.Div([
@@ -823,6 +974,9 @@ def register(app):
                                     {'if': {'column_id': 'cor'}, 'textAlign': 'center', 'width': '15%'},
                                     {'if': {'column_id': 'del'}, 'textAlign': 'center', 'width': '5%'},
                                 ],
+                                style_data_conditional=[
+                                    {'if': {'column_id': 'del'}, 'cursor': 'pointer', 'userSelect': 'none'},
+                                ],
                             ),
                             dcc.Store(id='rel-tags', data=[])
                         ], style={'marginTop': '10px'})
@@ -834,11 +988,55 @@ def register(app):
                             children=dcc.Graph(id='grafico-relacionamento-linhas',
                                                style={'height': '420px', 'marginBottom': '16px'})
                         ),
+                        html.Div([
+                            html.Button(
+                                "🍽️ Almoço", id='btn-modo-rel', n_clicks=0,
+                                style={
+                                    'fontFamily': 'VW Text',
+                                    'fontWeight': 'bold',
+                                    'padding': '6px 10px',
+                                    'cursor': 'pointer',
+                                    'borderRadius': '6px',
+                                    'border': '1px solid #bbb',
+                                    'background': '#fff',
+                                    'marginTop': '8px'
+                                }
+                            )
+                        ], style={'margin': '6px 0 8px 0', 'display': 'flex', 'justifyContent': 'flex-end'}),
                         dcc.Loading(
                             id='loading-rel-mini',
                             children=dcc.Graph(id='grafico-mini-media-movel',
                                                style={'height': '300px', 'flex': '1', 'minWidth': '260px'})
-                        )
+                        ),
+                        html.Details(
+                            id='rel-obs-almoco',
+                            open=False,
+                            children=[
+                                html.Summary("O que esta página mostra?"),
+                                html.Div([
+                                    html.P(
+                                        "Entradas no refeitório e saídas da planta durante o horário de almoço "
+                                        "(11:00–14:00). Para agrupar eventos próximos no mesmo encontro, "
+                                        "consideramos diferenças de até 1 minuto no refeitório e 3 minutos nas "
+                                        "saídas da fábrica."
+                                    ),
+                                    html.P(
+                                        "O gráfico superior mostra, por pessoa, o número de dias com presença por "
+                                        "semana (idêntico ao modo Geral). O gráfico inferior mostra a média móvel do "
+                                        "percentual de encontros de ALMOÇO em relação à pessoa de referência "
+                                        "(a primeira selecionada)."
+                                    )
+                                ])
+                            ],
+                            style={
+                                'display': 'none',
+                                'marginTop': '8px',
+                                'background': '#f8f9fa',
+                                'padding': '10px 12px',
+                                'borderRadius': '6px',
+                                'border': '1px solid #e0e0e0'
+                            }
+                        ),
                     ], style={'flex': '1', 'minWidth': '360px', 'paddingLeft': '24px'})
                 ], style={
                     'display': 'flex', 'gap': '24px', 'alignItems': 'flex-start',
