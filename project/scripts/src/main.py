@@ -18,6 +18,7 @@ if __package__:
     from .core.config import SETTINGS, configure_runtime, validate_data_files
     from .domain.cache_utils import CacheOptions, as_dict
     from .ui.layout import LAYOUT
+    from .ui.theme import GLOBAL_CSS
 else:
     # Suporta execucao direta: `py .\scripts\src\main.py`
     import sys
@@ -31,6 +32,7 @@ else:
     from src.core.config import SETTINGS, configure_runtime, validate_data_files
     from src.domain.cache_utils import CacheOptions, as_dict
     from src.ui.layout import LAYOUT
+    from src.ui.theme import GLOBAL_CSS
 
 
 def create_app() -> Dash:
@@ -43,6 +45,27 @@ def create_app() -> Dash:
         suppress_callback_exceptions=True,
         prevent_initial_callbacks="initial_duplicate",
     )
+    try:
+        app.index_string = f"""<!DOCTYPE html>
+<html>
+    <head>
+        {{%metas%}}
+        <title>{{%title%}}</title>
+        {{%favicon%}}
+        {{%css%}}
+        <style>{GLOBAL_CSS}</style>
+    </head>
+    <body>
+        {{%app_entry%}}
+        <footer>
+            {{%config%}}
+            {{%scripts%}}
+            {{%renderer%}}
+        </footer>
+    </body>
+</html>"""
+    except Exception:
+        pass
 
     cache_options = CacheOptions()
     cache = Cache(app.server, config=as_dict(cache_options))
