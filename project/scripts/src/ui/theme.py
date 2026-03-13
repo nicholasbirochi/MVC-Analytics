@@ -13,6 +13,18 @@ from __future__ import annotations
 
 
 # Estilos utilitários ---------------------------------------------------------
+VW_FONT_FAMILY = "'VW Text', Arial, sans-serif"
+VW_PLOTLY_FONT = "VW Text"
+GLOBAL_CSS = f"""
+@font-face {{
+  font-family: 'VW Text';
+  src: local('VW Text');
+}}
+* {{
+  font-family: {VW_FONT_FAMILY} !important;
+}}
+"""
+
 ESTILO_OCULTO = {"display": "none"}
 ESTILO_EXIBIR = {
     "display": "block",
@@ -39,7 +51,19 @@ def aplicar_tema_pb(fig, *, largura_borda=2, so_y_boxplot=False, grade=False, cl
         paper_bgcolor="white",
         plot_bgcolor="white",
         margin=dict(l=60, r=30, t=60, b=50),
+        font=dict(family=VW_PLOTLY_FONT, color="#000000"),
+        hoverlabel=dict(font=dict(family=VW_PLOTLY_FONT)),
     )
+
+    # Garante fonte VW na legenda sem sobrescrever outras configs de legenda.
+    try:
+        legend_dict = fig.layout.legend.to_plotly_json() if fig.layout.legend else {}
+        legend_font = (legend_dict.get("font") or {})
+        legend_font["family"] = VW_PLOTLY_FONT
+        legend_dict["font"] = legend_font
+        fig.update_layout(legend=legend_dict)
+    except Exception:
+        pass
 
     if so_y_boxplot:
         fig.update_xaxes(
@@ -85,29 +109,52 @@ def aplicar_tema_pb(fig, *, largura_borda=2, so_y_boxplot=False, grade=False, cl
                 tickcolor="black",
                 zeroline=False,
                 gridcolor="#a7a7a7",
+                griddash="dot",
             )
         else:
-            fig.update_xaxes(
-                showline=True,
-                linewidth=largura_borda,
-                linecolor="black",
-                mirror=True,
-                ticks="outside",
-                tickcolor="black",
-                zeroline=False,
-                showgrid=False,
-            )
-            fig.update_yaxes(
-                showline=True,
-                linewidth=largura_borda,
-                linecolor="black",
-                mirror=True,
-                ticks="outside",
-                tickcolor="black",
-                zeroline=False,
-                showgrid=False,
-            )
+            if clean:
+                fig.update_xaxes(
+                    showline=True,
+                    linewidth=largura_borda,
+                    linecolor="black",
+                    mirror=True,
+                    ticks="outside",
+                    tickcolor="black",
+                    zeroline=False,
+                    showgrid=False,
+                )
+                fig.update_yaxes(
+                    showline=True,
+                    linewidth=largura_borda,
+                    linecolor="black",
+                    mirror=True,
+                    ticks="outside",
+                    tickcolor="black",
+                    zeroline=False,
+                    showgrid=False,
+                )
+            else:
+                fig.update_xaxes(
+                    showline=True,
+                    linewidth=largura_borda,
+                    linecolor="black",
+                    mirror=True,
+                    ticks="outside",
+                    tickcolor="black",
+                    zeroline=True,
+                    zerolinecolor="black",
+                    gridcolor="#a7a7a7",
+                )
+                fig.update_yaxes(
+                    showline=True,
+                    linewidth=largura_borda,
+                    linecolor="black",
+                    mirror=True,
+                    ticks="outside",
+                    tickcolor="black",
+                    zeroline=True,
+                    zerolinecolor="black",
+                    gridcolor="#a7a7a7",
+                )
 
-    if clean:
-        fig.update_layout(showlegend=False)
     return fig

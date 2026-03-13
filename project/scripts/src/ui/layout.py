@@ -14,6 +14,7 @@ from dash import html, dcc
 
 from ..domain.periods import LT_MARKS, LT_C1_MIN, LT_C1_MAX, LT_C2_MIN, LT_C2_MAX, LT_MONTHS
 from ..core.repo_global import dropdown_options
+from .theme import VW_PLOTLY_FONT
 
 
 LAYOUT = html.Div([
@@ -26,15 +27,16 @@ LAYOUT = html.Div([
             # ====== Título ======
             html.Div([
                 html.H1([
-                    "Relatório Presencial Geral de toda a Volkswagen (Mensalistas/Executivos)",
+                    "Relatório Presencial Geral de toda a Volkswagen",
                     html.Br(),
                     html.Span(id='periodo-texto')
-                ], style={'textAlign': 'center', 'flex': '1'})
+                ], style={'textAlign': 'center', 'flex': '1', 'fontFamily': VW_PLOTLY_FONT})
             ], style={
                 'display': 'flex',
                 'justifyContent': 'flex-end',
                 'alignItems': 'center',
-                'marginBottom': '20px'
+                'marginBottom': '20px',
+                'fontFamily': VW_PLOTLY_FONT,
             }),
 
             # ================== BLOCO DE FILTROS ==================
@@ -50,9 +52,9 @@ LAYOUT = html.Div([
                                 {'label': 'Não', 'value': 'right'}
                             ],
                             value='left',
-                            labelStyle={'display': 'inline-block', 'marginRight': '10px'}
+                            labelStyle={'display': 'inline-block', 'marginRight': '10px', 'fontFamily': VW_PLOTLY_FONT}
                         ),
-                    ], style={'display': 'flex', 'flexDirection': 'column', 'alignItems': 'center'}),
+                    ], style={'display': 'flex', 'flexDirection': 'column', 'alignItems': 'center', 'fontFamily': VW_PLOTLY_FONT}),
 
                     html.Div([
                         html.Label("Mostrar as áreas que viajam?"),
@@ -63,10 +65,10 @@ LAYOUT = html.Div([
                                 {'label': 'Não', 'value': 'right'}
                             ],
                             value='left',
-                            labelStyle={'display': 'inline-block', 'marginRight': '10px'}
+                            labelStyle={'display': 'inline-block', 'marginRight': '10px', 'fontFamily': VW_PLOTLY_FONT}
                         ),
-                    ], style={'display': 'flex', 'flexDirection': 'column', 'alignItems': 'center'}),
-                ], style={'display': 'flex', 'gap': '30px', 'alignItems': 'center'}),
+                    ], style={'display': 'flex', 'flexDirection': 'column', 'alignItems': 'center', 'fontFamily': VW_PLOTLY_FONT}),
+                ], style={'display': 'flex', 'gap': '30px', 'alignItems': 'center', 'fontFamily': VW_PLOTLY_FONT}),
 
                 # --- Bloco B: Linha do tempo ---
                 html.Div([
@@ -78,9 +80,9 @@ LAYOUT = html.Div([
                                 {'label': 'Mai/2025 em diante', 'value': 'c2'}
                             ],
                             value='c1',
-                            labelStyle={'display': 'inline-block'}
+                            labelStyle={'display': 'inline-block', 'fontFamily': VW_PLOTLY_FONT}
                         )
-                    ], style={'textAlign': 'center', 'marginBottom': '6px'}),
+                    ], style={'textAlign': 'center', 'marginBottom': '6px', 'fontFamily': VW_PLOTLY_FONT}),
 
                     dcc.RangeSlider(
                         id='periodo-slider',
@@ -92,7 +94,7 @@ LAYOUT = html.Div([
                         step=1,
                         pushable=1
                     )
-                ], style={'marginLeft': '50px', 'flex': '0 0 560px'}),
+                ], style={'flex': '0 0 560px', 'fontFamily': VW_PLOTLY_FONT}),
 
                 # --- Bloco C: Dropdown ---
                 html.Div([
@@ -101,7 +103,7 @@ LAYOUT = html.Div([
                         options=dropdown_options,
                         value='GERAL',
                         clearable=False,
-                        style={'width': '300px'}
+                        style={'width': '270px', 'fontFamily': VW_PLOTLY_FONT}
                     ),
                     html.Div([
                         dcc.Dropdown(
@@ -110,10 +112,10 @@ LAYOUT = html.Div([
                             value=None,
                             placeholder='Selecione uma subárea',
                             clearable=True,
-                            style={'width': '300px', 'marginTop': '10px', 'display': 'none'}
+                            style={'width': '270px', 'marginTop': '10px', 'display': 'none', 'fontFamily': VW_PLOTLY_FONT}
                         )
                     ], id='subarea-container')
-                ], style={'marginLeft': 'auto'})
+                ], style={'marginLeft': 'auto', 'fontFamily': VW_PLOTLY_FONT})
             ], style={
                 'flex': '1',
                 'padding': '20px',
@@ -128,7 +130,8 @@ LAYOUT = html.Div([
                 'display': 'flex',
                 'flexWrap': 'wrap',
                 'alignItems': 'flex-start',
-                'marginBottom': '30px'
+                'marginBottom': '30px',
+                'fontFamily': VW_PLOTLY_FONT,
             }),
             # ======================================================
 
@@ -137,7 +140,7 @@ LAYOUT = html.Div([
                 html.Div([
                     dcc.Loading(
                         dcc.Graph(id='grafico-heatmap', config={'displayModeBar': False},
-                                    style={'height': '250px', 'width': '100%'})
+                                    style={'height': '250px', 'width': '100%', 'fontFamily': VW_PLOTLY_FONT})
                     ),
                     html.Button(
                         "↻",
@@ -176,34 +179,36 @@ LAYOUT = html.Div([
                     'marginTop': '30px',
                     'marginLeft': '240px',
                     'marginRight': '130px',
-                    'boxShadow': '0px 3px 6px rgba(0,0,0,0.1)'
+                    'boxShadow': '0px 3px 6px rgba(0,0,0,0.1)',
+                    'fontFamily': VW_PLOTLY_FONT,
                 })
             ], style={
                 'display': 'flex',
                 'flexWrap': 'wrap',
                 'alignItems': 'flex-start',
-                'marginBottom': '30px'
+                'marginBottom': '30px',
+                'fontFamily': VW_PLOTLY_FONT,
             }),
 
             # ====== Dispersão + Cargo ======
             html.Div([
                 html.Div([
                     dcc.Loading(dcc.Graph(id='grafico-dispersao',
-                                            style={'height': '550px', 'width': '100%'}))
+                                            style={'height': '550px', 'width': '100%', 'fontFamily': VW_PLOTLY_FONT}))
                 ], style={'flex': '1', 'marginRight': '20px'}),
                 html.Div([
                     dcc.Loading(dcc.Graph(id='grafico-presenca-cargo',
-                                            style={'height': '550px', 'width': '100%'}))
+                                            style={'height': '550px', 'width': '100%', 'fontFamily': VW_PLOTLY_FONT}))
                 ], style={'flex': '1'})
-            ], style={'display': 'flex', 'flexWrap': 'wrap'}),
+            ], style={'display': 'flex', 'flexWrap': 'wrap', 'fontFamily': VW_PLOTLY_FONT}),
 
             # ====== Boxplot ======
             html.Div([
                 html.Div([
                     dcc.Loading(dcc.Graph(id='grafico-boxplot',
-                                            style={'height': '600px', 'width': '100%'}))
+                                            style={'height': '600px', 'width': '100%', 'fontFamily': VW_PLOTLY_FONT}))
                 ], style={'flex': '2'})
-            ], style={'display': 'flex', 'flexWrap': 'wrap'}),
+            ], style={'display': 'flex', 'flexWrap': 'wrap', 'fontFamily': VW_PLOTLY_FONT}),
 
             # ====== Resumo ======
             html.Div([
@@ -218,20 +223,21 @@ LAYOUT = html.Div([
                 }),
 
                 # Título principal
-                html.Span("Resumo Específico por Área (Mensalistas/Executivos)", style={
+                html.Span("Resumo Específico por Área", style={
                     'fontWeight': 'bold',
                     'fontSize': '18px',
                     'color': '#000000',
                     'flex': '1',
-                    'textAlign': 'left'
+                    'textAlign': 'left',
+                    'fontFamily': VW_PLOTLY_FONT,
                 }),
 
                 # Novo botão/link para a página de relacionamento
                 dcc.Link(
-                    "Relacionamento entre Colaboradores →",
+                    "Relacionamento entre Colaboradores ⭢",
                     href="/relacionamento",
                     style={
-                        'fontFamily': 'VW Text',
+                        'fontFamily': VW_PLOTLY_FONT,
                         'fontSize': '15px',
                         'fontWeight': 'bold',
                         'color': '#000000',
@@ -250,10 +256,11 @@ LAYOUT = html.Div([
                 'display': 'flex',
                 'alignItems': 'center',
                 'justifyContent': 'space-between',
-                'marginBottom': '8px'
+                'marginBottom': '8px',
+                'fontFamily': VW_PLOTLY_FONT,
             }),
 
-            html.Div(id='resumo-container', style={'marginBottom': '20px', 'display': 'none'}),
+            html.Div(id='resumo-container', style={'marginBottom': '20px', 'display': 'none', 'fontFamily': VW_PLOTLY_FONT}),
 
             # ====== Lista Pessoas ======
             html.Div([
@@ -274,9 +281,10 @@ LAYOUT = html.Div([
                         'fontSize': '18px',
                         'color': '#000000',
                         'flex': '1',
-                        'textAlign': 'left'
+                        'textAlign': 'left',
+                        'fontFamily': VW_PLOTLY_FONT,
                     })
-                ], style={'marginBottom': '8px'}),
+                ], style={'marginBottom': '8px', 'fontFamily': VW_PLOTLY_FONT}),
 
                 html.Div(
                     id='lista-pessoas-container',
@@ -288,14 +296,14 @@ LAYOUT = html.Div([
                             placeholder='Buscar colaborador pela chapa...',
                             clearable=True,
                             searchable=True,
-                            style={'width': '300px', 'marginTop': '10px', 'marginBottom': '10px'}
+                            style={'width': '300px', 'marginTop': '10px', 'marginBottom': '10px', 'fontFamily': VW_PLOTLY_FONT}
                         ),
                         html.Div(id='tabela-detalhada-colaboradores')
                     ],
                     style={'display': 'none'}
                 )
             ],
-            style={'marginTop': '15px'}),
+            style={'marginTop': '15px', 'fontFamily': VW_PLOTLY_FONT}),
 
             # ====== Stores ======
             dcc.Store(id='faixa-selecionada', data=None),
@@ -303,7 +311,7 @@ LAYOUT = html.Div([
             dcc.Store(id='subarea-selecionada', data=None),
             dcc.Store(id='ultimo-clique', data={'faixa': None, 'timestamp': 0}),
             dcc.Store(id='periodo-indices', data=[LT_C1_MIN, LT_C1_MAX])
-        ], style={'padding': '20px', 'backgroundColor': 'white'})
+        ], style={'padding': '20px', 'backgroundColor': 'white', 'fontFamily': VW_PLOTLY_FONT})
     ]),
 
     # '''~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Individual ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'''
@@ -379,4 +387,4 @@ LAYOUT = html.Div([
         ],
         style={'display':'none','backgroundColor':'white'}
     )
-])
+], style={'fontFamily': VW_PLOTLY_FONT})
