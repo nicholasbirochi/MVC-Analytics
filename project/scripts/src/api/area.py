@@ -1049,7 +1049,11 @@ def register(app):
             }
             try {
                 window.print();
-            } catch (e) {}
+            } catch (e) {
+                if (console && console.error) {
+                    console.error("Erro ao chamar window.print()", e);
+                }
+            }
             return "";
         }
         """,
