@@ -11,6 +11,9 @@ Padronização:
 """
 from __future__ import annotations
 
+import re
+import unicodedata
+
 import pandas as pd
 from dash import html
 
@@ -88,6 +91,241 @@ def _area_sort_key(area: str) -> tuple:
     return len(tokens), tuple(tokens)
 
 
+def _area_key(value: object) -> str:
+    text = "" if value is None else str(value).strip().lower()
+    text = "".join(ch for ch in unicodedata.normalize("NFKD", text) if not unicodedata.combining(ch))
+    text = text.replace("/", "-")
+    return re.sub(r"[^0-9a-z]+", "", text)
+
+
+def _normalize_col(col: object) -> str:
+    return re.sub(r"[^0-9a-zA-Z]+", "", str(col)).lower()
+
+
+def _turnover_col_for(norm_map: dict[str, str], ano: int, kind: str) -> str | None:
+    year_str = str(ano)
+    if kind == "hc":
+        tokens = ("hc", "headcount", "colab", "colaboradores", "total")
+    elif kind == "e":
+        tokens = ("e", "entrada", "entradas", "admissao", "admissoes")
+    else:
+        tokens = ("s", "saida", "saidas", "demissao", "demissoes", "turnover")
+
+    for token in tokens:
+        key = f"{year_str}{token}"
+        if key in norm_map:
+            return norm_map[key]
+    for token in tokens:
+        key = f"{token}{year_str}"
+        if key in norm_map:
+            return norm_map[key]
+    for norm_col, orig_col in norm_map.items():
+        if year_str in norm_col and any(tok in norm_col for tok in tokens):
+            return orig_col
+    return None
+
+
+def mini_tabela_df_turnover(
+    area_label: str | None,
+    anos: tuple[int, ...] = (2023, 2024, 2025),
+    incluir_macro: bool = True,
+    df_headcount: pd.DataFrame | None = None,
+    df_df_gptw: pd.DataFrame | None = None,
+    her_df: pd.DataFrame | None = None,
+):
+    wrapper_style = {
+        "marginLeft": "auto",
+        "margin": "0 auto",
+        "marginTop": "0",
+        "width": "fit-content",
+        "maxWidth": "100%",
+        "overflowX": "auto",
+    }
+    th = {
+        "padding": "4px 8px",
+        "border": "1px solid #bbb",
+        "backgroundColor": "#f5f5f5",
+        "fontWeight": "bold",
+        "textAlign": "center",
+        "fontFamily": "VW Text",
+        "fontSize": "30px",
+    }
+    td = {
+        "padding": "4px 8px",
+        "border": "1px solid #bbb",
+        "textAlign": "center",
+        "fontFamily": "VW Text",
+    }
+    td_first = {**td, "fontWeight": "bold", "fontSize": "20px"}
+    td_sub = {**td, "fontWeight": "600", "fontSize": "14px"}
+    td_es = {**td, "fontSize": "12px"}
+    arrow_style = {"marginLeft": "6px", "fontSize": "12px", "opacity": 0.9}
+
+    anos_ord = list(anos)
+    is_asc_time = anos_ord == sorted(anos_ord)
+
+    def _fmt_val(value) -> str:
+        if value is None or (isinstance(value, float) and pd.isna(value)):
+            return "-"
+        try:
+            number = float(value)
+            return str(int(number)) if number.is_integer() else f"{number:.1f}"
+        except Exception:
+            return str(value)
+
+    def _to_float(value):
+        try:
+            if value is None:
+                return None
+            number = float(value)
+            return None if pd.isna(number) else number
+        except Exception:
+            return None
+
+    def _arrow(curr, prev):
+        if curr is None or prev is None:
+            return ARROW_NONE, COLOR_NONE
+        if pd.isna(curr) or pd.isna(prev):
+            return ARROW_NONE, COLOR_NONE
+        try:
+            c = float(curr)
+            p = float(prev)
+        except Exception:
+            return ARROW_NONE, COLOR_NONE
+        if c > p:
+            return ARROW_UP, COLOR_UP
+        if c < p:
+            return ARROW_DOWN, COLOR_DOWN
+        return ARROW_NONE, COLOR_NONE
+
+    header_cells = [html.Th("Área", style=th)]
+    for ano in anos_ord:
+        header_cells.append(html.Th(str(ano), style={**th, "textAlign": "center"}))
+        header_cells.append(html.Th("E", style={**th, "fontSize": "16px", "color": "#008000"}))
+        header_cells.append(html.Th("S", style={**th, "fontSize": "16px", "color": "#cc0000"}))
+
+    alvo = (area_label or "").strip()
+    if not alvo:
+        row_cells = [html.Td("—", style={**td, "textAlign": "left"})]
+        for _ in anos_ord:
+            row_cells.extend([html.Td("-", style=td), html.Td("-", style=td), html.Td("-", style=td)])
+        table = html.Table(
+            [html.Thead(html.Tr(header_cells)), html.Tbody([html.Tr(row_cells)])],
+            style={"borderCollapse": "collapse", "fontSize": "13px", "boxShadow": "0px 2px 6px rgba(0,0,0,0.10)", "maxWidth": "560px"},
+        )
+        return html.Div(table, style=wrapper_style)
+
+    df_head = df_headcount if df_headcount is not None else getattr(repo, "df_headcount", None)
+    if df_head is None or getattr(df_head, "empty", True):
+        row_cells = [html.Td(alvo, style={**td_first, "textAlign": "left"})]
+        for _ in anos_ord:
+            row_cells.extend([html.Td("-", style=td), html.Td("-", style=td), html.Td("-", style=td)])
+        table = html.Table(
+            [html.Thead(html.Tr(header_cells)), html.Tbody([html.Tr(row_cells)])],
+            style={"borderCollapse": "collapse", "fontSize": "13px", "boxShadow": "0px 2px 6px rgba(0,0,0,0.10)", "maxWidth": "560px"},
+        )
+        return html.Div(table, style=wrapper_style)
+
+    df_head = df_head.copy()
+    area_col = None
+    if "Área" in df_head.columns:
+        area_col = "Área"
+    else:
+        for col in df_head.columns:
+            if "area" in _normalize_col(col):
+                area_col = col
+                break
+    if area_col is None:
+        row_cells = [html.Td(alvo, style={**td_first, "textAlign": "left"})]
+        for _ in anos_ord:
+            row_cells.extend([html.Td("-", style=td), html.Td("-", style=td), html.Td("-", style=td)])
+        table = html.Table(
+            [html.Thead(html.Tr(header_cells)), html.Tbody([html.Tr(row_cells)])],
+            style={"borderCollapse": "collapse", "fontSize": "13px", "boxShadow": "0px 2px 6px rgba(0,0,0,0.10)", "maxWidth": "560px"},
+        )
+        return html.Div(table, style=wrapper_style)
+
+    df_head[area_col] = df_head[area_col].astype(str).str.strip()
+    df_head["_area_key"] = df_head[area_col].map(_area_key)
+
+    subareas_gptw = _listar_subareas(
+        alvo,
+        anos_ord,
+        her_df=her_df,
+        df_df_gptw=(df_df_gptw if df_df_gptw is not None else getattr(repo, "df_df_gptw", None)),
+    )
+    subareas_head = [
+        a for a in df_head[area_col].dropna().astype(str).str.strip().unique().tolist()
+        if a != alvo and a.startswith(alvo)
+    ]
+    subareas = []
+    for area in sorted(subareas_gptw + subareas_head, key=_area_sort_key):
+        if area not in subareas:
+            subareas.append(area)
+
+    linhas = [alvo] if incluir_macro else []
+    linhas.extend(subareas)
+    if not linhas:
+        linhas = [alvo]
+
+    norm_map = {_normalize_col(col): col for col in df_head.columns}
+    df_idx = df_head.drop_duplicates(subset=["_area_key"], keep="first").set_index("_area_key", drop=False)
+    body_rows = []
+
+    for idx, area_nome in enumerate(linhas):
+        row_td = td_first if idx == 0 else td_sub
+        row_cells = [html.Td(area_nome, style={**row_td, "textAlign": "left"})]
+        area_k = _area_key(area_nome)
+        serie = df_idx.loc[area_k] if area_k in df_idx.index else pd.Series(dtype=float)
+        if isinstance(serie, pd.DataFrame):
+            serie = serie.iloc[0]
+
+        prev_hc = None
+        for pos, ano in enumerate(anos_ord):
+            hc_col = _turnover_col_for(norm_map, ano, "hc")
+            e_col = _turnover_col_for(norm_map, ano, "e")
+            s_col = _turnover_col_for(norm_map, ano, "s")
+
+            hc_raw = serie.get(hc_col) if hc_col else None
+            e_raw = serie.get(e_col) if e_col else None
+            s_raw = serie.get(s_col) if s_col else None
+
+            hc_num = _to_float(hc_raw)
+            e_num = _to_float(e_raw)
+            s_num = _to_float(s_raw)
+
+            hc_txt = _fmt_val(hc_raw) if hc_col else "-"
+            e_txt = _fmt_val(e_raw) if e_col else "-"
+            s_txt = _fmt_val(s_raw) if s_col else "-"
+
+            if is_asc_time:
+                curr_prev = prev_hc
+            else:
+                curr_prev = _to_float(serie.get(_turnover_col_for(norm_map, anos_ord[pos + 1], "hc"))) if pos + 1 < len(anos_ord) else None
+            sym, col = _arrow(hc_num, curr_prev)
+            hc_children = [html.Span(hc_txt)]
+            if hc_txt != "-":
+                hc_children.append(html.Span(sym, style={**arrow_style, "color": col}))
+
+            row_cells.append(html.Td(hc_children, style=row_td))
+            row_cells.append(html.Td(_fmt_val(e_num), style=td_es if idx > 0 else {**td_es, "fontWeight": "bold"}))
+            row_cells.append(html.Td(_fmt_val(s_num), style=td_es if idx > 0 else {**td_es, "fontWeight": "bold"}))
+            prev_hc = hc_num
+
+        body_rows.append(html.Tr(row_cells))
+
+    table = html.Table(
+        [html.Thead(html.Tr(header_cells)), html.Tbody(body_rows)],
+        style={
+            "borderCollapse": "collapse",
+            "fontSize": "13px",
+            "boxShadow": "0px 2px 6px rgba(0,0,0,0.10)",
+            "maxWidth": "560px",
+        },
+    )
+    return html.Div(table, style=wrapper_style)
+
+
 def mini_tabela_df_gptw(
     area_label: str | None,
     anos: tuple[int, ...] = (2023, 2024, 2025),
@@ -99,6 +337,9 @@ def mini_tabela_df_gptw(
         "marginLeft": "auto",
         "margin": "0 auto",
         "marginTop": "0",
+        "width": "fit-content",
+        "maxWidth": "100%",
+        "overflowX": "auto",
     }
     th = {
         "padding": "4px 8px",
@@ -235,7 +476,7 @@ def mini_tabela_df_gptw(
             if area_nome in piv.index
             else pd.Series(index=anos_ord, dtype=float)
         )
-        td_this = td_first if idx == 0 else td
+        td_this = td_first if idx == 0 else {**td_first, "fontSize": "14px", "fontWeight": "600"}
         cells = [html.Td(area_nome, style={**td_this, "textAlign": "left"})]
         for j, ano in enumerate(anos_ord):
             valor = row.get(ano) if isinstance(row, pd.Series) else None
