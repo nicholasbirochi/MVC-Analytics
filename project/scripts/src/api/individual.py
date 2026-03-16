@@ -14,7 +14,7 @@ from dash import Input, Output, State, dcc, html, no_update
 
 import base64
 from collections import defaultdict
-from urllib.parse import unquote
+from urllib.parse import parse_qs, unquote
 import pandas as pd
 import numpy as np
 import seaborn as sns
@@ -38,6 +38,7 @@ from ..domain.exports import (
     MIN_PRESENCIAL_APOS_MUDANCA,
 )
 from ..domain.pipeline import dw_fetch_diarios, dw_fetch_semana_enriquecida
+from ..domain.periods import periodo_limites
 from ..domain.tenure import obter_periodo_admissao
 from ..ui.theme import (
     ESTILO_EXIBIR,
@@ -60,9 +61,11 @@ def register(app):
         Output('url', 'pathname', allow_duplicate=True),
         Input('url', 'pathname'),
         Input('botao-voltar', 'n_clicks'),
+        Input('url', 'search'),
+        State('periodo-indices', 'data'),
         prevent_initial_call=True
     )
-    def exibir_conteudo_individual(pathname, n_clicks):
+    def exibir_conteudo_individual(pathname, n_clicks, search, periodo_idx_state):
         # Voltar
         if n_clicks is not None and n_clicks > 0:
             return None, estilo_oculto, estilo_exibir, "/"
@@ -78,8 +81,25 @@ def register(app):
         if not chapa_input:
             return None, estilo_oculto, estilo_exibir, no_update
 
+        dt_ini = None
+        dt_fim = None
+        try:
+            qs = parse_qs((search or "").lstrip("?"))
+            if "p0" in qs and "p1" in qs:
+                idx = [int(qs.get("p0", [0])[0]), int(qs.get("p1", [0])[0])]
+                dt_ini, dt_fim = periodo_limites(idx)
+            elif isinstance(periodo_idx_state, (list, tuple)) and len(periodo_idx_state) == 2:
+                idx = [int(periodo_idx_state[0]), int(periodo_idx_state[1])]
+                dt_ini, dt_fim = periodo_limites(idx)
+        except Exception:
+            dt_ini, dt_fim = None, None
+
         # Filtra dados da pessoa
-        df_chapa_semana = dw_fetch_semana_enriquecida(cadastro=str(chapa_input))
+        df_chapa_semana = dw_fetch_semana_enriquecida(
+            cadastro=str(chapa_input),
+            dt_ini=dt_ini,
+            dt_fim=dt_fim,
+        )
         if df_chapa_semana.empty:
             return None, estilo_oculto, estilo_exibir, no_update
 
@@ -116,7 +136,7 @@ def register(app):
         y_presenca_por_semana = dias_presenca_por_semana_ordenado.values
 
         # Datas reais da chapa em df_datas
-        df_chapa_data = dw_fetch_diarios([str(chapa_input)])[['Data', 'Cadastro']].copy()
+        df_chapa_data = dw_fetch_diarios([str(chapa_input)], dt_ini=dt_ini, dt_fim=dt_fim)[['Data', 'Cadastro']].copy()
         df_chapa_data['Data'] = pd.to_datetime(df_chapa_data['Data'], errors='coerce')
 
         # Se quiser limitar por admissão/demissão, usa o range dentro desse intervalo:
@@ -211,8 +231,10 @@ def register(app):
         ).reindex(columns=ordenacao_dias)
 
         # ======= Figura (Matplotlib) =======
-        fig = plt.figure(figsize=(28, 45))
-        gs = gridspec.GridSpec(3, 2, height_ratios=[0.7, 0.5, 3.0], width_ratios=[1.9, 1.9])
+        n_semanas = max(1, tabela_heatmap.shape[0])
+        fig_h = max(46.0, min(72.0, 30.0 + (n_semanas * 0.45)))
+        fig = plt.figure(figsize=(30, fig_h))
+        gs = gridspec.GridSpec(3, 2, height_ratios=[0.8, 0.6, 3.4], width_ratios=[1.9, 1.9])
         gs_heatmaps = gridspec.GridSpecFromSubplotSpec(2, 1, subplot_spec=gs[2, 0],
                                                        height_ratios=[max(1, tabela_heatmap.shape[0]), 1], hspace=0.02)
 
@@ -336,8 +358,8 @@ def register(app):
             sns.heatmap(
                 tabela_heatmap,
                 cmap=ListedColormap(['#d9ead3']),
-                linewidths=1, linecolor='gray',
-                annot=True, annot_kws={"size": 17},
+                linewidths=1.2, linecolor='gray',
+                annot=True, annot_kws={"size": 14},
                 cbar=False, ax=ax_heatmap
             )
 
@@ -379,12 +401,12 @@ def register(app):
         if not tabela_heatmap_baixa.empty:
             left = 0.69; width = 0.30
             num_linhas = tabela_heatmap_baixa.shape[0]
-            altura_base = 0.28; linhas_base = 36
+            altura_base = 0.40; linhas_base = 30
             height = (num_linhas / linhas_base) * altura_base
             top = 0.410; bottom = top - height
             ax_heatmap3 = fig.add_axes([left, bottom, width, height])
             sns.heatmap(tabela_heatmap_baixa, cmap=ListedColormap(['#ffb3b3', '#f4cccc']),
-                        linewidths=1, linecolor='gray', annot=True, annot_kws={'size': 14},
+                        linewidths=1.2, linecolor='gray', annot=True, annot_kws={'size': 12},
                         cbar=False, ax=ax_heatmap3)
             for y_idx, semana_label in enumerate(tabela_heatmap_baixa.index):
                 semana_codigo = semana_label.split(" |")[0].replace(" ", "-")
@@ -406,7 +428,7 @@ def register(app):
         ax_heatmap2 = fig.add_subplot(gs_heatmaps[1])
 
         # Fonte diária de presença
-        df_chapa_data = dw_fetch_diarios([str(chapa_input)])[['Data']].copy()
+        df_chapa_data = dw_fetch_diarios([str(chapa_input)], dt_ini=dt_ini, dt_fim=dt_fim)[['Data']].copy()
         df_chapa_data['Data'] = pd.to_datetime(df_chapa_data['Data'], errors='coerce')
         df_chapa_data = df_chapa_data.dropna(subset=['Data'])
 

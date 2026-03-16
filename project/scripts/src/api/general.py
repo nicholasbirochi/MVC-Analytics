@@ -273,6 +273,11 @@ def register(app):
         media_colab['Média %'] = (((media_colab['Média Dia'] / 2) * 100) - 100).round(2)
         media_colab = media_colab.sort_values(by=['Área', 'Média %'], ascending=True)
         media_colab['Média %'] = media_colab['Média %'].astype(str) + ' %'
+        try:
+            p0 = int(periodo_idx[0]) if periodo_idx and len(periodo_idx) > 0 else LT_C1_MIN
+            p1 = int(periodo_idx[1]) if periodo_idx and len(periodo_idx) > 1 else LT_C1_MAX
+        except Exception:
+            p0, p1 = LT_C1_MIN, LT_C1_MAX
 
         tabela = html.Div([
             html.Table([
@@ -291,7 +296,7 @@ def register(app):
                 html.Tbody([
                     html.Tr([
                         html.Td(
-                            dcc.Link(str(valor), href=f"/pessoa/{linha[2]}", style={
+                            dcc.Link(str(valor), href=f"/pessoa/{linha[2]}?p0={p0}&p1={p1}", style={
                                 'display': 'block',
                                 'width': '100%',
                                 'height': '100%',
