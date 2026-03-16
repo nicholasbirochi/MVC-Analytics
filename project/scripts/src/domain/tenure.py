@@ -62,11 +62,42 @@ def coletar_admissoes_e_demissoes(
     adm: dict[str, pd.Timestamp] = {}
     dem: dict[str, pd.Timestamp] = {}
 
-    def _put(target: dict[str, pd.Timestamp], key: str, value: pd.Timestamp) -> None:
+    def _put_min(target: dict[str, pd.Timestamp], key: str, value: pd.Timestamp) -> None:
         if pd.isna(value):
             return
         if (key not in target) or (value < target[key]):
             target[key] = value
+
+    def _put_max(target: dict[str, pd.Timestamp], key: str, value: pd.Timestamp) -> None:
+        if pd.isna(value):
+            return
+        if (key not in target) or (value > target[key]):
+            target[key] = value
+
+    # Fonte canônica de RH no DW (mesma lógica do notebook): melhora acurácia do tempo de casa.
+    try:
+        from .pipeline import query_dw
+
+        hr = query_dw(
+            'SELECT "Cadastro","Data Adm","Data Dem" FROM vw_colaborador_hr;',
+            (),
+            parse_dates=["Data Adm", "Data Dem"],
+        )
+        if isinstance(hr, pd.DataFrame) and not hr.empty and "Cadastro" in hr.columns:
+            hr = hr.copy()
+            hr["Cadastro"] = hr["Cadastro"].map(_clean_cadastro)
+            adm_col_hr = _find_col(hr, ["Data Adm", "Data_Adm", "Data Admissao", "Data Admissão"])
+            dem_col_hr = _find_col(hr, ["Data Dem", "Data_Dem", "Data Demissao", "Data Demissão"])
+            if adm_col_hr:
+                datas_adm_hr = pd.to_datetime(hr[adm_col_hr], errors="coerce")
+                for cad, data in zip(hr["Cadastro"], datas_adm_hr):
+                    _put_min(adm, cad, data)
+            if dem_col_hr:
+                datas_dem_hr = pd.to_datetime(hr[dem_col_hr], errors="coerce")
+                for cad, data in zip(hr["Cadastro"], datas_dem_hr):
+                    _put_max(dem, cad, data)
+    except Exception:
+        pass
 
     dfa = _norm_df(df_df_desligados)
     if dfa is not None and "Cadastro" in dfa.columns:
@@ -76,11 +107,11 @@ def coletar_admissoes_e_demissoes(
         if adm_col:
             datas_adm = pd.to_datetime(dfa[adm_col], errors="coerce")
             for cad, data in zip(cad_series, datas_adm):
-                _put(adm, cad, data)
+                _put_min(adm, cad, data)
         if dem_col:
             datas_dem = pd.to_datetime(dfa[dem_col], errors="coerce")
             for cad, data in zip(cad_series, datas_dem):
-                _put(dem, cad, data)
+                _put_max(dem, cad, data)
 
     dfd = _norm_df(df_df_ativos)
     adm_col_ativos = _find_col(
@@ -93,7 +124,7 @@ def coletar_admissoes_e_demissoes(
         tmp[adm_col_ativos] = pd.to_datetime(tmp[adm_col_ativos], errors="coerce")
         tmp = tmp.dropna(subset=[adm_col_ativos]).drop_duplicates("Cadastro", keep="first")
         for cad, data in zip(tmp["Cadastro"], tmp[adm_col_ativos]):
-            _put(adm, cad, data)
+            _put_min(adm, cad, data)
 
     dfsm = _norm_df(df_semana_merged)
     if dfsm is not None and "Cadastro" in dfsm.columns:
@@ -112,7 +143,7 @@ def coletar_admissoes_e_demissoes(
             tmp[coluna] = pd.to_datetime(tmp[coluna], errors="coerce")
             tmp = tmp.dropna(subset=[coluna]).drop_duplicates("Cadastro", keep="first")
             for cad, data in zip(tmp["Cadastro"], tmp[coluna]):
-                _put(adm, cad, data)
+                _put_min(adm, cad, data)
 
     return adm, dem
 
