@@ -221,7 +221,6 @@ def register(app):
         else:
             texto_toggle = "Relacionamento do Almoço da Área ⭢"
             href_toggle = f"/area/{slug(subarea or area)}?modo=almoco"
-
         ctx = callback_context
         trig = (ctx.triggered_id or 'initial') if ctx else 'initial'
 
