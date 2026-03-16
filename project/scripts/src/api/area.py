@@ -215,12 +215,6 @@ def register(app):
         qs = parse_qs((search or '').lstrip('?'))
         modo = (qs.get('modo', ['geral'])[0] or 'geral').lower()
         is_almoco = (modo == 'almoco')
-        if is_almoco:
-            texto_toggle = "Relacionamento Geral da Área ⭢"
-            href_toggle = f"/area/{slug(subarea or area)}?modo=geral"
-        else:
-            texto_toggle = "Relacionamento do Almoço da Área ⭢"
-            href_toggle = f"/area/{slug(subarea or area)}?modo=almoco"
         ctx = callback_context
         trig = (ctx.triggered_id or 'initial') if ctx else 'initial'
 
@@ -276,7 +270,7 @@ def register(app):
         m0, y0 = dt_ini.month_name('pt_BR').capitalize(), dt_ini.year
         m1, y1 = dt_fim.month_name('pt_BR').capitalize(), dt_fim.year
         periodo = f"{m0}/{y0} a {m1}/{y1}"
-        periodo_txt_out = periodo
+        periodo_txt_out = ""
         periodo_data_out = [i0, i1] if not is_almoco else None
 
         # -------------------- 2) SUBÁREA (options + manter seleção) -------------
@@ -558,6 +552,12 @@ def register(app):
         qs = parse_qs((search or '').lstrip('?'))
         modo = (qs.get('modo', ['geral'])[0] or 'geral').lower()
         is_almoco = (modo == 'almoco')
+        if is_almoco:
+            texto_toggle = "Relacionamento Geral da Área ⭢"
+            href_toggle = f"/area/{slug(subarea or area)}?modo=geral"
+        else:
+            texto_toggle = "Relacionamento do Almoço da Área ⭢"
+            href_toggle = f"/area/{slug(subarea or area)}?modo=almoco"
 
         # ======= CONSTRÓI O RELATÓRIO (FIGURAS INICIAIS) =======
         if is_almoco:
