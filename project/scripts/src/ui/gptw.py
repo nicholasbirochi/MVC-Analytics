@@ -94,8 +94,12 @@ def _area_sort_key(area: str) -> tuple:
 def _area_key(value: object) -> str:
     text = "" if value is None else str(value).strip().lower()
     text = "".join(ch for ch in unicodedata.normalize("NFKD", text) if not unicodedata.combining(ch))
-    text = text.replace("/", "-")
-    return re.sub(r"[^0-9a-z]+", "", text)
+    text = text.replace("_", "-")
+    text = re.sub(r"\s+", "", text)
+    text = re.sub(r"[^0-9a-z\\/-]+", "", text)
+    text = re.sub(r"-{2,}", "-", text)
+    text = re.sub(r"/{2,}", "/", text)
+    return text
 
 
 def _normalize_col(col: object) -> str:
@@ -281,6 +285,7 @@ def mini_tabela_df_turnover(
             serie = serie.iloc[0]
 
         prev_hc = None
+        metric_values: list[float | None] = []
         for pos, ano in enumerate(anos_ord):
             hc_col = _turnover_col_for(norm_map, ano, "hc")
             e_col = _turnover_col_for(norm_map, ano, "e")
@@ -293,6 +298,7 @@ def mini_tabela_df_turnover(
             hc_num = _to_float(hc_raw)
             e_num = _to_float(e_raw)
             s_num = _to_float(s_raw)
+            metric_values.extend([hc_num, e_num, s_num])
 
             hc_txt = _fmt_val(hc_raw) if hc_col else "-"
             e_txt = _fmt_val(e_raw) if e_col else "-"
@@ -312,7 +318,25 @@ def mini_tabela_df_turnover(
             row_cells.append(html.Td(_fmt_val(s_num), style=td_es if idx > 0 else {**td_es, "fontWeight": "bold"}))
             prev_hc = hc_num
 
-        body_rows.append(html.Tr(row_cells))
+        has_non_zero = any(
+            (value is not None) and (not pd.isna(value)) and (abs(float(value)) > 0)
+            for value in metric_values
+        )
+        if has_non_zero:
+            body_rows.append(html.Tr(row_cells))
+
+    if not body_rows:
+        return html.Div(
+            "Sem dados de headcount/turnover para o período selecionado.",
+            style={
+                **wrapper_style,
+                "fontFamily": "VW Text",
+                "fontSize": "13px",
+                "opacity": 0.8,
+                "textAlign": "center",
+                "padding": "8px 12px",
+            },
+        )
 
     table = html.Table(
         [html.Thead(html.Tr(header_cells)), html.Tbody(body_rows)],
