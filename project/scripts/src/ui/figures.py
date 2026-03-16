@@ -1563,6 +1563,12 @@ def grafico_heatmap_encontros_men(
         cid = str(cad)
         adm_ts = adm_cache.get(cid, None)
         dem_ts = dem_cache.get(cid, None)
+        if pd.isna(adm_ts) or adm_ts is None:
+            datas_cad = pd.to_datetime(
+                dfp.loc[dfp["Cadastro"].astype(str) == cid, "Data"],
+                errors="coerce",
+            ).dropna()
+            adm_ts = datas_cad.min() if not datas_cad.empty else None
         tenure[cid] = tempo_de_casa_str(adm_ts, ref=ref_dt, dem_ts=dem_ts)
 
     def _tok(texto: object) -> list[str]:
@@ -2126,6 +2132,12 @@ def grafico_heatmap_encontros_exec(
         cid = str(cad)
         adm_ts = adm_cache.get(cid, None)
         dem_ts = dem_cache.get(cid, None)
+        if pd.isna(adm_ts) or adm_ts is None:
+            datas_cad = pd.to_datetime(
+                df_exec.loc[df_exec["Cadastro"].astype(str) == cid, "Data"],
+                errors="coerce",
+            ).dropna()
+            adm_ts = datas_cad.min() if not datas_cad.empty else None
         tenure[cid] = tempo_de_casa_str(adm_ts, ref=ref_dt, dem_ts=dem_ts)
 
     def _tok(texto: object) -> list[str]:
