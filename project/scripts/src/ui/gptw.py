@@ -276,13 +276,33 @@ def mini_tabela_df_turnover(
     df_idx = df_head.drop_duplicates(subset=["_area_key"], keep="first").set_index("_area_key", drop=False)
     body_rows = []
 
+    def _serie_por_area(area_nome: str, permitir_agregado: bool = False) -> pd.Series:
+        area_k = _area_key(area_nome)
+        if area_k in df_idx.index:
+            serie_loc = df_idx.loc[area_k]
+            if isinstance(serie_loc, pd.DataFrame):
+                serie_loc = serie_loc.iloc[0]
+            return serie_loc
+
+        if not permitir_agregado:
+            return pd.Series(dtype=float)
+
+        mask = df_head[area_col].astype(str).str.strip().str.startswith(str(area_nome).strip())
+        if not mask.any():
+            return pd.Series(dtype=float)
+
+        agg: dict[str, float] = {}
+        for ano in anos_ord:
+            for kind in ("hc", "e", "s"):
+                col = _turnover_col_for(norm_map, ano, kind)
+                if col:
+                    agg[col] = float(pd.to_numeric(df_head.loc[mask, col], errors="coerce").fillna(0).sum())
+        return pd.Series(agg, dtype=float)
+
     for idx, area_nome in enumerate(linhas):
         row_td = td_first if idx == 0 else td_sub
         row_cells = [html.Td(area_nome, style={**row_td, "textAlign": "left"})]
-        area_k = _area_key(area_nome)
-        serie = df_idx.loc[area_k] if area_k in df_idx.index else pd.Series(dtype=float)
-        if isinstance(serie, pd.DataFrame):
-            serie = serie.iloc[0]
+        serie = _serie_por_area(area_nome, permitir_agregado=(idx == 0 and incluir_macro))
 
         prev_hc = None
         metric_values: list[float | None] = []
