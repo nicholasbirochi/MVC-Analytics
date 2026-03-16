@@ -69,6 +69,13 @@ def _normalizar_faixas(faixas) -> list[str]:
     return [str(f) for f in faixas]
 
 
+def _normalizar_cadastro(valor: object) -> str:
+    texto = "" if valor is None else str(valor).strip()
+    if texto.endswith(".0") and texto[:-2].isdigit():
+        return texto[:-2]
+    return texto
+
+
 def _media_colaboradores(
     df_desligados,
     viajam,
@@ -255,10 +262,12 @@ def register(app):
             ["Área", "Departamento", "Cadastro", "Nome", "Cargo Especifico", "Média Presença"]
         ].copy()
         media_colab.columns = ["Área", "Departamento", "Chapa", "Nome", "Cargo", "Média Dia"]
+        media_colab["Chapa"] = media_colab["Chapa"].map(_normalizar_cadastro)
         media_colab['Média Dia'] = media_colab['Média Dia'].round(2)
 
         if chapa_selecionada:
-            media_colab = media_colab[media_colab['Chapa'].astype(str) == str(chapa_selecionada)]
+            chapa_ref = _normalizar_cadastro(chapa_selecionada)
+            media_colab = media_colab[media_colab['Chapa'].astype(str) == chapa_ref]
 
         media_colab = aplicar_filtro_faixas(media_colab, 'Média Dia', faixas)
         media_colab['Média %'] = (((media_colab['Média Dia'] / 2) * 100) - 100).round(2)
@@ -337,9 +346,13 @@ def register(app):
         )
         media_presenca = media_df[['Cadastro', 'Nome', 'Média Presença']].copy()
         media_presenca.columns = ['Chapa', 'Nome', 'Média']
+        media_presenca["Chapa"] = media_presenca["Chapa"].map(_normalizar_cadastro)
         media_presenca = aplicar_filtro_faixas(media_presenca, 'Média', faixas)
         media_presenca = media_presenca.sort_values(by='Nome')
-        opcoes = [{'label': f"{row['Chapa']} - {row['Nome']}", 'value': str(row['Chapa'])} for _, row in media_presenca.iterrows()]
+        opcoes = [
+            {"label": f"{row['Chapa']} - {row['Nome']}", "value": str(row['Chapa'])}
+            for _, row in media_presenca.iterrows()
+        ]
 
         return opcoes
 
