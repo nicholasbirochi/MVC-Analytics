@@ -11,6 +11,9 @@ Padronização:
 """
 from __future__ import annotations
 
+import re
+import unicodedata
+
 import pandas as pd
 
 from ..core import repo_global as repo
@@ -18,6 +21,30 @@ from ..core import repo_global as repo
 
 def _norm_df(df):
     return df if isinstance(df, pd.DataFrame) and not df.empty else None
+
+
+def _norm_col_name(value: object) -> str:
+    text = "" if value is None else str(value).strip().lower()
+    text = "".join(ch for ch in unicodedata.normalize("NFKD", text) if not unicodedata.combining(ch))
+    return re.sub(r"[^0-9a-z]+", "", text)
+
+
+def _find_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
+    if df is None or df.empty:
+        return None
+    normalized = {_norm_col_name(col): col for col in df.columns}
+    for cand in candidates:
+        key = _norm_col_name(cand)
+        if key in normalized:
+            return normalized[key]
+    return None
+
+
+def _clean_cadastro(value: str | int | float | None) -> str:
+    text = "" if value is None else str(value).strip()
+    if text.endswith(".0") and text[:-2].isdigit():
+        return text[:-2]
+    return text
 
 
 def coletar_admissoes_e_demissoes(
@@ -43,23 +70,29 @@ def coletar_admissoes_e_demissoes(
 
     dfa = _norm_df(df_df_desligados)
     if dfa is not None and "Cadastro" in dfa.columns:
-        cad_series = dfa["Cadastro"].astype(str)
-        if "Data_Adm" in dfa.columns:
-            datas_adm = pd.to_datetime(dfa["Data_Adm"], errors="coerce")
+        cad_series = dfa["Cadastro"].map(_clean_cadastro)
+        adm_col = _find_col(dfa, ["Data_Adm", "Data Adm", "Data Admissao", "Data Admissão"])
+        dem_col = _find_col(dfa, ["Data_Dem", "Data Dem", "Data Demissao", "Data Demissão"])
+        if adm_col:
+            datas_adm = pd.to_datetime(dfa[adm_col], errors="coerce")
             for cad, data in zip(cad_series, datas_adm):
                 _put(adm, cad, data)
-        if "Data_Dem" in dfa.columns:
-            datas_dem = pd.to_datetime(dfa["Data_Dem"], errors="coerce")
+        if dem_col:
+            datas_dem = pd.to_datetime(dfa[dem_col], errors="coerce")
             for cad, data in zip(cad_series, datas_dem):
                 _put(dem, cad, data)
 
     dfd = _norm_df(df_df_ativos)
-    if dfd is not None and {"Cadastro", "Data Admissao"}.issubset(dfd.columns):
-        tmp = dfd[["Cadastro", "Data Admissao"]].copy()
-        tmp["Cadastro"] = tmp["Cadastro"].astype(str)
-        tmp["Data Admissao"] = pd.to_datetime(tmp["Data Admissao"], errors="coerce")
-        tmp = tmp.dropna(subset=["Data Admissao"]).drop_duplicates("Cadastro", keep="first")
-        for cad, data in zip(tmp["Cadastro"], tmp["Data Admissao"]):
+    adm_col_ativos = _find_col(
+        dfd,
+        ["Data Admissao", "Data Admissão", "Data_Adm", "Data Adm", "Admissao", "Admissão"],
+    ) if dfd is not None else None
+    if dfd is not None and "Cadastro" in dfd.columns and adm_col_ativos:
+        tmp = dfd[["Cadastro", adm_col_ativos]].copy()
+        tmp["Cadastro"] = tmp["Cadastro"].map(_clean_cadastro)
+        tmp[adm_col_ativos] = pd.to_datetime(tmp[adm_col_ativos], errors="coerce")
+        tmp = tmp.dropna(subset=[adm_col_ativos]).drop_duplicates("Cadastro", keep="first")
+        for cad, data in zip(tmp["Cadastro"], tmp[adm_col_ativos]):
             _put(adm, cad, data)
 
     dfsm = _norm_df(df_semana_merged)
@@ -135,23 +168,48 @@ def obter_periodo_admissao(
     if df_df_ativos is None:
         df_df_ativos = repo.df_df_ativos
 
-    chapa_str = str(chapa)
+    chapa_str = _clean_cadastro(chapa)
 
-    pessoa_df_desligados = df_df_desligados[df_df_desligados["Cadastro"] == chapa_str]
-    if not pessoa_df_desligados.empty:
-        adm = pd.to_datetime(pessoa_df_desligados["Data_Adm"].iloc[0], errors="coerce")
-        dem = pd.to_datetime(pessoa_df_desligados["Data_Dem"].iloc[0], errors="coerce")
-        if pd.isna(dem):
-            dem = pd.Timestamp.max
-        return adm, dem
+    dfd = _norm_df(df_df_desligados)
+    if dfd is not None and "Cadastro" in dfd.columns:
+        dfd = dfd.copy()
+        dfd["Cadastro"] = dfd["Cadastro"].map(_clean_cadastro)
+        pessoa_df_desligados = dfd[dfd["Cadastro"] == chapa_str]
+        if not pessoa_df_desligados.empty:
+            adm_col = _find_col(dfd, ["Data_Adm", "Data Adm", "Data Admissao", "Data Admissão"])
+            dem_col = _find_col(dfd, ["Data_Dem", "Data Dem", "Data Demissao", "Data Demissão"])
+            adm = pd.to_datetime(
+                pessoa_df_desligados[adm_col].iloc[0], errors="coerce"
+            ) if adm_col else pd.NaT
+            dem = pd.to_datetime(
+                pessoa_df_desligados[dem_col].iloc[0], errors="coerce"
+            ) if dem_col else pd.NaT
+            if pd.isna(dem):
+                dem = pd.Timestamp.max
+            return (None if pd.isna(adm) else adm), dem
 
-    pessoa_df_ativos = df_df_ativos[df_df_ativos["Cadastro"] == chapa_str]
-    if not pessoa_df_ativos.empty:
-        adm = pd.to_datetime(
-            pessoa_df_ativos["Data Admissao"].iloc[0],
-            dayfirst=True,
-            errors="coerce",
-        )
-        return adm, pd.Timestamp.max
+    dfa = _norm_df(df_df_ativos)
+    if dfa is not None and "Cadastro" in dfa.columns:
+        dfa = dfa.copy()
+        dfa["Cadastro"] = dfa["Cadastro"].map(_clean_cadastro)
+        pessoa_df_ativos = dfa[dfa["Cadastro"] == chapa_str]
+        if not pessoa_df_ativos.empty:
+            adm_col = _find_col(
+                dfa,
+                ["Data Admissao", "Data Admissão", "Data_Adm", "Data Adm", "Admissao", "Admissão"],
+            )
+            if adm_col:
+                adm = pd.to_datetime(
+                    pessoa_df_ativos[adm_col].iloc[0],
+                    dayfirst=True,
+                    errors="coerce",
+                )
+                if pd.notna(adm):
+                    return adm, pd.Timestamp.max
 
-    return None, None
+    adm_cache, dem_cache = carregar_adm_dem_cache(df_df_desligados, df_df_ativos, repo.df_semana_merged)
+    adm = adm_cache.get(chapa_str)
+    dem = dem_cache.get(chapa_str)
+    if adm is None and dem is None:
+        return None, None
+    return adm, (pd.Timestamp.max if dem is None or pd.isna(dem) else dem)
