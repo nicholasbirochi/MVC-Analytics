@@ -22,7 +22,6 @@ from ..core.repo_global import (
     df_datas,
     df_df_gptw,
     df_almoco,
-    df_headcount,
     df_count_por_semana,
     dropdown_options,
     her,
@@ -99,48 +98,6 @@ def _media_ponderada(df: pd.DataFrame, cargo: str | None = None) -> float:
     if dias_monitorados <= 0:
         return 0.0
     return round(float(dias_presenca / dias_monitorados), 2)
-
-
-def _resumo_headcount(
-    area_selecionada: str | None,
-    subarea_selecionada: str | None,
-) -> dict[str, int | str] | None:
-    if df_headcount is None or df_headcount.empty or "Área" not in df_headcount.columns:
-        return None
-
-    dff = df_headcount.copy()
-    dff["Área"] = dff["Área"].astype(str)
-    if area_selecionada and area_selecionada != "GERAL":
-        if subarea_selecionada:
-            dff = dff[dff["Área"].eq(str(subarea_selecionada))]
-        else:
-            dff = dff[dff["Área"].str.startswith(str(area_selecionada))]
-
-    if dff.empty:
-        return None
-
-    anos = sorted(
-        {
-            int(col.split(" ")[0])
-            for col in dff.columns
-            if isinstance(col, str) and col.endswith(" hc") and col.split(" ")[0].isdigit()
-        }
-    )
-    if not anos:
-        return None
-    ano = anos[-1]
-
-    col_hc = f"{ano} hc"
-    col_e = f"{ano} e"
-    col_s = f"{ano} s"
-    if col_hc not in dff.columns:
-        return None
-
-    hc = int(pd.to_numeric(dff[col_hc], errors="coerce").fillna(0).sum())
-    ent = int(pd.to_numeric(dff[col_e], errors="coerce").fillna(0).sum()) if col_e in dff.columns else 0
-    sai = int(pd.to_numeric(dff[col_s], errors="coerce").fillna(0).sum()) if col_s in dff.columns else 0
-    return {"ano": ano, "hc": hc, "entradas": ent, "saidas": sai}
-
 
 
 def register(app):
@@ -721,36 +678,61 @@ def register(app):
         media_presenca_mensalistas = _media_ponderada(media_df, cargo='M')
         media_presenca_executivos = _media_ponderada(media_df, cargo='E')
         media_presenca_horistas = _media_ponderada(media_df, cargo='H')
-        hc = _resumo_headcount(area_selecionada, subarea_selecionada)
 
-        rows = [
-            html.Tr([html.Td("Total de Colaboradores:"), html.Td(total_colaboradores)]),
-            html.Tr([html.Td("Horistas:"), html.Td(total_horistas)]),
-            html.Tr([html.Td("Mensalistas:"), html.Td(total_mensalistas)]),
-            html.Tr([html.Td("Executivos:"), html.Td(total_executivos)]),
+        def _to_number(value):
+            if value is None:
+                return None
+            if isinstance(value, (int, float)):
+                return float(value)
+            s = str(value).strip()
+            if not s:
+                return None
+            if "," in s and "." in s:
+                s = s.replace(".", "").replace(",", ".")
+            else:
+                s = s.replace(",", ".")
+            try:
+                return float(s)
+            except ValueError:
+                return None
+
+        def _sorted_rows_desc(items, formatter=lambda x: x):
+            def _sort_key(item):
+                num = _to_number(item[1])
+                return (num is None, num if num is not None else 0)
+
+            items_sorted = sorted(items, key=_sort_key, reverse=True)
+            numericos = [item for item in items_sorted if _to_number(item[1]) is not None]
+            nao_numericos = [item for item in items_sorted if _to_number(item[1]) is None]
+            return [html.Tr([html.Td(label), html.Td(formatter(value))]) for label, value in numericos + nao_numericos]
+
+        colab_items = [
+            ("Total de Colaboradores:", total_colaboradores),
+            ("Horistas:", total_horistas),
+            ("Mensalistas:", total_mensalistas),
+            ("Executivos:", total_executivos),
         ]
-        if hc is not None:
-            rows.extend(
-                [
-                    html.Tr([html.Td(html.Br()), html.Td()]),
-                    html.Tr(
-                        [html.Th(f"Headcount ({hc['ano']})", colSpan=2)],
-                        style={'fontSize': '20px'},
-                    ),
-                    html.Tr([html.Td("HC total:"), html.Td(hc["hc"])]),
-                    html.Tr([html.Td("Entradas:"), html.Td(hc["entradas"])]),
-                    html.Tr([html.Td("Saídas:"), html.Td(hc["saidas"])]),
-                ]
-            )
-        rows.extend(
-            [
+        presenca_items = [
+            ("Total:", media_presenca_geral),
+            ("Horistas:", media_presenca_horistas),
+            ("Mensalistas:", media_presenca_mensalistas),
+            ("Executivos:", media_presenca_executivos),
+        ]
+
+        rows = (
+            _sorted_rows_desc(colab_items)
+            + [
                 html.Tr([html.Td(html.Br()), html.Td()]),
                 html.Tr([html.Th("Média de Presença por Semana", colSpan=2)], style={'fontSize': '20px'}),
-                html.Tr([html.Td("Total:"), html.Td(media_presenca_geral)]),
-                html.Tr([html.Td("Horistas:"), html.Td(media_presenca_horistas)]),
-                html.Tr([html.Td("Mensalistas:"), html.Td(media_presenca_mensalistas)]),
-                html.Tr([html.Td("Executivos:"), html.Td(media_presenca_executivos)]),
             ]
+            + _sorted_rows_desc(
+                presenca_items,
+                formatter=lambda v: "0"
+                if (isinstance(v, str) and v.strip().lower() == "nan")
+                else (
+                    lambda x: "0" if (x is None or x != x) else f"{x}"
+                )(_to_number(v)),
+            )
         )
 
         tabela_info = html.Table(

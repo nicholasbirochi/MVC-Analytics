@@ -134,32 +134,9 @@ def areas_toggle_ui():
         [
             dcc.Store(id="areas_vis_state", data="heatmap"),
             html.Button(
-                [
-                    html.Span("▦", id="ico_heat", style={"position": "absolute", "left": "14px", "top": "50%", "transform": "translateY(-50%)", "fontSize": "18px"}),
-                    html.Span("🕸️", id="ico_net", style={"position": "absolute", "right": "14px", "top": "50%", "transform": "translateY(-50%)", "fontSize": "18px", "opacity": 0.28}),
-                    html.Span(id="knob", style={
-                        "position": "absolute",
-                        "top": "3px",
-                        "left": "3px",
-                        "width": "36px",
-                        "height": "36px",
-                        "borderRadius": "50%",
-                        "background": "#ffffff",
-                        "boxShadow": "0 1px 2px rgba(0,0,0,.28), 0 0 0 1px rgba(0,0,0,.06) inset",
-                        "transition": "transform .18s ease-in-out, background .18s ease",
-                    }, children=html.Span("▦", id="knob_ico", style={
-                        "position": "absolute",
-                        "inset": "0",
-                        "display": "flex",
-                        "alignItems": "center",
-                        "justifyContent": "center",
-                        "fontSize": "20px",
-                        "transform": "translateX(-25px)",
-                        "color": "#0057b8",
-                    })),
-                ],
                 id="areas_vis_btn",
                 n_clicks=0,
+                title="Alternar visualização: Heatmap ⇄ Diagrama",
                 style={
                     "position": "relative",
                     "width": "92px",
@@ -169,12 +146,87 @@ def areas_toggle_ui():
                     "background": "linear-gradient(#f7f7f7,#e7e7e7)",
                     "boxShadow": "0 1px 2px rgba(0,0,0,.12) inset, 0 1px 2px rgba(0,0,0,.05)",
                     "cursor": "pointer",
+                    "transition": "all .18s ease-in-out",
                     "padding": "0",
                     "fontFamily": "VW Text",
                 },
+                children=html.Div(
+                    [
+                        html.Span(
+                            "▦",
+                            id="ico_heat",
+                            style={
+                                "position": "absolute",
+                                "left": "14px",
+                                "top": "50%",
+                                "transform": "translateY(-50%)",
+                                "fontSize": "18px",
+                                "lineHeight": "1",
+                                "color": "#0057b8",
+                                "transition": "opacity .18s ease, color .18s ease",
+                            },
+                        ),
+                        html.Span(
+                            "🕸️",
+                            id="ico_net",
+                            style={
+                                "position": "absolute",
+                                "right": "14px",
+                                "top": "50%",
+                                "transform": "translateY(-50%)",
+                                "fontSize": "18px",
+                                "lineHeight": "1",
+                                "color": "#00a37a",
+                                "opacity": 0.28,
+                                "transition": "opacity .18s ease, color .18s ease",
+                            },
+                        ),
+                        html.Span(
+                            id="knob",
+                            style={
+                                "position": "absolute",
+                                "top": "3px",
+                                "left": "3px",
+                                "width": "36px",
+                                "height": "36px",
+                                "borderRadius": "50%",
+                                "background": "#ffffff",
+                                "boxShadow": "0 1px 2px rgba(0,0,0,.28), 0 0 0 1px rgba(0,0,0,.06) inset",
+                                "transform": "translateX(0)",
+                                "transition": "transform .18s ease-in-out, background .18s ease",
+                            },
+                        ),
+                        html.Span(
+                            "▦",
+                            id="knob_ico",
+                            style={
+                                "position": "absolute",
+                                "inset": "0",
+                                "display": "flex",
+                                "alignItems": "center",
+                                "justifyContent": "center",
+                                "fontSize": "20px",
+                                "fontFamily": "VW Text",
+                                "transform": "translateX(-25px)",
+                                "transition": "transform .18s ease-in-out, color .18s ease-in-out",
+                                "color": "#0057b8",
+                            },
+                        ),
+                    ],
+                    style={
+                        "position": "absolute",
+                        "inset": "0",
+                        "display": "flex",
+                        "alignItems": "center",
+                        "justifyContent": "space-between",
+                        "padding": "0 12px",
+                        "userSelect": "none",
+                        "fontFamily": "VW Text",
+                    },
+                ),
             ),
         ],
-        style={"display": "flex", "alignItems": "center", "justifyContent": "center"},
+        style={"display": "flex", "alignItems": "center", "gap": "12px", "flexWrap": "nowrap"},
     )
 
 
@@ -941,6 +993,7 @@ def register(app):
                 transform: "translateY(-50%)",
                 fontSize: "18px",
                 lineHeight: "18px",
+                fontFamily: "VW Text",
                 userSelect: "none"
             };
             var ico_heat_color = { color: "#0057b8", left: "14px" };
@@ -954,6 +1007,7 @@ def register(app):
                 alignItems: "center",
                 justifyContent: "center",
                 fontSize: "20px",
+                fontFamily: "VW Text",
                 transform: "translateX(-25px)"
             };
             var btn_style = Object.assign({}, btn_base);
