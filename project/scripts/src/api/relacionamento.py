@@ -556,14 +556,14 @@ def register(app):
             msg = fig_msg("Selecione pelo menos 1 pessoa")
             return msg, fig_msg("—")
 
-        # ------------------ base diária canônica ------------------
-        if bool(getattr(repo, "USING_DW_SQLITE", False)):
+        # ------------------ base diária (mesma lógica do notebook) ------------------
+        if 'df_datas' not in globals() or not isinstance(globals()['df_datas'], pd.DataFrame):
+            globals()['df_datas'] = pd.DataFrame(columns=["Cadastro", "Planta", "Data"])
+
+        dfp = globals()['df_datas'].copy()
+        if dfp.empty:
+            # Lazy load: busca apenas pessoas selecionadas no DW
             dfp = dw_fetch_diarios(cad_list).copy()
-        else:
-            if 'df_datas' not in globals() or not isinstance(globals()['df_datas'], pd.DataFrame):
-                info = fig_msg("Base df_datas ausente")
-                return info, fig_msg("—")
-            dfp = globals()['df_datas'].copy()
 
         if 'Data' not in dfp.columns:
             info = fig_msg("Base diária sem coluna 'Data'")
