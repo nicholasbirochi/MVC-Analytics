@@ -46,7 +46,7 @@ from ..ui.figures import (
     figura_vazia_linha,
     _sanitize_object_columns,
 )
-from ..ui.gptw import mini_tabela_df_gptw
+from ..ui.gptw import mini_tabela_df_gptw, mini_tabela_df_turnover
 from ..ui.theme import ESTILO_EXIBIR, ESTILO_OCULTO, aplicar_tema_pb
 
 estilo_exibir = ESTILO_EXIBIR
@@ -698,7 +698,7 @@ def register(app):
                             "Headcount & Turnover",
                             style={"textAlign": "center", "margin": "0 0 24px", "fontFamily": "VW Text"},
                         ),
-                        _headcount_card(area, subarea),
+                        mini_tabela_df_turnover(subarea or area, anos=(2023, 2024, 2025), incluir_macro=True),
                     ],
                     style={
                         "backgroundColor": "#fff",
