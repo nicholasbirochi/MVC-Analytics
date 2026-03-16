@@ -14,6 +14,7 @@ from dash import Input, Output, State, dcc, html, no_update
 
 import base64
 from collections import defaultdict
+from urllib.parse import unquote
 import pandas as pd
 import numpy as np
 import seaborn as sns
@@ -70,7 +71,10 @@ def register(app):
         if not pathname or '/pessoa/' not in pathname:
             return None, estilo_oculto, no_update, no_update
 
-        chapa_input = pathname.split('/pessoa/')[1]
+        chapa_input = unquote(pathname.split('/pessoa/', 1)[1])
+        chapa_input = chapa_input.split('?', 1)[0].split('/', 1)[0].strip()
+        if chapa_input.endswith(".0") and chapa_input[:-2].isdigit():
+            chapa_input = chapa_input[:-2]
         if not chapa_input:
             return None, estilo_oculto, estilo_exibir, no_update
 
@@ -110,10 +114,6 @@ def register(app):
         dias_presenca_por_semana_ordenado = dias_presenca_por_semana.sort_index()
         x_semanas = list(range(1, len(dias_presenca_por_semana_ordenado) + 1))
         y_presenca_por_semana = dias_presenca_por_semana_ordenado.values
-
-        # Datas do heatmap geral
-        df_chapa_data = dw_fetch_diarios([str(chapa_input)])[['Data', 'Cadastro']].copy()
-        df_chapa_data['Data'] = pd.to_datetime(df_chapa_data['Data'])
 
         # Datas reais da chapa em df_datas
         df_chapa_data = dw_fetch_diarios([str(chapa_input)])[['Data', 'Cadastro']].copy()
