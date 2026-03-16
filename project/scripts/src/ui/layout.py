@@ -124,7 +124,6 @@ LAYOUT = html.Div([
                 'borderRadius': '20px',
                 'height': 'fit-content',
                 'marginTop': '30px',
-                'marginLeft': '10px',
                 'marginRight': '10px',
                 'boxShadow': '0px 3px 6px rgba(0,0,0,0.1)',
                 'display': 'flex',
@@ -153,11 +152,11 @@ LAYOUT = html.Div([
                             'zIndex': '1',
                             'backgroundColor': '#e0e0e0',
                             'border': '1px solid #ccc',
-                            'padding': '6px 12px',
+                            'padding': '5px 10px',
                             'borderRadius': '4px',
                             'cursor': 'pointer',
                             'fontWeight': 'bold',
-                            'size': '18px'
+                            'fontSize': '18px'
                         }
                     )
                 ], style={
@@ -165,6 +164,7 @@ LAYOUT = html.Div([
                     'flex': '1',
                     'minWidth': '400px',
                     'maxWidth': '100%',
+                    'fontFamily': VW_PLOTLY_FONT,
                 }),
 
                 html.Div(id='tabela-informacoes-colaboradores', style={
@@ -215,11 +215,11 @@ LAYOUT = html.Div([
                 # Botão de toggle ►
                 html.Button("►", id="toggle-resumo-btn", n_clicks=0, style={
                     'fontSize': '18px',
-                    'marginLeft': '10px',
                     'background': 'none',
                     'border': 'none',
                     'cursor': 'pointer',
-                    'verticalAlign': 'middle'
+                    'verticalAlign': 'middle',
+                    'fontFamily': VW_PLOTLY_FONT,
                 }),
 
                 # Título principal
@@ -269,11 +269,11 @@ LAYOUT = html.Div([
                         "►", id="toggle-lista-btn", n_clicks=0,
                         style={
                             'fontSize': '18px',
-                            'marginLeft': '10px',
                             'background': 'none',
                             'border': 'none',
                             'cursor': 'pointer',
-                            'verticalAlign': 'middle'
+                            'verticalAlign': 'middle',
+                            'fontFamily': VW_PLOTLY_FONT,
                         }
                     ),
                     html.Span("Presença dos Colaboradores", style={
