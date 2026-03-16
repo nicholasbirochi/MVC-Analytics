@@ -21,6 +21,8 @@ import math
 from plotly.colors import sample_colorscale
 from plotly.subplots import make_subplots
 
+from ..core import repo_global as repo
+
 
 def _safe_hashable(value):
     """Converte objetos potencialmente não-hashable em strings/escalares seguros."""
@@ -70,6 +72,39 @@ def _sanitize_object_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 from ..domain.copresenca import calcular_ordem_heatmap
 from ..domain.tenure import carregar_adm_dem_cache, tempo_de_casa_str
+
+
+FIRST_SEEN_CACHE: dict[str, pd.Timestamp] | None = None
+
+
+def _carregar_primeira_data_cache() -> dict[str, pd.Timestamp]:
+    global FIRST_SEEN_CACHE
+    if FIRST_SEEN_CACHE is not None:
+        return FIRST_SEEN_CACHE
+
+    FIRST_SEEN_CACHE = {}
+    fontes = [
+        getattr(repo, "df_datas", None),
+        getattr(repo, "df_semana_merged", None),
+    ]
+    for df_all in fontes:
+        if (
+            isinstance(df_all, pd.DataFrame)
+            and not df_all.empty
+            and {"Cadastro", "Data"}.issubset(df_all.columns)
+        ):
+            tmp = df_all[["Cadastro", "Data"]].copy()
+            tmp["Cadastro"] = tmp["Cadastro"].astype(str).str.strip()
+            tmp["Data"] = pd.to_datetime(tmp["Data"], errors="coerce")
+            tmp = tmp.dropna(subset=["Cadastro", "Data"])
+            FIRST_SEEN_CACHE = (
+                tmp.groupby("Cadastro")["Data"]
+                .min()
+                .to_dict()
+            )
+            if FIRST_SEEN_CACHE:
+                break
+    return FIRST_SEEN_CACHE
 
 
 def _finalizar_heatmap(fig: go.Figure, titulo: str, altura: int = 420) -> go.Figure:
@@ -1557,12 +1592,15 @@ def grafico_heatmap_encontros_men(
         meta["ÁreaNorm"] = ""
 
     adm_cache, dem_cache = carregar_adm_dem_cache()
+    first_seen_cache = _carregar_primeira_data_cache()
     ref_dt = pd.Timestamp.today().normalize()
     tenure: dict[str, str] = {}
     for cad in meta.index:
         cid = str(cad)
         adm_ts = adm_cache.get(cid, None)
         dem_ts = dem_cache.get(cid, None)
+        if pd.isna(adm_ts) or adm_ts is None:
+            adm_ts = first_seen_cache.get(cid, None)
         if pd.isna(adm_ts) or adm_ts is None:
             datas_cad = pd.to_datetime(
                 dfp.loc[dfp["Cadastro"].astype(str) == cid, "Data"],
@@ -2126,12 +2164,15 @@ def grafico_heatmap_encontros_exec(
         meta["ÁreaNorm"] = ""
 
     adm_cache, dem_cache = carregar_adm_dem_cache()
+    first_seen_cache = _carregar_primeira_data_cache()
     ref_dt = pd.Timestamp.today().normalize()
     tenure: dict[str, str] = {}
     for cad in meta.index:
         cid = str(cad)
         adm_ts = adm_cache.get(cid, None)
         dem_ts = dem_cache.get(cid, None)
+        if pd.isna(adm_ts) or adm_ts is None:
+            adm_ts = first_seen_cache.get(cid, None)
         if pd.isna(adm_ts) or adm_ts is None:
             datas_cad = pd.to_datetime(
                 df_exec.loc[df_exec["Cadastro"].astype(str) == cid, "Data"],
