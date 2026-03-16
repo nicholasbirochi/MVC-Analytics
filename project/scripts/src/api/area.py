@@ -21,6 +21,7 @@ from ..core.repo_global import (
     df_df_ativos,
     df_semana_merged,
     df_almoco,
+    df_headcount,
     her,
 )
 from ..domain.builders import (
@@ -52,28 +53,128 @@ estilo_exibir = ESTILO_EXIBIR
 estilo_oculto = ESTILO_OCULTO
 
 
+def _headcount_card(area: str | None, subarea: str | None):
+    th = {
+        "padding": "4px 8px",
+        "border": "1px solid #bbb",
+        "backgroundColor": "#f5f5f5",
+        "fontWeight": "bold",
+        "textAlign": "center",
+        "fontFamily": "VW Text",
+    }
+    td = {
+        "padding": "4px 8px",
+        "border": "1px solid #bbb",
+        "textAlign": "center",
+        "fontFamily": "VW Text",
+    }
+    td_first = {**td, "fontWeight": "bold", "textAlign": "left"}
+
+    anos = [2023, 2024, 2025]
+    if isinstance(df_headcount, pd.DataFrame) and not df_headcount.empty and "Área" in df_headcount.columns:
+        dff = df_headcount.copy()
+        dff["Área"] = dff["Área"].astype(str)
+        if area:
+            if subarea:
+                dff = dff[dff["Área"].eq(str(subarea))]
+            else:
+                dff = dff[dff["Área"].str.startswith(str(area))]
+    else:
+        dff = pd.DataFrame()
+
+    nome_area = subarea or area or "—"
+    vals = []
+    for ano in anos:
+        c_hc = f"{ano} hc"
+        c_e = f"{ano} e"
+        c_s = f"{ano} s"
+        if dff.empty:
+            vals.extend(["—", "—", "—"])
+            continue
+        hc = int(pd.to_numeric(dff[c_hc], errors="coerce").fillna(0).sum()) if c_hc in dff.columns else 0
+        ent = int(pd.to_numeric(dff[c_e], errors="coerce").fillna(0).sum()) if c_e in dff.columns else 0
+        sai = int(pd.to_numeric(dff[c_s], errors="coerce").fillna(0).sum()) if c_s in dff.columns else 0
+        vals.extend([hc, ent, sai])
+
+    header = [html.Th("Área", style=th)]
+    for ano in anos:
+        header.extend(
+            [
+                html.Th(str(ano), style=th),
+                html.Th("E", style=th),
+                html.Th("S", style=th),
+            ]
+        )
+
+    tabela = html.Table(
+        [
+            html.Thead(html.Tr(header)),
+            html.Tbody(
+                [
+                    html.Tr(
+                        [html.Td(nome_area, style=td_first)]
+                        + [html.Td(v, style=td) for v in vals]
+                    )
+                ]
+            ),
+        ],
+        style={
+            "borderCollapse": "collapse",
+            "fontSize": "13px",
+            "boxShadow": "0px 2px 6px rgba(0,0,0,0.10)",
+            "maxWidth": "560px",
+        },
+    )
+    return html.Div(tabela, style={"margin": "0 auto", "width": "fit-content", "maxWidth": "100%"})
+
+
 def areas_toggle_ui():
-    """Toggle simples para alternar Teia (radar) e Heatmap."""
+    """Toggle visual (heatmap <-> teia) alinhado ao notebook."""
     return html.Div(
         [
             dcc.Store(id="areas_vis_state", data="heatmap"),
             html.Button(
-                "Modo: Heatmap (detalhe)",
+                [
+                    html.Span("▦", id="ico_heat", style={"position": "absolute", "left": "14px", "top": "50%", "transform": "translateY(-50%)", "fontSize": "18px"}),
+                    html.Span("🕸️", id="ico_net", style={"position": "absolute", "right": "14px", "top": "50%", "transform": "translateY(-50%)", "fontSize": "18px", "opacity": 0.28}),
+                    html.Span(id="knob", style={
+                        "position": "absolute",
+                        "top": "3px",
+                        "left": "3px",
+                        "width": "36px",
+                        "height": "36px",
+                        "borderRadius": "50%",
+                        "background": "#ffffff",
+                        "boxShadow": "0 1px 2px rgba(0,0,0,.28), 0 0 0 1px rgba(0,0,0,.06) inset",
+                        "transition": "transform .18s ease-in-out, background .18s ease",
+                    }, children=html.Span("▦", id="knob_ico", style={
+                        "position": "absolute",
+                        "inset": "0",
+                        "display": "flex",
+                        "alignItems": "center",
+                        "justifyContent": "center",
+                        "fontSize": "20px",
+                        "transform": "translateX(-25px)",
+                        "color": "#0057b8",
+                    })),
+                ],
                 id="areas_vis_btn",
                 n_clicks=0,
                 style={
-                    "fontFamily": "VW Text",
-                    "fontWeight": "bold",
-                    "padding": "10px 16px",
-                    "borderRadius": "20px",
-                    "border": "1px solid #b0b0b0",
-                    "backgroundColor": "#f2f2f2",
+                    "position": "relative",
+                    "width": "92px",
+                    "height": "42px",
+                    "borderRadius": "999px",
+                    "border": "1px solid rgba(0,0,0,.14)",
+                    "background": "linear-gradient(#f7f7f7,#e7e7e7)",
+                    "boxShadow": "0 1px 2px rgba(0,0,0,.12) inset, 0 1px 2px rgba(0,0,0,.05)",
                     "cursor": "pointer",
-                    "boxShadow": "0 2px 4px rgba(0,0,0,0.10)",
+                    "padding": "0",
+                    "fontFamily": "VW Text",
                 },
             ),
         ],
-        style={"display": "flex", "alignItems": "center", "gap": "14px"},
+        style={"display": "flex", "alignItems": "center", "justifyContent": "center"},
     )
 
 
@@ -102,7 +203,7 @@ def register(app):
             Input('area-atual-area', 'data'),
             Input('dropdown-subarea-area', 'value'),
             Input('cenario-toggle-area', 'value'),
-            Input('df_desligados-toggle-area', 'value'),
+            Input('desligados-toggle-area', 'value'),
             Input('viajam-toggle-area', 'value'),
             Input('periodo-slider-area', 'value'),
             Input('url','search'),
@@ -114,6 +215,12 @@ def register(app):
         qs = parse_qs((search or '').lstrip('?'))
         modo = (qs.get('modo', ['geral'])[0] or 'geral').lower()
         is_almoco = (modo == 'almoco')
+        if is_almoco:
+            texto_toggle = "Relacionamento Geral da Área ⭢"
+            href_toggle = f"/area/{slug(subarea or area)}?modo=geral"
+        else:
+            texto_toggle = "Relacionamento do Almoço da Área ⭢"
+            href_toggle = f"/area/{slug(subarea or area)}?modo=almoco"
 
         ctx = callback_context
         trig = (ctx.triggered_id or 'initial') if ctx else 'initial'
@@ -206,7 +313,7 @@ def register(app):
         # --- 3) DF FULL (recalcular só quando precisa) ---
         mudou_area_ou_sub = trig in ('area-atual-area', 'dropdown-subarea-area')
         mudou_periodo     = trig in ('periodo-slider-area', 'cenario-toggle-area')
-        mudou_filtros     = trig in ('df_desligados-toggle-area', 'viajam-toggle-area')
+        mudou_filtros     = trig in ('desligados-toggle-area', 'viajam-toggle-area')
 
         df_key = cache_key(area_base, sub_val_out, df_desligados_area, viajam_area, i0, i1)
 
@@ -465,7 +572,7 @@ def register(app):
         # ======= BARRA DE FILTROS (mesmo conteúdo, mas pode ficar oculta no modo almoço) =======
         filter_block_style = {
             'flex':'1','padding':'16px','boxSizing':'border-box','backgroundColor':"#e0e0e0",
-            'borderRadius':'16px','margin':'14px','boxShadow':'0px 3px 6px rgba(0,0,0,0.1)',
+            'borderRadius':'16px','margin':'10px','boxShadow':'0px 3px 6px rgba(0,0,0,0.1)',
             'display':'flex','flexWrap':'wrap','alignItems':'flex-start','gap':'24px'
         }
         if is_almoco:
@@ -478,7 +585,7 @@ def register(app):
                 html.Div([
                     html.Label("Mostrar as pessoas desligadas?"),
                     dcc.RadioItems(
-                        id='df_desligados-toggle-area',
+                        id='desligados-toggle-area',
                         options=[{'label': 'Sim', 'value': 'left'}, {'label': 'Não', 'value': 'right'}],
                         value='left',
                         labelStyle={'display': 'inline-block', 'marginRight': '10px'}
@@ -517,7 +624,7 @@ def register(app):
                     value=[0, len(LT_MONTHS)-1],
                     marks=LT_MARKS, allowCross=False, step=1, pushable=1
                 )
-            ], style={'marginLeft': '50px','flex':'0 0 560px'}),
+            ], style={'flex':'0 0 540px'}),
 
             # Subárea local (dentro da mesma herança)
             html.Div([
@@ -527,177 +634,232 @@ def register(app):
                     value=subarea,  # já entra com a subárea atual, se houver
                     placeholder='Selecione uma subárea',
                     clearable=True,
-                    style={'width': '300px', 'marginTop': '10px'}
+                    style={'width': '270px', 'marginTop': '6px'}
                 ),
             ], style={'marginLeft':'auto'})
         ], style=filter_block_style)
 
-        # ======= CONTEÚDO DA PÁGINA (com botões centrais abaixo do título) =======
+        bloco_duplo = html.Div(
+            [
+                html.Div(
+                    [
+                        html.H4(
+                            "Headcount & Turnover",
+                            style={"textAlign": "center", "margin": "0 0 24px", "fontFamily": "VW Text"},
+                        ),
+                        _headcount_card(area, subarea),
+                    ],
+                    style={
+                        "backgroundColor": "#fff",
+                        "border": "1px solid #dcdcdc",
+                        "borderRadius": "6px",
+                        "padding": "6px",
+                        "boxShadow": "0 2px 2px rgba(0,0,0,0.08)",
+                        "flex": "0 1 270px",
+                        "maxWidth": "560px",
+                        "fontFamily": "VW Text",
+                    },
+                ),
+                html.Div(
+                    [
+                        html.H4(
+                            "GPTW",
+                            style={"textAlign": "center", "margin": "0 0 24px", "fontFamily": "VW Text"},
+                        ),
+                        html.Div(
+                            mini_tabela_df_gptw(subarea or area),
+                            style={"margin": "0 auto", "width": "fit-content", "maxWidth": "100%"},
+                        ),
+                    ],
+                    style={
+                        "backgroundColor": "#fff",
+                        "border": "1px solid #dcdcdc",
+                        "borderRadius": "6px",
+                        "padding": "6px",
+                        "boxShadow": "0 2px 2px rgba(0,0,0,0.08)",
+                        "flex": "0 1 270px",
+                        "maxWidth": "560px",
+                        "fontFamily": "VW Text",
+                    },
+                ),
+                html.Div(
+                    html.Div(areas_toggle_ui(), style={"pointerEvents": "auto"}),
+                    style={
+                        "position": "absolute",
+                        "right": "10px",
+                        "top": "10px",
+                        "zIndex": 20,
+                        "pointerEvents": "auto",
+                    },
+                ),
+            ],
+            style={
+                "position": "relative",
+                "display": "flex",
+                "justifyContent": "center",
+                "alignItems": "flex-start",
+                "gap": "24px",
+                "flexWrap": "wrap",
+                "width": "100%",
+                "maxWidth": "100%",
+                "margin": "8px 0 16px",
+                "padding": "10px",
+                "boxSizing": "border-box",
+                "fontFamily": "VW Text",
+            },
+        )
+
         conteudo = html.Div([
             # Sequenciador de loading da aba Áreas
             dcc.Store(id='area-load-step', data=0),
             dcc.Interval(id='area-load-interval', interval=500, n_intervals=0, disabled=False, max_intervals=2),
 
-            # ===================== CABEÇALHO =====================
             html.Div([
-
-                # ---- Coluna da esquerda: Definição + Botão Voltar ----
+                html.Div(
+                    html.Span(
+                        "O que essa página mostra?\n"
+                        "Entradas no refeitório e saídas da planta durante o horário de almoço, "
+                        "considerando diferenças de até 1 minuto para o refeitório e 3 minutos "
+                        "para as saídas da fábrica, além de estar sendo analisado apenas os últimos 3 meses.",
+                        style={
+                            'fontFamily': 'VW Text',
+                            'fontSize': '14px',
+                            'fontWeight': 'bold',
+                            'padding': '6px 20px',
+                            'border': '1px solid #000',
+                            'borderRadius': '6px',
+                            'backgroundColor': '#fff',
+                            'display': 'block',
+                            'textAlign': 'justify',
+                            'whiteSpace': 'pre-line',
+                            'width': '100%',
+                            'margin': '20px 10px 0 10px',
+                            'lineHeight': '1.3',
+                            'boxSizing': 'border-box',
+                        },
+                    ),
+                    id='definicao-site',
+                    style={'display': 'flex', 'justifyContent': 'center', 'marginBottom': '8px'},
+                ) if is_almoco else html.Div(),
                 html.Div([
-                    # Definição (badge explicativa)
                     html.Div(
-                        [html.Span(
-                            "O que essa página mostra?\n"
-                            "Entradas no refeitório e saídas da planta durante o horário de almoço, "
-                            "considerando diferenças de até 1 minuto para o refeitório e 3 minutos "
-                            "para as saídas da fábrica, além de estar sendo analisado apenas os últimos 3 meses.",
-                            style={
-                                'fontFamily': 'VW Text',
-                                'fontSize': '14px',
-                                'fontWeight': 'bold',
-                                'padding': '6px 20px',
-                                'border': '1px solid #000',
-                                'borderRadius': '6px',
-                                'backgroundColor': '#fff',
-                                'display': 'block',
-                                'textAlign': 'justify',
-                                'whiteSpace': 'pre-line',
-                                'width': '400px',
-                                'lineHeight': '1.3',  
-                                'boxSizing': 'border-box'
-                            }
-                        )] if is_almoco else [],
-                        id='definicao-site',
+                        [
+                            html.Button(
+                                " ↩ ",
+                                id='botao-voltar-area',
+                                n_clicks=0,
+                                style={
+                                    'display': 'inline-flex',
+                                    'alignItems': 'center',
+                                    'color': 'Black',
+                                    'fontFamily': 'VW Text',
+                                    'fontWeight': 'bold',
+                                    'padding': '5px 20px',
+                                    'fontSize': '20px',
+                                    'backgroundColor': '#e0e0e0',
+                                    'border': 'none',
+                                    'borderRadius': '5px',
+                                    'cursor': 'pointer',
+                                    'boxShadow': '0px 2px 6px rgba(0,0,0,0.25)',
+                                    'textAlign': 'center',
+                                    'textDecoration': 'none',
+                                    'transition': '0.2s ease',
+                                },
+                            )
+                        ],
                         style={
                             'display': 'flex',
-                            'justifyContent': 'center',
-                            'alignItems': 'flex-start',
-                            'width': '100%',
-                            'margin': '0 auto',
-                            'marginBottom': '8px'
-                        }
+                            'flexDirection': 'row',
+                            'alignItems': 'center',
+                            'justifyContent': 'flex-start',
+                            'gap': '12px',
+                            'flexWrap': 'nowrap',
+                        },
                     ),
-
-                    # Botão "Voltar"
-                    html.Button(
-                        "Voltar",
-                        id='botao-voltar-area',
-                        n_clicks=0,
+                    html.Div(
+                        [
+                            html.Button(
+                                "🖨️ Imprimir",
+                                id='btn-print-area',
+                                n_clicks=0,
+                                style={
+                                    'backgroundColor': 'transparent',
+                                    'border': 'none',
+                                    'color': 'Black',
+                                    'fontFamily': 'VW Text',
+                                    'fontWeight': 'bold',
+                                    'fontSize': '16px',
+                                    'cursor': 'pointer',
+                                    'padding': '10px 6px',
+                                    'display': 'inline-flex',
+                                    'alignItems': 'center',
+                                    'justifyContent': 'center',
+                                },
+                            ),
+                            dcc.Link(
+                                texto_toggle,
+                                href=href_toggle,
+                                style={
+                                    'display': 'inline-block',
+                                    'color': 'Black',
+                                    'fontFamily': 'VW Text',
+                                    'fontWeight': 'bold',
+                                    'padding': '10px',
+                                    'fontSize': '14px',
+                                    'backgroundColor': '#e0e0e0',
+                                    'border': 'none',
+                                    'borderRadius': '5px',
+                                    'cursor': 'pointer',
+                                    'boxShadow': '0px 2px 6px rgba(0, 0, 0, 0.25)',
+                                    'width': 'auto',
+                                    'textAlign': 'center',
+                                    'textDecoration': 'none',
+                                    'transition': '0.2s ease',
+                                },
+                            ),
+                        ],
                         style={
-                            'color': 'Black',
+                            'marginLeft': 'auto',
+                            'display': 'flex',
+                            'alignItems': 'center',
+                            'justifyContent': 'flex-end',
+                            'gap': '16px',
+                            'flexWrap': 'nowrap',
+                        },
+                    ),
+                    html.H2(
+                        f"Análise Específica — {subarea or area}",
+                        style={
+                            'position': 'absolute',
+                            'left': '50%',
+                            'transform': 'translateX(-50%)',
+                            'margin': '0',
                             'fontFamily': 'VW Text',
                             'fontWeight': 'bold',
-                            'padding': '10px 16px',
-                            'fontSize': '14px',
-                            'backgroundColor': '#e0e0e0',
-                            'border': 'none',
-                            'borderRadius': '5px',
-                            'cursor': 'pointer',
-                            'boxShadow': '0px 2px 6px rgba(0,0,0,0.25)',
-                            'width': 'auto',            # largura só o suficiente para o texto
+                            'fontSize': '22px',
+                            'whiteSpace': 'nowrap',
+                            'overflow': 'hidden',
+                            'textOverflow': 'ellipsis',
                             'textAlign': 'center',
-                            'alignSelf': 'flex-start',  # força alinhamento à esquerda
-                            'transition': '0.2s ease'
-                        }
-                    )
-                ],
-                style={
+                            'zIndex': 1,
+                        },
+                    ),
+                ], style={
                     'display': 'flex',
-                    'flexDirection': 'column',
-                    'alignItems': 'flex-start',     # alinha tudo à esquerda
-                    'justifyContent': 'flex-start',
-                    'flex': '0 0 260px',
-                    'maxWidth': '30%',
-                    'marginLeft': '14px',           # margem igual à da direita
+                    'alignItems': 'center',
+                    'justifyContent': 'space-between',
+                    'flexWrap': 'wrap',
+                    'gap': '16px',
+                    'margin': '4px 0 0',
+                    'padding': '0 10px',
+                    'width': '100%',
+                    'boxSizing': 'border-box',
+                    'position': 'relative',
                 }),
+            ]),
 
-                # ---- Título centralizado ----
-                html.H2(
-                    f"Análise Específica — {subarea or area}",
-                    style={
-                        'flex': '1',
-                        'textAlign': 'center',
-                        'margin': '0',
-                        'fontFamily': 'VW Text',
-                        'fontWeight': 'bold',
-                        'fontSize': '22px',
-                        'whiteSpace': 'nowrap',
-                        'overflow': 'hidden',
-                        'textOverflow': 'ellipsis'
-                    }
-                ),
+            html.Div(id='dummy-print-area', style={'display': 'none'}),
 
-                # ---- Mini-tabela à direita ----
-                html.Div(
-                    mini_tabela_df_gptw(subarea or area),
-                    style={
-                        'marginRight': '14px',
-                        'flex': '0 0 260px',
-                        'maxWidth': '30%'
-                    }
-                )
-            ],
-            style={
-                'display': 'flex',
-                'alignItems': 'flex-end',
-                'justifyContent': 'space-between',
-                'flexWrap': 'wrap',
-                'gap': '12px',
-                'margin': '14px',
-                'position': 'relative'
-            }),
-
-            # ===================== BOTÕES CENTRAIS =====================
-            html.Div([
-                dcc.Link(
-                    "Relacionamento Geral da Área",
-                    href=f"/area/{slug(subarea or area)}?modo=geral",
-                    style={
-                        'fontFamily': 'VW Text',
-                        'fontSize': '16px',
-                        'fontWeight': 'bold',
-                        'color': '#000000',
-                        'textDecoration': 'none',
-                        'padding': '8px 16px',
-                        'border': '1px solid #000000',
-                        'borderRadius': '6px',
-                        'backgroundColor': "#e0e0e0",
-                        'cursor': 'pointer',
-                        'transition': '0.2s ease',
-                        'textAlign': 'center'
-                    }
-                ),
-                dcc.Link(
-                    "Relacionamento do Almoço da Área",
-                    href=f"/area/{slug(subarea or area)}?modo=almoco",
-                    style={
-                        'fontFamily': 'VW Text',
-                        'fontSize': '16px',
-                        'fontWeight': 'bold',
-                        'color': '#000000',
-                        'textDecoration': 'none',
-                        'padding': '8px 16px',
-                        'border': '1px solid #000000',
-                        'borderRadius': '6px',
-                        'backgroundColor': "#e0e0e0",
-                        'cursor': 'pointer',
-                        'transition': '0.2s ease',
-                        'textAlign': 'center'
-                    }
-                )
-            ],
-            style={
-                'display': 'flex',
-                'justifyContent': 'center',
-                'alignItems': 'center',
-                'gap': '12px',
-                'margin': '8px 0 14px',
-                'flexWrap': 'wrap'
-            }),
-
-            html.Div(
-                areas_toggle_ui(),
-                style={'display': 'flex', 'justifyContent': 'center', 'margin': '4px 0 12px'}
-            ),
             # ===================== FILTROS E GRÁFICOS =====================
             filtros_div,
 
@@ -705,10 +867,12 @@ def register(app):
                 id='periodo-texto-area',
                 style={
                     'textAlign': 'center',
-                'marginTop': '4px',
-                'marginBottom': '14px'
-            }
-        ),
+                    'marginTop': '4px',
+                    'marginBottom': '10px'
+                }
+            ),
+
+            bloco_duplo,
 
             dcc.Loading(
                 id='loading-area-men',
@@ -726,27 +890,116 @@ def register(app):
             dcc.Store(id='area-atual-area', data=area)
 
         ],
-        style={
-            'padding': '14px',
-            'backgroundColor': 'white'
-        })
+        style={'padding': '0px', 'backgroundColor': 'white'})
 
         return conteudo, {'display':'block'}, {'display':'none'}, no_update
 
-    @app.callback(
+    app.clientside_callback(
+        """
+        function(n_clicks, current) {
+            current = current || "heatmap";
+            var next_state = current;
+            if (n_clicks && n_clicks > 0) {
+                next_state = (current === "heatmap") ? "network" : "heatmap";
+            }
+            var btn_base = {
+                position: "relative",
+                width: "92px",
+                height: "42px",
+                borderRadius: "999px",
+                border: "1px solid rgba(0,0,0,.14)",
+                background: "linear-gradient(#f7f7f7,#e7e7e7)",
+                boxShadow: "0 1px 2px rgba(0,0,0,.12) inset, 0 1px 2px rgba(0,0,0,.05)",
+                cursor: "pointer",
+                transition: "all .18s ease-in-out",
+                padding: "0",
+                fontFamily: "VW Text"
+            };
+            var btn_on = {
+                background: "linear-gradient(#181818,#2a2a2a)",
+                border: "1px solid rgba(255,255,255,.12)"
+            };
+            var knob_base = {
+                position: "absolute",
+                top: "3px",
+                left: "3px",
+                width: "36px",
+                height: "36px",
+                borderRadius: "50%",
+                background: "#ffffff",
+                boxShadow: "0 1px 2px rgba(0,0,0,.28), 0 0 0 1px rgba(0,0,0,.06) inset",
+                transform: "translateX(0)",
+                transition: "transform .18s ease-in-out, background .18s ease"
+            };
+            var knob_on = {
+                transform: "translateX(50px)",
+                background: "#1e1e1e",
+                boxShadow: "0 1px 2px rgba(0,0,0,.28), 0 0 0 1px rgba(255,255,255,.08) inset"
+            };
+            var ico_base = {
+                position: "absolute",
+                top: "50%",
+                transform: "translateY(-50%)",
+                fontSize: "18px",
+                lineHeight: "18px",
+                userSelect: "none"
+            };
+            var ico_heat_color = { color: "#0057b8", left: "14px" };
+            var ico_net_color  = { color: "#00a37a", right: "14px" };
+            var ico_dim = { opacity: 0.28 };
+            var ico_on_color = { color: "#f3f3f3" };
+            var knob_ico_base = {
+                position: "absolute",
+                inset: "0",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "20px",
+                transform: "translateX(-25px)"
+            };
+            var btn_style = Object.assign({}, btn_base);
+            var knob_style = Object.assign({}, knob_base);
+            var heat_style = Object.assign({}, ico_base, ico_heat_color);
+            var net_style  = Object.assign({}, ico_base, ico_net_color);
+            var knob_ico_style = Object.assign({}, knob_ico_base);
+            var knob_ico_txt = "▦";
+            if (next_state === "network") {
+                Object.assign(btn_style, btn_on);
+                Object.assign(knob_style, knob_on);
+                Object.assign(heat_style, ico_dim);
+                Object.assign(net_style, ico_on_color);
+                knob_ico_txt = "🕸️";
+                Object.assign(knob_ico_style, { color: "#f3f3f3", transform: "translateX(25px)" });
+            } else {
+                Object.assign(net_style, ico_dim);
+                Object.assign(knob_ico_style, { color: "#0057b8", transform: "translateX(-25px)" });
+            }
+            return [next_state, btn_style, knob_style, heat_style, net_style, knob_ico_txt, knob_ico_style];
+        }
+        """,
         Output('areas_vis_state', 'data'),
-        Output('areas_vis_btn', 'children'),
+        Output('areas_vis_btn', 'style'),
+        Output('knob', 'style'),
+        Output('ico_heat', 'style'),
+        Output('ico_net', 'style'),
+        Output('knob_ico', 'children'),
+        Output('knob_ico', 'style'),
         Input('areas_vis_btn', 'n_clicks'),
         State('areas_vis_state', 'data'),
-        prevent_initial_call=False
     )
-    def _toggle_areas_vis(n_clicks, current):
-        current = (current or "heatmap").lower()
-        if current == "teia":
-            current = "network"
-        next_state = current if (n_clicks or 0) == 0 else ("network" if current == "heatmap" else "heatmap")
-        label = (
-            "Modo: Heatmap (detalhe)" if next_state == "heatmap"
-            else "Modo: Teia (rede)"
-        )
-        return next_state, label
+
+    app.clientside_callback(
+        """
+        function(n_clicks) {
+            if (!n_clicks) {
+                return "";
+            }
+            try {
+                window.print();
+            } catch (e) {}
+            return "";
+        }
+        """,
+        Output('dummy-print-area', 'children'),
+        Input('btn-print-area', 'n_clicks'),
+    )
