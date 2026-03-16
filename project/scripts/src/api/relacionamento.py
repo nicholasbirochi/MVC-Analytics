@@ -10,6 +10,7 @@ Padronização:
 - Linhas <= 100 colunas quando possível
 """
 from __future__ import annotations
+import re
 from dash import Input, Output, State, dcc, html, dash_table, no_update, ALL
 from dash.exceptions import PreventUpdate
 import time
@@ -20,7 +21,8 @@ import plotly.graph_objects as go
 
 from ..core.repo_global import df_datas, df_semana_merged, df_df_ativos, df_df_gptw, her
 from ..core import repo_global as repo
-from ..domain.pipeline import dw_fetch_diarios, dw_almoco_min_max, query_dw
+from ..domain.pipeline import dw_fetch_diarios, dw_fetch_almoco, dw_almoco_min_max, query_dw
+from ..domain.tenure import carregar_adm_dem_cache, tempo_de_casa_str
 from ..ui.gptw import df_gptw_tabela_empilhada
 from ..ui.theme import ESTILO_EXIBIR, ESTILO_OCULTO
 
@@ -50,10 +52,11 @@ def _sql_in_clause(values) -> tuple[str, tuple[str, ...]]:
 
 def build_dataframe_almoco_pessoas(
     cad_list,
+    df_almoco_local=None,
     dt_ini=None,
     dt_fim=None,
 ) -> pd.DataFrame:
-    """Consulta clusters de almoço no DW para cálculo de co-presença por semana."""
+    """Retorna clusters de almoço por pessoa/dia para cálculo de co-presença semanal."""
     empty = pd.DataFrame(columns=["Data", "Cadastro", "Clusters"])
     if not cad_list:
         return empty
@@ -69,6 +72,62 @@ def build_dataframe_almoco_pessoas(
         dt_fim = pd.Timestamp(dt_fim).normalize()
         if dt_ini > dt_fim:
             dt_ini, dt_fim = dt_fim, dt_ini
+
+    # Prioriza dados já carregados (vw_df_almoco) para manter paridade com o notebook.
+    if isinstance(df_almoco_local, pd.DataFrame) and not df_almoco_local.empty:
+        df_loc = df_almoco_local.copy()
+        if {"Cadastro", "Data"}.issubset(df_loc.columns):
+            df_loc["Cadastro"] = df_loc["Cadastro"].astype(str)
+            df_loc["Data"] = pd.to_datetime(df_loc["Data"], errors="coerce").dt.normalize()
+            df_loc = df_loc.dropna(subset=["Cadastro", "Data"])
+            df_loc = df_loc[df_loc["Cadastro"].isin([str(c) for c in cad_list])]
+            df_loc = df_loc[(df_loc["Data"] >= dt_ini) & (df_loc["Data"] <= dt_fim)]
+            if not df_loc.empty:
+                if "Clusters" in df_loc.columns:
+                    def _to_cluster_set(value):
+                        if value is None or (isinstance(value, float) and pd.isna(value)):
+                            return set()
+                        if isinstance(value, (set, frozenset)):
+                            return {str(v).strip() for v in value if str(v).strip()}
+                        if isinstance(value, (list, tuple)):
+                            return {str(v).strip() for v in value if str(v).strip()}
+                        txt = str(value).strip()
+                        if not txt:
+                            return set()
+                        for sep in ("|", ";", ",", "/", "\\"):
+                            if sep in txt:
+                                return {t.strip() for t in txt.split(sep) if t.strip()}
+                        return {txt}
+
+                    out = df_loc[["Data", "Cadastro", "Clusters"]].copy()
+                    out["Clusters"] = out["Clusters"].map(_to_cluster_set)
+                    out = (
+                        out.groupby(["Data", "Cadastro"])["Clusters"]
+                        .agg(lambda sets: set().union(*sets) if len(sets) else set())
+                        .reset_index()
+                    )
+                    return out
+
+                if "Planta" in df_loc.columns:
+                    def _to_planta_set(value):
+                        if value is None or (isinstance(value, float) and pd.isna(value)):
+                            return set()
+                        txt = str(value).strip()
+                        if not txt:
+                            return set()
+                        for sep in ("|", ";", ",", "/", "\\"):
+                            if sep in txt:
+                                return {t.strip() for t in txt.split(sep) if t.strip()}
+                        return {txt}
+
+                    tmp = df_loc[["Data", "Cadastro", "Planta"]].copy()
+                    tmp["Clusters"] = tmp["Planta"].map(_to_planta_set)
+                    out = (
+                        tmp.groupby(["Data", "Cadastro"])["Clusters"]
+                        .agg(lambda sets: set().union(*sets) if len(sets) else set())
+                        .reset_index()
+                    )
+                    return out
 
     in_sql, in_params = _sql_in_clause(cad_list)
     sql = f"""
@@ -373,11 +432,11 @@ def register(app):
         for t in (tags or []):
             nome   = t.get('nome', '')
             data   = t.get('data', '')
-            corhex = t.get('cor', '#3221cc')
+            corhex = _fmt_hex(t.get('cor')) or '#3221cc'
 
             # 🧹 Garante que a cor seja válida
-            if not isinstance(corhex, str) or not corhex.startswith('#') or len(corhex) not in (4, 7):
-                corhex = '#3221cc'  # cor padrão de fallback
+            if not isinstance(corhex, str):
+                corhex = '#3221cc'
 
             # 🗓️ converte data para DD/MM/YYYY
             try:
@@ -418,15 +477,16 @@ def register(app):
         tags = list(tags or [])
         if not data_iso:
             raise PreventUpdate
+        cor_norm = _fmt_hex(cor) or "#3221cc"
 
         novo = {
             'id':   str(time.time()),      # <— id único
             'nome': (nome or 'Evento'),
             'data': str(data_iso),         # 'YYYY-MM-DD'
-            'cor':  (cor  or '#3221cc')
+            'cor':  cor_norm
         }
         tags.append(novo)
-        return tags, "", None, "#3221cc"
+        return tags, "", None, cor_norm
 
     @app.callback(
         Output('rel-tags', 'data', allow_duplicate=True),
@@ -435,33 +495,39 @@ def register(app):
         prevent_initial_call=True
     )
     def _sync_store_from_table(rows, tags):
-        # tags atuais no store
-        tags = list(tags or [])
-        by_id = {t["id"]: t for t in tags}
+        by_id = {t.get("id"): dict(t) for t in (tags or []) if t and t.get("id")}
 
-        # percorre as linhas da tabela e atualiza só o que mudou
+        def _extract_hex_from_cell(cell):
+            if isinstance(cell, str):
+                match = re.search(r"background-color\s*:\s*(#[0-9a-fA-F]{3,6})", cell)
+                if match:
+                    return _fmt_hex(match.group(1))
+                return _fmt_hex(cell)
+            return None
+
         for r in (rows or []):
             rid = r.get("id")
-            if rid in by_id:
-                # data
-                data_iso = None
-                if r.get("data_br"):
-                    try:
-                        data_iso = pd.to_datetime(r["data_br"], dayfirst=True).strftime("%Y-%m-%d")
-                    except Exception:
-                        data_iso = None
+            if not rid or rid not in by_id:
+                continue
 
+            data_iso = None
+            if r.get("data_br"):
+                try:
+                    data_iso = pd.to_datetime(r["data_br"], dayfirst=True).strftime("%Y-%m-%d")
+                except Exception:
+                    data_iso = None
+            if data_iso is not None:
                 by_id[rid]["data"] = data_iso
-                by_id[rid]["cor"]  = r.get("cor") or by_id[rid].get("cor")
 
-                # se quiser permitir mudar o nome direto na tabela:
-                nome_md = r.get("nome_md") or ""
-                # tira o ** ... ** se o usuário não tirou
-                nome_limpo = nome_md.replace("**", "").strip()
-                if nome_limpo:
-                    by_id[rid]["nome"] = nome_limpo
+            hex_new = _extract_hex_from_cell(r.get("cor"))
+            if hex_new:
+                by_id[rid]["cor"] = hex_new
 
-        # MUITO IMPORTANTE: devolve TODAS as tags (não só as da tabela)
+            nome_md = r.get("nome_md") or ""
+            nome_limpo = nome_md.replace("**", "").strip()
+            if nome_limpo:
+                by_id[rid]["nome"] = nome_limpo
+
         return list(by_id.values())
 
     @app.callback(
@@ -498,11 +564,14 @@ def register(app):
                        .assign(Cadastro=lambda d: d['Cadastro'].astype(str))
                        .set_index('Cadastro')['Nome']
                        .to_dict())
+        adm_cache, dem_cache = carregar_adm_dem_cache()
+        ref_dt = pd.Timestamp.today().normalize()
 
         def label_pessoa(pid):
             cad = pid.split("PESSOA::",1)[1]
             nome = cad_to_nome.get(cad, cad)
-            return f"{nome} ({cad})"
+            tenure_txt = tempo_de_casa_str(adm_cache.get(cad), ref=ref_dt, dem_ts=dem_cache.get(cad))
+            return f"{nome} ({cad}) - {tenure_txt}"
 
         return [
             html.Div([
@@ -649,72 +718,76 @@ def register(app):
         outros = cad_list[1:]
 
         if modo_rel == 'almoco':
-            _, dmax = dw_almoco_min_max()
-            if dmax is None:
+            df_almoco_local = getattr(repo, "df_almoco", None)
+            if df_almoco_local is None or getattr(df_almoco_local, "empty", True):
+                dmin, dmax = dw_almoco_min_max()
+                if dmax is None:
+                    df_almoco_local = pd.DataFrame()
+                else:
+                    dt_fim = pd.Timestamp(dmax).normalize()
+                    dt_ini = (dt_fim - pd.DateOffset(months=3)).normalize()
+                    df_almoco_local = dw_fetch_almoco([str(c) for c in cad_list], dt_ini=dt_ini, dt_fim=dt_fim)
+
+            dfal = build_dataframe_almoco_pessoas(cad_list, df_almoco_local)
+            if dfal is None or dfal.empty:
                 fig_mini_movel = fig_msg("Sem dados de almoço para as pessoas selecionadas")
             else:
-                dt_fim = pd.Timestamp(dmax).normalize()
-                dt_ini = (dt_fim - pd.DateOffset(months=3)).normalize()
-                dfal = build_dataframe_almoco_pessoas(cad_list, dt_ini=dt_ini, dt_fim=dt_fim)
-                if dfal is None or dfal.empty:
-                    fig_mini_movel = fig_msg("Sem dados de almoço para as pessoas selecionadas")
-                else:
-                    dfal['SemIni'] = _semana_inicio(dfal['Data'])
-                    dfal = dfal.dropna(subset=['SemIni'])
-                    sems = pd.Index(semanas)
+                dfal['SemIni'] = _semana_inicio(dfal['Data'])
+                dfal = dfal.dropna(subset=['SemIni'])
+                sems = pd.Index(semanas)
 
-                    mapa_sem = {}
-                    for sem, gsem in dfal.groupby('SemIni'):
-                        m = {}
-                        for cad, gg in gsem.groupby('Cadastro'):
-                            m[str(cad)] = {d: cset for d, cset in zip(gg['Data'], gg['Clusters'])}
-                        mapa_sem[sem] = m
+                mapa_sem = {}
+                for sem, gsem in dfal.groupby('SemIni'):
+                    m = {}
+                    for cad, gg in gsem.groupby('Cadastro'):
+                        m[str(cad)] = {d: cset for d, cset in zip(gg['Data'], gg['Clusters'])}
+                    mapa_sem[sem] = m
 
-                    pct_medias = []
-                    for sem in sems:
-                        m = mapa_sem.get(sem, {})
-                        datas_ref = m.get(str(ref), {})
-                        pcts = []
-                        for cad in outros:
-                            dias_outro = m.get(str(cad), {})
-                            denom = len(dias_outro)
-                            if denom > 0:
-                                num = 0
-                                for d, cset in dias_outro.items():
-                                    if d in datas_ref and len(cset & datas_ref[d]) > 0:
-                                        num += 1
-                                pcts.append(100.0 * num / denom)
-                        pct_medias.append(float(np.nanmean(pcts)) if pcts else float('nan'))
+                pct_medias = []
+                for sem in sems:
+                    m = mapa_sem.get(sem, {})
+                    datas_ref = m.get(str(ref), {})
+                    pcts = []
+                    for cad in outros:
+                        dias_outro = m.get(str(cad), {})
+                        denom = len(dias_outro)
+                        if denom > 0:
+                            num = 0
+                            for d, cset in dias_outro.items():
+                                if d in datas_ref and len(cset & datas_ref[d]) > 0:
+                                    num += 1
+                            pcts.append(100.0 * num / denom)
+                    pct_medias.append(float(np.nanmean(pcts)) if pcts else float('nan'))
 
-                    serie_pct = pd.Series(pct_medias, index=sems).astype(float)
-                    mm3_pct = serie_pct.rolling(window=3, min_periods=1).mean().round(2)
+                serie_pct = pd.Series(pct_medias, index=sems).astype(float)
+                mm3_pct = serie_pct.rolling(window=3, min_periods=1).mean().round(2)
 
-                    fig_mini_movel = go.Figure()
-                    fig_mini_movel.add_trace(go.Scatter(
-                        x=sems,
-                        y=list(mm3_pct.clip(lower=0, upper=100).values),
-                        mode='lines+markers',
-                        line_shape='spline',
-                        line=dict(width=2),
-                        marker=dict(size=6),
-                        name='Média móvel (3) — % encontros no almoço',
-                        hovertemplate="Semana: %{x|%Y-%m-%d}<br>Média móvel (3): %{y:.1f}%<extra></extra>"
-                    ))
-                    fig_mini_movel.add_shape(
-                        type='line', xref='paper', x0=0, x1=1,
-                        yref='y', y0=50, y1=50,
-                        line=dict(dash='dot', width=1, color='rgba(0,0,0,0.35)')
-                    )
-                    fig_mini_movel.update_layout(
-                        template="plotly_white",
-                        title="Encontros no almoço — média móvel (3 semanas)",
-                        xaxis_title="",
-                        yaxis_title="Percentual de coincidência",
-                        yaxis=dict(ticksuffix="%", range=[0, 100]),
-                        showlegend=False,
-                        hovermode='x unified',
-                        margin=dict(t=110, r=20, b=60, l=60),
-                    )
+                fig_mini_movel = go.Figure()
+                fig_mini_movel.add_trace(go.Scatter(
+                    x=sems,
+                    y=list(mm3_pct.clip(lower=0, upper=100).values),
+                    mode='lines+markers',
+                    line_shape='spline',
+                    line=dict(width=2),
+                    marker=dict(size=6),
+                    name='Média móvel (3) — % encontros no almoço',
+                    hovertemplate="Semana: %{x|%Y-%m-%d}<br>Média móvel (3): %{y:.1f}%<extra></extra>"
+                ))
+                fig_mini_movel.add_shape(
+                    type='line', xref='paper', x0=0, x1=1,
+                    yref='y', y0=50, y1=50,
+                    line=dict(dash='dot', width=1, color='rgba(0,0,0,0.35)')
+                )
+                fig_mini_movel.update_layout(
+                    template="plotly_white",
+                    title="Encontros no almoço — média móvel (3 semanas)",
+                    xaxis_title="",
+                    yaxis_title="Percentual de coincidência",
+                    yaxis=dict(ticksuffix="%", range=[0, 100]),
+                    showlegend=False,
+                    hovermode='x unified',
+                    margin=dict(t=110, r=20, b=60, l=60),
+                )
         else:
             def mapa_datas_por_semana(df):
                 out = {}
