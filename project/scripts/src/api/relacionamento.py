@@ -109,8 +109,8 @@ def register(app):
         return pd.DataFrame(columns=["Cadastro", "Nome"])
 
     @app.callback(
-        Output('tabela-df_gptw-rel', 'children'),
-        Input('dropdown-area-df_gptw', 'value')
+        Output('tabela-gptw-rel', 'children'),
+        Input('dropdown-area-gptw', 'value')
     )
     def renderizar_tabela_df_gptw(areas):
         # quando nada selecionado, retorna vazio (Div)
@@ -328,10 +328,10 @@ def register(app):
         return opcoes, valor_filtrado
 
     @app.callback(
-        Output('dropdown-area-df_gptw', 'value'),
-        Input('dropdown-area-df_gptw', 'value'),
+        Output('dropdown-area-gptw', 'value'),
+        Input('dropdown-area-gptw', 'value'),
         Input('url', 'pathname'),
-        State('dropdown-area-df_gptw', 'options'),
+        State('dropdown-area-gptw', 'options'),
         prevent_initial_call=True
     )
     def atualizar_valor_areas(value, pathname, options):
@@ -795,8 +795,8 @@ def register(app):
         return fig_pres, fig_mini_movel
 
     @app.callback(
-        Output('dropdown-area-df_gptw', 'options'),
-        Input('dropdown-area-df_gptw', 'value'),
+        Output('dropdown-area-gptw', 'options'),
+        Input('dropdown-area-gptw', 'value'),
         Input('url', 'pathname')
     )
     def atualizar_opcoes_areas(selecionadas, pathname):
@@ -872,6 +872,22 @@ def register(app):
         if modo == 'almoco':
             return "↩ Ver Geral", {**base_style, 'display': 'block'}, False
         return "🍽️ Almoço", {**base_style, 'display': 'none'}, False
+
+    app.clientside_callback(
+        """
+        function(n_clicks) {
+            if (!n_clicks) {
+                return "";
+            }
+            try {
+                window.print();
+            } catch (e) {}
+            return "";
+        }
+        """,
+        Output('dummy-print-relacionamento', 'children'),
+        Input('btn-print-relacionamento', 'n_clicks'),
+    )
 
     @app.callback(
         Output('conteudo-relacionamento', 'children'),
@@ -1048,12 +1064,12 @@ def register(app):
                 html.Div([
                     html.Div([
                         dcc.Dropdown(
-                            id='dropdown-area-df_gptw',
+                            id='dropdown-area-gptw',
                             options=[], value=[], multi=True, placeholder='Selecione áreas…',
                             style={'minWidth': '260px', 'maxWidth': '520px', 'width': '100%', 'margin': '0'}
                         ),
                     ], style={'marginBottom': '10px', 'display': 'flex'}),
-                    html.Div(id='tabela-df_gptw-rel', style={'display': 'flex', 'justifyContent': 'center'})
+                    html.Div(id='tabela-gptw-rel', style={'display': 'flex', 'justifyContent': 'center'})
                 ], style={'padding': '16px', 'background': '#fff', 'borderRadius': '12px', 'margin': '10px'})
             ], style={'padding': '10px', 'backgroundColor': 'white'})
 
