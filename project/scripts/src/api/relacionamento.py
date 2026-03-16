@@ -13,6 +13,7 @@ from __future__ import annotations
 from dash import Input, Output, State, dcc, html, dash_table, no_update, ALL
 from dash.exceptions import PreventUpdate
 import time
+from collections import deque
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -283,65 +284,67 @@ def register(app):
         return html.Div(items, style={"display": "flex", "flexWrap": "wrap"})
 
     @app.callback(
-        Output("dropdown_df_gptw", "options"),
-        Output("dropdown_df_gptw", "value"),
-        Input("dropdown_df_gptw", "value"),
-        prevent_initial_call=True
-    )
-    def atualizar_dropdown_df_gptw(valor_atual):
-        df = df_df_gptw.copy()
-        todas_areas = sorted(df["Área"].dropna().unique().tolist())
-
-        # normaliza valor atual
-        if not valor_atual:
-            valor_atual = []
-        elif isinstance(valor_atual, str):
-            valor_atual = [valor_atual]
-        valor_atual = [v.strip() for v in valor_atual]
-
-        # mapeamento área → subáreas, se existir coluna
-        if "Subarea" in df.columns:
-            mapa = (
-                df[["Área", "Subarea"]]
-                .dropna()
-                .groupby("Área")["Subarea"]
-                .apply(set)
-                .to_dict()
-            )
-        else:
-            # fallback: considera prefixo (ex: B-I → B-IA, B-IE, ...)
-            mapa = {a: {b for b in todas_areas if b.startswith(a) and b != a}
-                    for a in todas_areas}
-
-        # subáreas a remover
-        ocultar = set()
-        for area_sel in valor_atual:
-            ocultar.update(mapa.get(area_sel, set()))
-
-        # remove as subáreas da lista de opções
-        visiveis = [a for a in todas_areas if a not in ocultar]
-        opcoes = [{"label": a, "value": a} for a in visiveis]
-
-        # também limpa do value qualquer item que tenha sido ocultado
-        valor_filtrado = [v for v in valor_atual if v in visiveis]
-
-        return opcoes, valor_filtrado
-
-    @app.callback(
+        Output('dropdown-area-gptw', 'options'),
         Output('dropdown-area-gptw', 'value'),
         Input('dropdown-area-gptw', 'value'),
         Input('url', 'pathname'),
-        State('dropdown-area-gptw', 'options'),
+        Input('rel-load-interval', 'n_intervals'),
         prevent_initial_call=True
     )
-    def atualizar_valor_areas(value, pathname, options):
+    def atualizar_opcoes_e_valor_areas(selecionadas, pathname, _n_intervals):
         if not pathname or '/relacionamento' not in pathname:
             raise PreventUpdate
 
-        # pega só os valores que ainda existem nas opções
-        op_values = {opt['value'] for opt in (options or [])}
-        novos = [v for v in (value or []) if v in op_values]
-        return novos
+        if 'Área' in df_df_ativos.columns:
+            base = df_df_ativos['Área']
+        else:
+            base = df_semana_merged['Área'] if 'Área' in df_semana_merged.columns else pd.Series(dtype=object)
+
+        todas = sorted({str(a).strip() for a in base.dropna().unique().tolist()})
+        sel = [str(a).strip() for a in (selecionadas or [])]
+
+        her_df = globals().get('her', pd.DataFrame())
+        tem_her = (
+            isinstance(her_df, pd.DataFrame)
+            and not her_df.empty
+            and {'Área', 'Heranca'}.issubset(her_df.columns)
+        )
+
+        if tem_her:
+            h = her_df[['Área', 'Heranca']].copy()
+            h['Área'] = h['Área'].astype(str).str.strip()
+            h['Heranca'] = h['Heranca'].astype(str).str.strip()
+
+            filhos_map = {mae: set() for mae in todas}
+            for _, row in h.iterrows():
+                mae = row['Heranca']
+                fil = row['Área']
+                if mae in filhos_map:
+                    filhos_map[mae].add(fil)
+
+            def descendentes(mae: str) -> set:
+                vistos = set()
+                dq = deque(filhos_map.get(mae, set()))
+                while dq:
+                    c = dq.popleft()
+                    if c in vistos:
+                        continue
+                    vistos.add(c)
+                    dq.extend(filhos_map.get(c, set()))
+                vistos |= {a for a in todas if a != mae and a.startswith(mae)}
+                return vistos
+        else:
+            def descendentes(mae: str) -> set:
+                return {a for a in todas if a != mae and a.startswith(mae)}
+
+        ocultar = set()
+        for mae in sel:
+            ocultar |= descendentes(mae)
+
+        visiveis = [a for a in todas if a not in ocultar]
+        options = [{'label': a, 'value': a} for a in visiveis]
+        novo_valor = [v for v in sel if v in visiveis]
+        return options, novo_valor
 
     @app.callback(
         Output('rel-tags', 'data', allow_duplicate=True),
@@ -794,45 +797,6 @@ def register(app):
         # Sempre 2 figuras:
         return fig_pres, fig_mini_movel
 
-    @app.callback(
-        Output('dropdown-area-gptw', 'options'),
-        Input('dropdown-area-gptw', 'value'),
-        Input('url', 'pathname')
-    )
-    def atualizar_opcoes_areas(selecionadas, pathname):
-        if not pathname or '/relacionamento' not in pathname:
-            raise PreventUpdate
-
-        # todas as áreas conhecidas
-        if 'Área' in df_df_ativos.columns:
-            todas = sorted(df_df_ativos['Área'].dropna().unique().tolist())
-        else:
-            todas = (
-                sorted(df_semana_merged['Área'].dropna().unique().tolist())
-                if 'Área' in df_semana_merged.columns
-                else []
-            )
-
-        her_df = globals().get('her', pd.DataFrame())
-        selecionadas = [str(a).strip() for a in (selecionadas or [])]
-
-        # função recursiva: obtém descendentes
-        def descendentes(area):
-            if not isinstance(her_df, pd.DataFrame) or her_df.empty or not {'Área', 'Heranca'}.issubset(her_df.columns):
-                return [a for a in todas if a != area and a.startswith(area)]
-            filhos = her_df.loc[her_df['Heranca'] == area, 'Área'].astype(str).tolist()
-            netos = []
-            for f in filhos:
-                netos.extend(descendentes(f))
-            return filhos + netos
-
-        # remove descendentes das áreas selecionadas
-        ocultar = set()
-        for mae in selecionadas:
-            ocultar.update(descendentes(mae))
-
-        visiveis = [a for a in todas if a not in ocultar]
-        return [{'label': a, 'value': a} for a in visiveis]
 
     @app.callback(
         Output('url', 'pathname', allow_duplicate=True),
