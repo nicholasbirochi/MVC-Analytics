@@ -234,7 +234,7 @@ def register(app):
 
     @app.callback(
         Output('tabela-detalhada-colaboradores', 'children'),
-        Input('df_desligados-toggle', 'value'),
+        Input('desligados-toggle', 'value'),
         Input('viajam-toggle', 'value'),
         Input('dropdown-chapa', 'value'),
         Input('faixa-selecionada', 'data'),
@@ -319,7 +319,7 @@ def register(app):
 
     @app.callback(
         Output('dropdown-chapa', 'options'),
-        Input('df_desligados-toggle', 'value'),
+        Input('desligados-toggle', 'value'),
         Input('viajam-toggle', 'value'),
         Input('faixa-selecionada', 'data'),
         Input('area-selecionada', 'data'),
@@ -345,7 +345,7 @@ def register(app):
 
     @app.callback(
         Output('grafico-heatmap', 'figure'),
-        Input('df_desligados-toggle', 'value'),
+        Input('desligados-toggle', 'value'),
         Input('viajam-toggle', 'value'),
         Input('faixa-selecionada', 'data'),
         Input('area-selecionada', 'data'),
@@ -465,7 +465,7 @@ def register(app):
 
     @app.callback(
         Output('grafico-dispersao', 'figure'),
-        Input('df_desligados-toggle', 'value'),
+        Input('desligados-toggle', 'value'),
         Input('viajam-toggle', 'value'),
         Input('faixa-selecionada', 'data'),
         Input('area-selecionada', 'data'),
@@ -514,7 +514,7 @@ def register(app):
 
     @app.callback(
         Output('grafico-presenca-cargo', 'figure'),
-        Input('df_desligados-toggle', 'value'),
+        Input('desligados-toggle', 'value'),
         Input('viajam-toggle', 'value'),
         Input('faixa-selecionada', 'data'),
         Input('area-selecionada', 'data'),
@@ -568,7 +568,7 @@ def register(app):
 
     @app.callback(
         Output('grafico-boxplot', 'figure'),
-        Input('df_desligados-toggle', 'value'),
+        Input('desligados-toggle', 'value'),
         Input('viajam-toggle', 'value'),
         Input('faixa-selecionada', 'data'),
         Input('area-selecionada', 'data'),
@@ -655,7 +655,7 @@ def register(app):
 
     @app.callback(
         Output('tabela-informacoes-colaboradores', 'children'),
-        Input('df_desligados-toggle', 'value'),
+        Input('desligados-toggle', 'value'),
         Input('viajam-toggle', 'value'),
         Input('area-selecionada', 'data'),
         Input('subarea-selecionada', 'data'),
@@ -747,7 +747,7 @@ def register(app):
 
     @app.callback(
         Output('resumo-container', 'children'),
-        Input('df_desligados-toggle', 'value'),
+        Input('desligados-toggle', 'value'),
         Input('viajam-toggle', 'value'),
         Input('faixa-selecionada', 'data'),
         Input('area-selecionada', 'data'),

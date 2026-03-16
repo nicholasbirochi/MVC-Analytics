@@ -46,7 +46,7 @@ LAYOUT = html.Div([
                     html.Div([
                         html.Label("Mostrar as pessoas desligadas?"),
                         dcc.RadioItems(
-                            id='df_desligados-toggle',
+                            id='desligados-toggle',
                             options=[
                                 {'label': 'Sim', 'value': 'left'},
                                 {'label': 'Não', 'value': 'right'}
