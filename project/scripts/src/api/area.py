@@ -19,6 +19,7 @@ import plotly.graph_objects as go
 from ..core.repo_global import (
     df_datas,
     df_df_ativos,
+    df_df_desligados,
     df_semana_merged,
     df_almoco,
     df_headcount,
@@ -379,12 +380,16 @@ def register(app):
                 )
 
             # filtros opcionais (df_desligados/viajam) – mantenha como já estava, se fizer sentido para almoço
-            if (df_desligados_area == 'right' and not df_full.empty and
-                'Cadastro' in df_full.columns and 'Desligado' in getattr(globals().get('df_semana_merged', pd.DataFrame()), 'columns', [])):
-                afast = df_semana_merged[['Cadastro','Desligado']].drop_duplicates()
-                afast['Cadastro'] = afast['Cadastro'].astype(str)
-                df_full = df_full.merge(afast, on='Cadastro', how='left')
-                df_full = df_full[df_full['Desligado'] != 'Sim'].drop(columns=['Desligado'])
+            if df_desligados_area == 'right' and not df_full.empty and 'Cadastro' in df_full.columns:
+                if 'Desligado' in df_full.columns:
+                    df_full = df_full[df_full['Desligado'] != 'Sim'].drop(columns=['Desligado'], errors='ignore')
+                else:
+                    cad_desligados = set()
+                    if isinstance(df_df_desligados, pd.DataFrame) and 'Cadastro' in df_df_desligados.columns:
+                        cad_desligados = set(df_df_desligados['Cadastro'].astype(str).str.strip().tolist())
+                    if cad_desligados:
+                        df_full['Cadastro'] = df_full['Cadastro'].astype(str).str.strip()
+                        df_full = df_full[~df_full['Cadastro'].isin(cad_desligados)]
 
             if (viajam_area == 'right' and not df_full.empty and 'Cadastro' in df_full.columns):
                 df_sm = globals().get('df_semana_merged', pd.DataFrame())
