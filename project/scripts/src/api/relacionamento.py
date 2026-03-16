@@ -566,10 +566,10 @@ def register(app):
             dfp = dw_fetch_diarios(cad_list).copy()
 
         if 'Data' not in dfp.columns:
-            info = fig_msg("Base diária sem coluna 'Data'")
+            info = fig_msg("df_datas sem coluna 'Data'")
             return info, fig_msg("—")
         if 'Cadastro' not in dfp.columns:
-            info = fig_msg("Base diária sem coluna 'Cadastro'")
+            info = fig_msg("df_datas sem coluna 'Cadastro'")
             return info, fig_msg("—")
 
         dfp['Cadastro'] = dfp['Cadastro'].astype(str)
@@ -581,11 +581,20 @@ def register(app):
             return info, fig_msg("—")
 
         # ------------------ nomes ------------------
-        cad_to_nome = (_people_base_df()
-                       .drop_duplicates()
-                       .assign(Cadastro=lambda d: d['Cadastro'].astype(str))
-                       .set_index('Cadastro')['Nome']
-                       .to_dict())
+        if {"Cadastro", "Nome"}.issubset(df_semana_merged.columns) and not df_semana_merged.empty:
+            cad_to_nome = (
+                df_semana_merged[['Cadastro', 'Nome']]
+                .drop_duplicates()
+                .assign(Cadastro=lambda d: d['Cadastro'].astype(str))
+                .set_index('Cadastro')['Nome']
+                .to_dict()
+            )
+        else:
+            cad_to_nome = (_people_base_df()
+                           .drop_duplicates()
+                           .assign(Cadastro=lambda d: d['Cadastro'].astype(str))
+                           .set_index('Cadastro')['Nome']
+                           .to_dict())
 
         # ------------------ semana ISO ------------------
         dfp['SemIni'] = _semana_inicio(dfp['Data'])
