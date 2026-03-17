@@ -202,6 +202,168 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 │ │   │
 │ │   └── 📓 Validando novas bases.ipynb
 │ │
+│ ├── 📂 Documentação/
+│ │ ├── 📂 Analisando Horas Extras de Colaboradores/
+│ │ │ ├── 📂 saida_relatorios_ronda
+│ │ │ │ ├── 💹 relatorio_abaixo_08h00.xlsx
+│ │ │ │ ├── 💹 relatorio_acima_10h50.xlsx
+│ │ │ │ └── 💹 relatorio_dias_com_registros_de_port_e_s_incongruentes.xlsx
+│ │ │ │
+│ │ │ ├── 📂 validations
+│ │ │ │ └── 💹 checagem_3_exemplos_por_relatorio.xlsx
+│ │ │ │
+│ │ │ ├── 📂 xlsx
+│ │ │ │ ├── 💹 Lista de funcionários.xlsx
+│ │ │ │ ├── 💹 SPAC903_82_Colab_Tathi_Complemento_Original_.xlsx
+│ │ │ │ └── 💹 SPAC903_82_Colab_Tathi_Original.xlsx
+│ │ │ │
+│ │ │ ├── 📓 Analisando Colaboradores que Fizeram Hora Extra.ipynb
+│ │ │ ├── 🪶 df_ronda.parquet
+│ │ │ ├── 📓 Inserindo a coluna funcao.ipynb
+│ │ │ ├── 💹 SPAC903_82_Final.xlsx
+│ │ │ └── 📓 Transformando de xlsx para parquet.ipynb
+│ │ │
+│ │ ├── 📂 Analisando Irregularidades dos Registros/
+│ │ │ ├── 📂 outputs_irregularidades
+│ │ │ │ ├── 📂 dfs
+│ │ │ │ │ ├── 🪶 irregularidade_999_como_trajeto.parquet
+│ │ │ │ │ ├── 🪶 irregularidade_ausencia_das_horas_presenciais_minimas.parquet
+│ │ │ │ │ ├── 🪶 irregularidade_ausencia_de_descanso_entre_jornadas_de_trabalho.parquet
+│ │ │ │ │ ├── 🪶 irregularidade_executivos_com_historico_de_999_como_trajeto.parquet
+│ │ │ │ │ ├── 🪶 irregularidade_nao_entrou_no_refeitorio_mas_passou_no_grill.parquet
+│ │ │ │ │ ├── 🪶 irregularidade_pessoas_sem_cumprir_os_3_dias_presenciais_em_semana_de_feriado_prolongado.parquet
+│ │ │ │ │ ├── 🪶 irregularidade_pessoas_trabalhando_alem_da_jornada_de_trabalho.parquet
+│ │ │ │ │ ├── 🪶 irregularidade_pessoas_trabalhando_sem_ganhar.parquet
+│ │ │ │ │ ├── 🪶 irregularidade_ponto_sem_portaria.parquet
+│ │ │ │ │ ├── 🪶 irregularidade_registro_sem_portaria.parquet
+│ │ │ │ │ └── 🪶 irregularidade_registros_de_pessoas_desligadas.parquet
+│ │ │ │ │
+│ │ │ │ ├── 📂 pdfs
+│ │ │ │ │ ├── 📝 irregularidade_999_como_trajeto.pdf
+│ │ │ │ │ ├── 📝 irregularidade_ausencia_das_horas_presenciais_minimas.pdf
+│ │ │ │ │ ├── 📝 irregularidade_ausencia_de_descanso_entre_jornadas_de_trabalho.pdf
+│ │ │ │ │ ├── 📝 irregularidade_executivos_com_historico_de_999_como_trajeto.pdf
+│ │ │ │ │ ├── 📝 irregularidade_nao_entrou_no_refeitorio_mas_passou_no_grill.pdf
+│ │ │ │ │ ├── 📝 irregularidade_pessoas_sem_cumprir_os_3_dias_presenciais_em_semana_de_feriado_prolongado.pdf
+│ │ │ │ │ ├── 📝 irregularidade_pessoas_trabalhando_alem_da_jornada_de_trabalho.pdf
+│ │ │ │ │ ├── 📝 irregularidade_pessoas_trabalhando_sem_ganhar.pdf
+│ │ │ │ │ ├── 📝 irregularidade_ponto_sem_portaria.pdf
+│ │ │ │ │ ├── 📝 irregularidade_registro_sem_portaria.pdf
+│ │ │ │ │ └── 📝 irregularidade_registros_de_pessoas_desligadas.pdf
+│ │ │ │ │
+│ │ │ │ └── 📓 Validando cada Irregularidade.ipynb
+│ │ │ │
+│ │ │ ├── 📓 Coluna Data_Dem.ipynb
+│ │ │ ├── 📓 Criando Base das Irregularidades.ipynb
+│ │ │ ├── 🪶 df_desligados.parquet
+│ │ │ ├── 🪶 df_ronda.parquet
+│ │ │ └── 📝 Termo de Adesão ao Trabalho Remoto.pdf
+│ │ │
+│ │ ├── 📂 Análise feita com PDFs/
+│ │ │ ├── 📂 Base de Dados
+│ │ │ │ ├── 📝 relatorio A.M.N.M.  01.24_31.03.pdf
+│ │ │ │ └── 📝 relatorio N.P.N.I.  01.24_31.03.pdf
+│ │ │ │
+│ │ │ └── 📂 Códigos
+│ │ │   ├── 📓 Análise dias presenciais A.M.N.M. - Nicholas.ipynb
+│ │ │   ├── 📓 Análise dias presenciais N.P.N.I. - Nicholas.ipynb
+│ │ │   ├── 💹 presenca_por_semana A.M.N.M. 01.24_31.03.xlsx
+│ │ │   └── 💹 presenca_por_semana N.P.N.I. 01.24_31.03.xlsx
+│ │ │
+│ │ ├── 📂 Análise feita pelo Antigo Colaborador/
+│ │ │ ├── 📂 Análise - Antigo Colaborador
+│ │ │ │ ├── 📝 Análise Dias Presenciais A.M.N.M. Python Script.pdf
+│ │ │ │ └── 📝 Análise Dias Presenciais N.P.N.I. Python Script.pdf
+│ │ │ │
+│ │ │ ├── 📓 Análise Dias Presenciais A.M.N.M..ipynb
+│ │ │ ├── 📓 Análise Dias Presenciais N.P.N.I..ipynb
+│ │ │ ├── 💹 presenca_por_semana A.M.N.M. 01.24_31.03.xlsx
+│ │ │ ├── 📝 relatorio A.M.N.M.  01.24_31.03.pdf
+│ │ │ └── 📝 relatorio N.P.N.I.  01.24_31.03.pdf
+│ │ │
+│ │ ├── 📂 Análise por Colaborador para Horas Extras/
+│ │ │ ├── 📂 validation_base
+│ │ │ │ ├── 📂 csv
+│ │ │ │ │ └── 🧾 Colaboradores.csv
+│ │ │ │ │
+│ │ │ │ └── 📂 parquet
+│ │ │ │   └── 🪶 Colaboradores.parquet
+│ │ │ │
+│ │ │ ├── 📂 xlsx
+│ │ │ │  └── 💹 Horas Registradas.xlsx
+│ │ │ │
+│ │ │ ├── 📓 Análise das horas dos colaboradores.ipynb
+│ │ │ ├── 💹 Arquivo Solicitado - Colaboradores não Presentes.xlsx
+│ │ │ └── 📓 Transformando de csv para parquet.ipynb
+│ │ │
+│ │ ├── 📂 Análise sobre a área B-ROT (Irregularidade 999)/
+│ │ │ ├── 📂 Bases Separadas
+│ │ │ │ ├── 🧾 dados_individuais_2026.CSV
+│ │ │ │ └── 📓 transformando csv em parquet.ipynb
+│ │ │ │
+│ │ │ ├── 📂 saidas_relatorio
+│ │ │ │ ├── 💹 Linhas_Irregularidade_999_B-ROT.xlsx
+│ │ │ │ └── 📝 Relatorio_Auditoria_Irregularidade_999_B-ROT.pdf
+│ │ │ │
+│ │ │ ├── 📓 Código.ipynb
+│ │ │ ├── 🪶 dados.parquet
+│ │ │ └── 🪶 df_ronda.parquet
+│ │ │
+│ │ ├── 📂 Análise sobre Base Inicial/
+│ │ │ ├── 📓 Análise das movimentacoes.ipynb
+│ │ │ ├── 📓 Análise geral.ipynb
+│ │ │ └── 💹 Colaboradores e Areas com Problemas.xlsx
+│ │ │
+│ │ ├── 📂 Análise sobre Feriados Prolongados da Auditoria/
+│ │ │ ├── 📓 Código.ipynb
+│ │ │ └── 📝 Relatório da Auditoria Interna.pdf
+│ │ │
+│ │ ├── 📂 Análise sobre Possível Relacionamento/
+│ │ │ ├── 📓 Código.ipynb
+│ │ │ ├── 💹 comparacao_4062738_4063656.xlsx
+│ │ │ ├── 💹 dados_4062738.xlsx
+│ │ │ ├── 💹 dados_4063656.xlsx
+│ │ │ ├── 📖 readme.md
+│ │ │ └── 📦 requirements.txt
+│ │ │
+│ │ ├── 📂 Análise Tempo de Casa/
+│ │ │ ├── 🖼️ code.png
+│ │ │ └── 🖼️ resultado.png
+│ │ │
+│ │ ├── 📂 Consolidando as Planilhas do Excel/
+│ │ │ ├── 📂 data
+│ │ │ │ ├── 💹 Backlog 2025.xlsx
+│ │ │ │ └── 💹 Backlog 2025_consolidado.xlsx
+│ │ │ │
+│ │ │ └── 📓 Análise das Planilhas.ipynb
+│ │ │
+│ │ ├── 📂 Convertendo o Formato das Bases/
+│ │ │ ├── 📓 Transformando de csv para parquet.ipynb
+│ │ │ └── 📓 Transformando de xlsx para parquet.ipynb
+│ │ │
+│ │ ├── 📂 Corrigindo CSV Fornecido/
+│ │ │ ├── 📂 Executivos_SQL
+│ │ │ │ └── 🧾 Executivos_SQL.csv
+│ │ │ │
+│ │ │ ├── 📂 Mensalistas_SQL
+│ │ │ │ └── 🧾 Mensalistas_SQL.csv
+│ │ │ │
+│ │ │ └── 📓 Corrigindo o csv novo.ipynb
+│ │ │
+│ │ └── 📂 Tratando Base Misturada/
+│ │   ├── 📂 Ativos e Desligados
+│ │   │ └── 📂 xlsx
+│ │   │   ├── 💹 Ativos e Desligados - 06-31-2025.xlsx
+│ │   │   ├── 💹 Ativos e Desligados - 09-30-2025.xlsx
+│ │   │   └── 💹 Ativos e Desligados - 12-31-2025.xlsx
+│ │   │
+│ │   └── 📂 Movimentacoes
+│ │     ├── 📂 xlsx
+│ │     │ ├── 💹 Movimentacoes_01-01-2023_09-30-2025.xlsx
+│ │     │ └── 💹 Movimentacoes_10-01-2025_12-31-2025.xlsx
+│ │     │
+│ │     └── 📓 Validando novas bases.ipynb
+│ │
 │ ├── 📓 DDL.ipynb
 │ ├── 📓 Projeto unificado.ipynb
 │ └── 🖼️ Visualização da Estrutura DW.png
