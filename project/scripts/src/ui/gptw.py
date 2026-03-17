@@ -11,6 +11,7 @@ Padronização:
 """
 from __future__ import annotations
 
+from functools import lru_cache
 import re
 import unicodedata
 
@@ -26,6 +27,7 @@ from ..domain.gptw import (
     COLOR_NONE,
     COLOR_UP,
 )
+from ..domain.pipeline import query_dw
 
 
 
@@ -106,6 +108,19 @@ def _normalize_col(col: object) -> str:
     return re.sub(r"[^0-9a-zA-Z]+", "", str(col)).lower()
 
 
+def _normalize_cadastro(value: object) -> str:
+    text = "" if value is None else str(value).strip()
+    if text.lower() in {"", "nan", "none", "nat"}:
+        return ""
+    text = text.replace(" ", "")
+    if re.fullmatch(r"[+-]?\d+(?:\.0+)?", text):
+        try:
+            return str(int(float(text)))
+        except Exception:
+            return text
+    return text
+
+
 def _turnover_col_for(norm_map: dict[str, str], ano: int, kind: str) -> str | None:
     year_str = str(ano)
     if kind == "hc":
@@ -127,6 +142,138 @@ def _turnover_col_for(norm_map: dict[str, str], ano: int, kind: str) -> str | No
         if year_str in norm_col and any(tok in norm_col for tok in tokens):
             return orig_col
     return None
+
+
+@lru_cache(maxsize=1)
+def _carregar_nomes_por_cadastro_dw() -> dict[str, str]:
+    nome_map: dict[str, str] = {}
+    for sql in (
+        'SELECT "Cadastro","Nome" FROM vw_colaboradores;',
+        'SELECT "Cadastro","Nome" FROM vw_movimentacoes '
+        'WHERE COALESCE(TRIM("Nome"), \'\') <> \'\';',
+    ):
+        try:
+            df = query_dw(sql, ())
+        except Exception:
+            continue
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            continue
+        if not {"Cadastro", "Nome"}.issubset(df.columns):
+            continue
+
+        aux = df[["Cadastro", "Nome"]].copy()
+        aux["Cadastro"] = aux["Cadastro"].map(_normalize_cadastro)
+        aux["Nome"] = aux["Nome"].astype(str).str.strip()
+        aux = aux[
+            aux["Cadastro"].ne("")
+            & aux["Nome"].ne("")
+            & ~aux["Nome"].str.lower().isin(["nan", "none"])
+        ]
+        if aux.empty:
+            continue
+
+        aux = aux.drop_duplicates(subset=["Cadastro"], keep="first")
+        for cad, nome in zip(aux["Cadastro"], aux["Nome"]):
+            if cad not in nome_map:
+                nome_map[cad] = nome
+    return nome_map
+
+
+@lru_cache(maxsize=1)
+def _carregar_movimentacoes_df() -> pd.DataFrame:
+    base_cols = [
+        "Cadastro",
+        "Nome",
+        "area_antiga",
+        "desc_uo_antiga",
+        "area_nova",
+        "desc_uo_nova",
+        "data_alteracao",
+        "tipo_evento",
+        "origem_evento",
+        "ano",
+        "_old_key",
+        "_new_key",
+    ]
+
+    def _empty_df() -> pd.DataFrame:
+        return pd.DataFrame(columns=base_cols)
+
+    def _series(df: pd.DataFrame, col: str, default: str = "") -> pd.Series:
+        if col in df.columns:
+            return df[col]
+        return pd.Series(default, index=df.index, dtype="object")
+
+    frames: list[pd.DataFrame] = []
+
+    try:
+        df_mov = query_dw(
+            'SELECT "Cadastro","Nome",'
+            ' "Abreviação UO antiga" AS area_antiga,'
+            ' "Desc. UO antiga" AS desc_uo_antiga,'
+            ' "Abreviação UO" AS area_nova,'
+            ' "Desc. UO" AS desc_uo_nova,'
+            ' "Data de alteração" AS data_alteracao'
+            " FROM vw_movimentacoes;",
+            (),
+            parse_dates=["data_alteracao"],
+        )
+    except Exception:
+        df_mov = pd.DataFrame()
+
+    if isinstance(df_mov, pd.DataFrame) and not df_mov.empty:
+        df_mov = df_mov.copy()
+        df_mov["Cadastro"] = _series(df_mov, "Cadastro").map(_normalize_cadastro)
+        df_mov["Nome"] = _series(df_mov, "Nome").astype(str).str.strip()
+        df_mov["area_antiga"] = _series(df_mov, "area_antiga").astype(str).str.strip()
+        df_mov["desc_uo_antiga"] = _series(df_mov, "desc_uo_antiga").astype(str).str.strip()
+        df_mov["area_nova"] = _series(df_mov, "area_nova").astype(str).str.strip()
+        df_mov["desc_uo_nova"] = _series(df_mov, "desc_uo_nova").astype(str).str.strip()
+        df_mov["data_alteracao"] = pd.to_datetime(_series(df_mov, "data_alteracao"), errors="coerce")
+        df_mov["tipo_evento"] = ""
+        df_mov["origem_evento"] = "interno"
+        frames.append(df_mov[base_cols[:-3]])
+
+    try:
+        df_evt = query_dw(
+            'SELECT "Cadastro",'
+            ' "Data" AS data_alteracao,'
+            ' "De" AS area_antiga,'
+            ' "Para" AS area_nova,'
+            ' "Tipo" AS tipo_evento'
+            " FROM vw_eventos_rh;",
+            (),
+            parse_dates=["data_alteracao"],
+        )
+    except Exception:
+        df_evt = pd.DataFrame()
+
+    if isinstance(df_evt, pd.DataFrame) and not df_evt.empty:
+        df_evt = df_evt.copy()
+        df_evt["Cadastro"] = _series(df_evt, "Cadastro").map(_normalize_cadastro)
+        df_evt["Nome"] = _series(df_evt, "Nome").astype(str).str.strip()
+        df_evt["area_antiga"] = _series(df_evt, "area_antiga").astype(str).str.strip()
+        df_evt["desc_uo_antiga"] = ""
+        df_evt["area_nova"] = _series(df_evt, "area_nova").astype(str).str.strip()
+        df_evt["desc_uo_nova"] = ""
+        df_evt["data_alteracao"] = pd.to_datetime(_series(df_evt, "data_alteracao"), errors="coerce")
+        df_evt["tipo_evento"] = _series(df_evt, "tipo_evento").astype(str).str.strip()
+        df_evt["origem_evento"] = "externo"
+        frames.append(df_evt[base_cols[:-3]])
+
+    if not frames:
+        return _empty_df()
+
+    df = pd.concat(frames, ignore_index=True, sort=False)
+    df["data_alteracao"] = pd.to_datetime(df["data_alteracao"], errors="coerce")
+    df = df.dropna(subset=["data_alteracao"])
+    if df.empty:
+        return _empty_df()
+
+    df["ano"] = df["data_alteracao"].dt.year.astype(int)
+    df["_old_key"] = df["area_antiga"].map(_area_key).fillna("")
+    df["_new_key"] = df["area_nova"].map(_area_key).fillna("")
+    return df[base_cols]
 
 
 def mini_tabela_df_turnover(
@@ -334,8 +481,8 @@ def mini_tabela_df_turnover(
                 hc_children.append(html.Span(sym, style={**arrow_style, "color": col}))
 
             row_cells.append(html.Td(hc_children, style=row_td))
-            row_cells.append(html.Td(_fmt_val(e_num), style=td_es if idx > 0 else {**td_es, "fontWeight": "bold"}))
-            row_cells.append(html.Td(_fmt_val(s_num), style=td_es if idx > 0 else {**td_es, "fontWeight": "bold"}))
+            row_cells.append(html.Td(e_txt, style=td_es if idx > 0 else {**td_es, "fontWeight": "bold"}))
+            row_cells.append(html.Td(s_txt, style=td_es if idx > 0 else {**td_es, "fontWeight": "bold"}))
             prev_hc = hc_num
 
         has_non_zero = any(
@@ -368,6 +515,337 @@ def mini_tabela_df_turnover(
         },
     )
     return html.Div(table, style=wrapper_style)
+
+
+def blocos_movimentacao_turnover(
+    area_label: str | None,
+    anos: tuple[int, ...] = (2023, 2024, 2025),
+    df_headcount: pd.DataFrame | None = None,
+):
+    alvo = (area_label or "").strip()
+    if not alvo:
+        return html.Div()
+
+    df_head = df_headcount if df_headcount is not None else getattr(repo, "df_headcount", None)
+    if df_head is None or getattr(df_head, "empty", True):
+        return html.Div()
+
+    df_head = df_head.copy()
+    area_col = "Área" if "Área" in df_head.columns else next(
+        (c for c in df_head.columns if "area" in _normalize_col(c)),
+        None,
+    )
+    if area_col is None:
+        return html.Div()
+
+    df_head[area_col] = df_head[area_col].astype(str).str.strip()
+    df_head["_area_key"] = df_head[area_col].map(_area_key)
+
+    area_k = _area_key(alvo)
+    if area_k not in set(df_head["_area_key"]):
+        mask = df_head[area_col].str.startswith(alvo)
+        if not mask.any():
+            return html.Div()
+
+    mov_df = _carregar_movimentacoes_df()
+    mov_por_ano: dict[int, pd.DataFrame] = {}
+    if isinstance(mov_df, pd.DataFrame) and not mov_df.empty and "ano" in mov_df.columns:
+        sel = mov_df[mov_df["ano"].isin(list(anos))]
+        if not sel.empty:
+            mov_por_ano = {int(ano): bloco for ano, bloco in sel.groupby("ano")}
+
+    nome_map: dict[str, str] = {}
+    for src_df in (
+        getattr(repo, "df_colaboradores", None),
+        getattr(repo, "df_semana_merged", None),
+        getattr(repo, "df_df_ativos", None),
+    ):
+        if not isinstance(src_df, pd.DataFrame) or src_df.empty:
+            continue
+        if not {"Cadastro", "Nome"}.issubset(src_df.columns):
+            continue
+        aux = src_df[["Cadastro", "Nome"]].copy()
+        aux["Cadastro"] = aux["Cadastro"].map(_normalize_cadastro)
+        aux["Nome"] = aux["Nome"].astype(str).str.strip()
+        aux = aux[aux["Cadastro"].ne("") & aux["Nome"].ne("") & ~aux["Nome"].str.lower().isin(["nan", "none"])]
+        if aux.empty:
+            continue
+        nome_map.update(dict(zip(aux["Cadastro"], aux["Nome"])))
+
+    # Busca complementar: varre demais DataFrames carregados no repo com Cadastro/Nome.
+    for attr in dir(repo):
+        if attr.startswith("_"):
+            continue
+        src_df = getattr(repo, attr, None)
+        if not isinstance(src_df, pd.DataFrame) or src_df.empty:
+            continue
+        norm_cols = {_normalize_col(col): col for col in src_df.columns}
+        cad_col = norm_cols.get("cadastro")
+        nome_col = norm_cols.get("nome")
+        if not cad_col or not nome_col:
+            continue
+        aux = src_df[[cad_col, nome_col]].copy()
+        aux.columns = ["Cadastro", "Nome"]
+        aux["Cadastro"] = aux["Cadastro"].map(_normalize_cadastro)
+        aux["Nome"] = aux["Nome"].astype(str).str.strip()
+        aux = aux[
+            aux["Cadastro"].ne("")
+            & aux["Nome"].ne("")
+            & ~aux["Nome"].str.lower().isin(["nan", "none"])
+        ]
+        if aux.empty:
+            continue
+        nome_map.update(dict(zip(aux["Cadastro"], aux["Nome"])))
+
+    for cad, nome in _carregar_nomes_por_cadastro_dw().items():
+        nome_map.setdefault(cad, nome)
+
+    def _fmt_uo(abrev: object, desc: object) -> str:
+        a = str(abrev or "").strip()
+        d = str(desc or "").strip()
+        if a.casefold() == "fora da vw" or d.casefold() == "fora da vw":
+            return "Fora da VW"
+        d = "" if d.lower() in {"nan", "none"} else d
+        if a and d:
+            return f"{a} - {d}"
+        if a:
+            return a
+        if d:
+            return d
+        return "Fora da VW"
+
+    def _mov_detalhe_ano(ano: int) -> pd.DataFrame:
+        cols = ["Data", "Cadastro", "Nome", "De", "Para", "Tipo"]
+        bloco = mov_por_ano.get(int(ano))
+        if bloco is None or bloco.empty:
+            return pd.DataFrame(columns=cols)
+
+        bloco = bloco.copy()
+        old_key = bloco.get("_old_key", pd.Series("", index=bloco.index)).astype(str)
+        new_key = bloco.get("_new_key", pd.Series("", index=bloco.index)).astype(str)
+        in_old = old_key.str.startswith(area_k)
+        in_new = new_key.str.startswith(area_k)
+
+        origem = bloco.get("origem_evento", pd.Series("", index=bloco.index)).astype(str).str.strip().str.lower()
+        area_antiga = bloco.get("area_antiga", pd.Series("", index=bloco.index)).astype(str).str.strip()
+        area_nova = bloco.get("area_nova", pd.Series("", index=bloco.index)).astype(str).str.strip()
+        fora_old = area_antiga.str.casefold().eq("fora da vw")
+        fora_new = area_nova.str.casefold().eq("fora da vw")
+
+        scope_mask = in_old | in_new
+        externo_scope = origem.eq("externo") & ((fora_old & in_new) | (fora_new & in_old))
+        move_mask = old_key.ne(new_key) & (scope_mask | externo_scope)
+        dfm = bloco.loc[move_mask].copy()
+        if dfm.empty:
+            return pd.DataFrame(columns=cols)
+
+        in_old_m = in_old.loc[dfm.index]
+        in_new_m = in_new.loc[dfm.index]
+        tipo = pd.Series("Movimentação interna", index=dfm.index, dtype="string")
+        tipo.loc[(~in_old_m) & in_new_m] = "Entrada"
+        tipo.loc[in_old_m & (~in_new_m)] = "Saída"
+
+        origem_m = dfm.get("origem_evento", pd.Series("", index=dfm.index)).astype(str).str.strip().str.lower()
+        evt_norm = dfm.get("tipo_evento", pd.Series("", index=dfm.index)).astype(str).map(_area_key)
+        tipo.loc[origem_m.eq("externo") & evt_norm.eq("admissao")] = "Entrada"
+        tipo.loc[origem_m.eq("externo") & evt_norm.eq("demissao")] = "Saída"
+
+        dfm["Data"] = pd.to_datetime(dfm.get("data_alteracao"), errors="coerce")
+        dfm["Cadastro"] = dfm.get("Cadastro", "").map(_normalize_cadastro)
+        dfm["Nome"] = dfm.get("Nome", "").astype(str).str.strip()
+        vazio_nome = dfm["Nome"].eq("") | dfm["Nome"].str.lower().isin(["nan", "none"])
+        if vazio_nome.any() and nome_map:
+            dfm.loc[vazio_nome, "Nome"] = dfm.loc[vazio_nome, "Cadastro"].map(nome_map).fillna("")
+        vazio_nome = dfm["Nome"].eq("") | dfm["Nome"].str.lower().isin(["nan", "none"])
+        if vazio_nome.any():
+            nomes_mesmo_cadastro = (
+                dfm.loc[
+                    ~(dfm["Nome"].eq("") | dfm["Nome"].str.lower().isin(["nan", "none"])),
+                    ["Cadastro", "Nome"],
+                ]
+                .drop_duplicates(subset=["Cadastro"], keep="first")
+            )
+            if not nomes_mesmo_cadastro.empty:
+                map_local = dict(zip(nomes_mesmo_cadastro["Cadastro"], nomes_mesmo_cadastro["Nome"]))
+                dfm.loc[vazio_nome, "Nome"] = (
+                    dfm.loc[vazio_nome, "Cadastro"].map(map_local).fillna(dfm.loc[vazio_nome, "Nome"])
+                )
+        vazio_nome = dfm["Nome"].eq("") | dfm["Nome"].str.lower().isin(["nan", "none"])
+        if vazio_nome.any():
+            dfm.loc[vazio_nome, "Nome"] = "Nome indisponível"
+        dfm["De"] = [
+            _fmt_uo(a, d)
+            for a, d in zip(dfm.get("area_antiga", ""), dfm.get("desc_uo_antiga", ""))
+        ]
+        dfm["Para"] = [
+            _fmt_uo(a, d)
+            for a, d in zip(dfm.get("area_nova", ""), dfm.get("desc_uo_nova", ""))
+        ]
+        dfm["Tipo"] = tipo
+
+        out = dfm[cols].drop_duplicates(
+            subset=["Data", "Cadastro", "De", "Para", "Tipo"], keep="last"
+        )
+        out = out.sort_values(["Data", "Cadastro"], ascending=[True, True], kind="stable")
+        return out
+
+    def _mov_table_html(df_mov: pd.DataFrame) -> html.Div:
+        if df_mov is None or df_mov.empty:
+            return html.Div(
+                "Sem movimentações detectadas no ano.",
+                style={"fontFamily": "VW Text", "fontSize": "12px", "opacity": 0.8},
+            )
+
+        th_m = {
+            "padding": "4px 6px",
+            "border": "1px solid #ddd",
+            "backgroundColor": "#f3f3f3",
+            "fontFamily": "VW Text",
+            "fontSize": "12px",
+            "textAlign": "left",
+            "fontWeight": "bold",
+            "position": "sticky",
+            "top": "0",
+            "zIndex": "2",
+        }
+        td_m = {
+            "padding": "4px 6px",
+            "border": "1px solid #e2e2e2",
+            "fontFamily": "VW Text",
+            "fontSize": "12px",
+            "textAlign": "left",
+            "backgroundColor": "#fff",
+            "verticalAlign": "top",
+        }
+
+        head = html.Thead(
+            html.Tr(
+                [
+                    html.Th("Data", style=th_m),
+                    html.Th("Cadastro", style=th_m),
+                    html.Th("Nome", style=th_m),
+                    html.Th("De", style=th_m),
+                    html.Th("Para", style=th_m),
+                    html.Th("Tipo", style=th_m),
+                ]
+            )
+        )
+
+        rows = []
+        for _, r in df_mov.iterrows():
+            dtv = pd.to_datetime(r.get("Data"), errors="coerce")
+            dts = dtv.strftime("%d/%m/%Y") if pd.notna(dtv) else "-"
+            rows.append(
+                html.Tr(
+                    [
+                        html.Td(dts, style=td_m),
+                        html.Td(str(r.get("Cadastro", "")), style=td_m),
+                        html.Td(str(r.get("Nome", "")), style=td_m),
+                        html.Td(str(r.get("De", "")), style=td_m),
+                        html.Td(str(r.get("Para", "")), style=td_m),
+                        html.Td(str(r.get("Tipo", "")), style=td_m),
+                    ]
+                )
+            )
+
+        tbl = html.Table([head, html.Tbody(rows)], style={"width": "100%", "borderCollapse": "collapse"})
+        return html.Div(
+            tbl,
+            style={
+                "maxHeight": "260px",
+                "overflowY": "auto",
+                "overflowX": "auto",
+                "border": "1px solid #ddd",
+                "borderRadius": "6px",
+                "position": "relative",
+            },
+        )
+
+    por_ano_vals: list[tuple[int, pd.DataFrame]] = []
+    for ano in anos:
+        mov_det = _mov_detalhe_ano(int(ano))
+        por_ano_vals.append((int(ano), mov_det))
+
+    def _card_ano(
+        ano: int,
+        mov_det: pd.DataFrame,
+        open_default: bool = False,
+    ):
+        details = html.Details(
+            [
+                html.Summary(
+                    html.Div(
+                        [
+                            html.Span("⬇", style={"fontSize": "16px"}),
+                            html.Span(
+                                f"Ano {ano}",
+                                style={"fontSize": "13px", "fontWeight": "bold", "color": "#1a1a1a"},
+                            ),
+                        ],
+                        style={
+                            "display": "inline-flex",
+                            "alignItems": "center",
+                            "gap": "6px",
+                            "cursor": "pointer",
+                            "fontFamily": "VW Text",
+                        },
+                    ),
+                    style={
+                        "listStyle": "none",
+                        "textAlign": "left",
+                        "fontFamily": "VW Text",
+                        "padding": "6px 8px",
+                        "border": "1px solid #ddd",
+                        "borderRadius": "8px",
+                        "backgroundColor": "#fafafa",
+                    },
+                ),
+                html.Div(
+                    [
+                        html.Div(
+                            f"{int(ano)} — {len(mov_det)} movimentações",
+                            style={
+                                "fontFamily": "VW Text",
+                                "fontSize": "12px",
+                                "fontWeight": "bold",
+                                "marginTop": "8px",
+                                "marginBottom": "6px",
+                            },
+                        ),
+                        _mov_table_html(mov_det),
+                    ],
+                    style={"padding": "8px"},
+                ),
+            ],
+            open=open_default,
+            style={"width": "100%"},
+        )
+
+        return html.Div(
+            details,
+            style={
+                "flex": "1 1 420px",
+                "maxWidth": "560px",
+            },
+        )
+
+    return html.Div(
+        [
+            _card_ano(
+                ano=ano,
+                mov_det=mov_det,
+                open_default=False,
+            )
+            for ano, mov_det in por_ano_vals
+        ],
+        style={
+            "display": "flex",
+            "flexWrap": "wrap",
+            "gap": "10px",
+            "justifyContent": "center",
+            "marginTop": "10px",
+        },
+    )
 
 
 def mini_tabela_df_gptw(
