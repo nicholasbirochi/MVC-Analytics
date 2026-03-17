@@ -30,7 +30,7 @@ venv/
 *.tar.gz
 
 # Pasta específica do projeto
-Códigos Extras/Documentação/
+Códigos Extras/Documentação/Análise Tempo de Casa/resultado.png
 
 # Arquivos de configuração sensíveis
 .env
