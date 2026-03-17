@@ -346,7 +346,16 @@ def register(app):
             semanas_por_ano[ano].append(xv)
         for ano, semanas_ano in semanas_por_ano.items():
             centro = np.mean(semanas_ano)
-            ax_line2.text(centro, -0.8, ano, transform=ax_line2.transData, ha='center', va='center', fontsize=18, color='gray')
+            ax_line2.text(
+                centro,
+                -0.24,
+                ano,
+                transform=ax_line2.get_xaxis_transform(),
+                ha='center',
+                va='center',
+                fontsize=18,
+                color='gray'
+            )
         for i in range(1, len(anos)):
             if anos[i] != anos[i - 1]:
                 x_val = x_semanas[i] - 0.5
