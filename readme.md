@@ -38,7 +38,7 @@
     border-bottom:1px solid rgba(255,255,255,.75);
     max-width:1100px;
   ">
-    Dashboard sobre Monitoramento Comportamentais — Volkswagen do Brasil
+    Dashboard sobre Monitoramento Comportamental — Volkswagen do Brasil
   </h1>
 </div>
 
