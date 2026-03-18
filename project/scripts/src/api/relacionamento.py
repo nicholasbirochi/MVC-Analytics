@@ -61,6 +61,23 @@ def build_dataframe_almoco_pessoas(
     if not cad_list:
         return empty
 
+    def _norm_cadastro(value) -> str:
+        if value is None or (isinstance(value, float) and pd.isna(value)):
+            return ""
+        txt = str(value).strip()
+        if not txt:
+            return ""
+        if txt.endswith(".0"):
+            base = txt[:-2]
+            if base.isdigit():
+                return base
+        return txt
+
+    cad_norm = [_norm_cadastro(c) for c in cad_list]
+    cad_norm = [c for c in cad_norm if c]
+    if not cad_norm:
+        return empty
+
     if dt_ini is None or dt_fim is None:
         _, dmax = dw_almoco_min_max()
         if dmax is None:
@@ -77,10 +94,10 @@ def build_dataframe_almoco_pessoas(
     if isinstance(df_almoco_local, pd.DataFrame) and not df_almoco_local.empty:
         df_loc = df_almoco_local.copy()
         if {"Cadastro", "Data"}.issubset(df_loc.columns):
-            df_loc["Cadastro"] = df_loc["Cadastro"].astype(str)
+            df_loc["Cadastro"] = df_loc["Cadastro"].map(_norm_cadastro)
             df_loc["Data"] = pd.to_datetime(df_loc["Data"], errors="coerce").dt.normalize()
             df_loc = df_loc.dropna(subset=["Cadastro", "Data"])
-            df_loc = df_loc[df_loc["Cadastro"].isin([str(c) for c in cad_list])]
+            df_loc = df_loc[df_loc["Cadastro"].isin(cad_norm)]
             df_loc = df_loc[(df_loc["Data"] >= dt_ini) & (df_loc["Data"] <= dt_fim)]
             if not df_loc.empty:
                 if "Clusters" in df_loc.columns:
@@ -129,12 +146,12 @@ def build_dataframe_almoco_pessoas(
                     )
                     return out
 
-    in_sql, in_params = _sql_in_clause(cad_list)
+    in_sql, in_params = _sql_in_clause(cad_norm)
     sql = f"""
     SELECT
       a."Data" AS "Data",
       a."Cadastro" AS "Cadastro",
-      GROUP_CONCAT(DISTINCT a."Planta", '|') AS "Clusters"
+      REPLACE(GROUP_CONCAT(DISTINCT a."Planta"), ',', '|') AS "Clusters"
     FROM vw_almoco_cluster a
     WHERE a."Cadastro" {in_sql}
       AND a."Data" BETWEEN ? AND ?
@@ -148,15 +165,18 @@ def build_dataframe_almoco_pessoas(
     df = query_dw(sql, params=params, parse_dates=["Data"])
     if df.empty:
         return empty
-    df["Cadastro"] = df["Cadastro"].astype(str)
+    df["Cadastro"] = df["Cadastro"].map(_norm_cadastro)
     df["Data"] = pd.to_datetime(df["Data"], errors="coerce").dt.normalize()
     df["Clusters"] = (
         df["Clusters"]
         .fillna("")
         .astype(str)
-        .str.split("|")
-        .apply(lambda x: set([i for i in x if i]))
+        .str.split("|", regex=False)
+        .apply(lambda x: {str(i).strip() for i in x if str(i).strip()})
     )
+    df = df[df["Cadastro"].isin(cad_norm)]
+    if df.empty:
+        return empty
     return df
 
 
