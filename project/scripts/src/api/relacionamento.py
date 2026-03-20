@@ -76,10 +76,13 @@ def build_dataframe_almoco_pessoas(
             pass
         return txt
 
-    cad_norm = [_norm_cadastro(c) for c in cad_list]
+    cad_raw = [str(c).strip() for c in (cad_list or []) if str(c).strip()]
+    cad_norm = [_norm_cadastro(c) for c in cad_raw]
     cad_norm = [c for c in cad_norm if c]
     if not cad_norm:
         return empty
+    cad_lz = [(c.lstrip("0") or "0") for c in cad_norm]
+    cad_ok = set(cad_norm) | set(cad_lz)
 
     if dt_ini is None or dt_fim is None:
         _, dmax = dw_almoco_min_max()
@@ -100,7 +103,7 @@ def build_dataframe_almoco_pessoas(
             df_loc["Cadastro"] = df_loc["Cadastro"].map(_norm_cadastro)
             df_loc["Data"] = pd.to_datetime(df_loc["Data"], errors="coerce").dt.normalize()
             df_loc = df_loc.dropna(subset=["Cadastro", "Data"])
-            df_loc = df_loc[df_loc["Cadastro"].isin(cad_norm)]
+            df_loc = df_loc[df_loc["Cadastro"].isin(cad_ok)]
             df_loc = df_loc[(df_loc["Data"] >= dt_ini) & (df_loc["Data"] <= dt_fim)]
             if not df_loc.empty:
                 if "Clusters" in df_loc.columns:
@@ -149,19 +152,23 @@ def build_dataframe_almoco_pessoas(
                     )
                     return out
 
-    in_sql, in_params = _sql_in_clause(cad_norm)
+    in_sql_raw, in_params_raw = _sql_in_clause(cad_norm)
+    in_sql_lz, in_params_lz = _sql_in_clause(cad_lz)
     sql = f"""
     SELECT
       a."Data" AS "Data",
       a."Cadastro" AS "Cadastro",
       REPLACE(GROUP_CONCAT(DISTINCT a."Planta"), ',', '|') AS "Clusters"
     FROM vw_almoco_cluster a
-    WHERE a."Cadastro" {in_sql}
+    WHERE (
+      REPLACE(TRIM(a."Cadastro"), '.0', '') {in_sql_raw}
+      OR LTRIM(REPLACE(TRIM(a."Cadastro"), '.0', ''), '0') {in_sql_lz}
+    )
       AND a."Data" BETWEEN ? AND ?
     GROUP BY a."Data", a."Cadastro"
     ORDER BY a."Cadastro", a."Data";
     """
-    params = tuple(in_params) + (
+    params = tuple(in_params_raw) + tuple(in_params_lz) + (
         pd.Timestamp(dt_ini).strftime("%Y-%m-%d"),
         pd.Timestamp(dt_fim).strftime("%Y-%m-%d"),
     )
@@ -177,7 +184,7 @@ def build_dataframe_almoco_pessoas(
         .str.split("|", regex=False)
         .apply(lambda x: {str(i).strip() for i in x if str(i).strip()})
     )
-    df = df[df["Cadastro"].isin(cad_norm)]
+    df = df[df["Cadastro"].isin(cad_ok)]
     if df.empty:
         return empty
     return df
@@ -755,6 +762,16 @@ def register(app):
                     dt_ini=dt_ini_ref,
                     dt_fim=dt_fim_ref,
                 )
+                if df_almoco_local is None or df_almoco_local.empty:
+                    df_almoco_local = query_dw(
+                        'SELECT "Cadastro","Data","Hora","Dir","Planta","Coletor","Descricao Coletor" '
+                        'FROM vw_df_almoco WHERE "Data" BETWEEN ? AND ?;',
+                        params=(
+                            dt_ini_ref.strftime("%Y-%m-%d"),
+                            dt_fim_ref.strftime("%Y-%m-%d"),
+                        ),
+                        parse_dates=["Data"],
+                    )
                 dfal = build_dataframe_almoco_pessoas(
                     cad_list,
                     df_almoco_local=df_almoco_local,
