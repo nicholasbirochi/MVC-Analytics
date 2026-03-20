@@ -959,8 +959,7 @@ def register(app):
         Output('conteudo-relacionamento', 'children'),
         Output('conteudo-relacionamento', 'style'),
         Output('pagina-geral', 'style', allow_duplicate=True),
-        Input('url', 'pathname'),
-        prevent_initial_call=True
+        Input('url', 'pathname')
     )
     def exibir_relacionamento(pathname):
         # Se a URL atual for a aba de relacionamentos → mostra conteúdo
