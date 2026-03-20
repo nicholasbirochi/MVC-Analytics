@@ -15,12 +15,12 @@ from dash import Input, Output, State, dcc, html, dash_table, no_update, ALL
 from dash.exceptions import PreventUpdate
 import time
 from collections import deque
+from decimal import Decimal, InvalidOperation
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 
 from ..core.repo_global import df_datas, df_semana_merged, df_df_ativos, df_df_gptw, her
-from ..core import repo_global as repo
 from ..domain.pipeline import dw_fetch_diarios, dw_fetch_almoco, dw_almoco_min_max, query_dw
 from ..domain.tenure import carregar_adm_dem_cache, tempo_de_casa_str
 from ..ui.gptw import df_gptw_tabela_empilhada
@@ -67,10 +67,13 @@ def build_dataframe_almoco_pessoas(
         txt = str(value).strip()
         if not txt:
             return ""
-        if txt.endswith(".0"):
-            base = txt[:-2]
-            if base.isdigit():
-                return base
+        txt = txt.replace(" ", "")
+        try:
+            dec = Decimal(txt)
+            if dec.is_finite() and dec == dec.to_integral_value():
+                return str(int(dec))
+        except (InvalidOperation, ValueError):
+            pass
         return txt
 
     cad_norm = [_norm_cadastro(c) for c in cad_list]
@@ -213,17 +216,14 @@ def register(app):
 
         idx = pd.to_datetime(pd.Series(semanas)).sort_values().reset_index(drop=True)
         df = pd.DataFrame({"x": idx})
-        iso = df['x'].dt.isocalendar()
-        df['ano'] = iso.year.astype(int)
-        df['sem_iso'] = iso.week.astype(int)
+        df['ano'] = df['x'].dt.year.astype(int)
         df['mes'] = df['x'].dt.month
 
         # Ticks semanais (1..N reiniciando por ano)
         week_labels = []
         for _, g in df.groupby('ano', sort=True):
             g = g.sort_values('x').copy()
-            seq_map = {w: i+1 for i, w in enumerate(g['sem_iso'].tolist())}
-            week_labels.extend([str(seq_map[w]) for w in g['sem_iso']])
+            week_labels.extend([str(i + 1) for i in range(len(g))])
 
         fig.update_xaxes(
             type='date',
@@ -239,8 +239,8 @@ def register(app):
 
         x_first = df['x'].iloc[0]
 
-        # MÊS
-        for (_, m), g in df.groupby(['ano', 'mes'], sort=True):
+        # MÊS (agrupado por ano calendário para evitar deslocamentos no final/início do ano)
+        for (_, m), g in df.groupby(['ano', 'mes'], sort=False):
             g = g.sort_values('x')
             x0, x1 = g['x'].iloc[0], g['x'].iloc[-1]
             xc = x0 + (x1 - x0) / 2
@@ -256,8 +256,8 @@ def register(app):
             if x0 != x_first:
                 fig.add_vline(x=x0, line_color='rgba(0,0,0,0.20)', line_width=1.5)
 
-        # ANO — rótulo central + linha pontilhada NA FRONTEIRA entre anos
-        grupos = [(a, g.sort_values('x')) for a, g in df.groupby('ano', sort=True)]
+        # ANO — rótulo central por ano calendário
+        grupos = [(a, g.sort_values('x')) for a, g in df.groupby('ano', sort=False)]
 
         # 1) Rótulos centrados em cada ano
         for a, g in grupos:
@@ -274,7 +274,7 @@ def register(app):
         # margem inferior para caber as anotações
         fig.update_layout(
             margin=dict(
-                t=(fig.layout.margin.t if fig.layout.margin and fig.layout.margin.t else 110),
+                t=max(130, int(fig.layout.margin.t or 110)) if fig.layout.margin else 130,
                 r=20, b=bottom_margin, l=60
             )
         )
@@ -738,17 +738,30 @@ def register(app):
         outros = cad_list[1:]
 
         if modo_rel == 'almoco':
-            df_almoco_local = getattr(repo, "df_almoco", None)
-            if df_almoco_local is None or getattr(df_almoco_local, "empty", True):
-                dmin, dmax = dw_almoco_min_max()
-                if dmax is None:
-                    df_almoco_local = pd.DataFrame()
-                else:
-                    dt_fim = pd.Timestamp(dmax).normalize()
-                    dt_ini = (dt_fim - pd.DateOffset(months=3)).normalize()
-                    df_almoco_local = dw_fetch_almoco([str(c) for c in cad_list], dt_ini=dt_ini, dt_fim=dt_fim)
+            dt_ini_ref = pd.Timestamp(dfp['Data'].min()).normalize()
+            dt_fim_ref = pd.Timestamp(dfp['Data'].max()).normalize()
 
-            dfal = build_dataframe_almoco_pessoas(cad_list, df_almoco_local)
+            # Prioriza a base canônica de clusters de almoço no mesmo período do gráfico principal.
+            dfal = build_dataframe_almoco_pessoas(
+                cad_list,
+                dt_ini=dt_ini_ref,
+                dt_fim=dt_fim_ref,
+            )
+
+            # Fallback para base de eventos brutos, caso necessário.
+            if dfal is None or dfal.empty:
+                df_almoco_local = dw_fetch_almoco(
+                    [str(c) for c in cad_list],
+                    dt_ini=dt_ini_ref,
+                    dt_fim=dt_fim_ref,
+                )
+                dfal = build_dataframe_almoco_pessoas(
+                    cad_list,
+                    df_almoco_local=df_almoco_local,
+                    dt_ini=dt_ini_ref,
+                    dt_fim=dt_fim_ref,
+                )
+
             if dfal is None or dfal.empty:
                 fig_mini_movel = fig_msg("Sem dados de almoço para as pessoas selecionadas")
             else:
@@ -803,7 +816,7 @@ def register(app):
                     title="Encontros no almoço — média móvel (3 semanas)",
                     xaxis_title="",
                     yaxis_title="Percentual de coincidência",
-                    yaxis=dict(ticksuffix="%", range=[0, 100]),
+                    yaxis=dict(ticksuffix="%", range=[0, 105], automargin=True),
                     showlegend=False,
                     hovermode='x unified',
                     margin=dict(t=110, r=20, b=60, l=60),
@@ -856,7 +869,7 @@ def register(app):
                 title="Relacionamento com a referência — média móvel (3 semanas)",
                 xaxis_title="",
                 yaxis_title="Percentual de coincidência",
-                yaxis=dict(ticksuffix="%", range=[0, 100]),
+                yaxis=dict(ticksuffix="%", range=[0, 105], automargin=True),
                 showlegend=False,
                 hovermode='x unified',
                 margin=dict(t=110, r=20, b=60, l=60),

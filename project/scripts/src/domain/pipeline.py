@@ -555,14 +555,16 @@ def dw_fetch_almoco(
 
 
 def dw_almoco_min_max(settings: Settings | None = None):
-    df = query_dw(
-        'SELECT MIN("Data") AS dmin, MAX("Data") AS dmax FROM vw_df_almoco;',
-        (),
-        settings=settings,
-    )
-    if df.empty or pd.isna(df.loc[0, "dmax"]):
-        return None, None
-    return pd.to_datetime(df.loc[0, "dmin"]), pd.to_datetime(df.loc[0, "dmax"])
+    for view_name in ("vw_df_almoco", "vw_almoco_cluster"):
+        df = query_dw(
+            f'SELECT MIN("Data") AS dmin, MAX("Data") AS dmax FROM {view_name};',
+            (),
+            settings=settings,
+        )
+        if df.empty or pd.isna(df.loc[0, "dmax"]):
+            continue
+        return pd.to_datetime(df.loc[0, "dmin"]), pd.to_datetime(df.loc[0, "dmax"])
+    return None, None
 
 
 def build_dataframe_diario_area_sql(
