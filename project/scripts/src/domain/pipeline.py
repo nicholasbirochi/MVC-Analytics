@@ -11,6 +11,7 @@ import hashlib
 import sqlite3
 import threading
 import time
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Iterable
 
@@ -554,17 +555,355 @@ def dw_fetch_almoco(
     return query_dw(sql, tuple(params), parse_dates=["Data"], settings=settings)
 
 
-def dw_almoco_min_max(settings: Settings | None = None):
-    for view_name in ("vw_df_almoco", "vw_almoco_cluster"):
-        df = query_dw(
-            f'SELECT MIN("Data") AS dmin, MAX("Data") AS dmax FROM {view_name};',
-            (),
-            settings=settings,
+def dw_fetch_almoco_eventos(
+    cadastros: Iterable[object],
+    dt_ini=None,
+    dt_fim=None,
+    settings: Settings | None = None,
+) -> pd.DataFrame:
+    """Fallback de almoço a partir da base de eventos bruta."""
+    where = []
+    params: list[str] = []
+    in_sql, in_params = _sql_in_clause(cadastros)
+    where.append(f'cadastro {in_sql}')
+    params.extend(in_params)
+    if dt_ini is not None and dt_fim is not None:
+        where.append('data BETWEEN ? AND ?')
+        params.extend(
+            [
+                pd.Timestamp(dt_ini).strftime("%Y-%m-%d"),
+                pd.Timestamp(dt_fim).strftime("%Y-%m-%d"),
+            ]
         )
+    sql = (
+        'SELECT cadastro AS "Cadastro", '
+        'data AS "Data", '
+        'hora AS "Hora", '
+        'dir AS "Dir", '
+        'planta AS "Planta", '
+        'coletor AS "Coletor", '
+        'descricao_coletor AS "Descricao Coletor" '
+        "FROM evento_acesso_flat WHERE "
+        + " AND ".join(where)
+        + ";"
+    )
+    return query_dw(sql, tuple(params), parse_dates=["Data"], settings=settings)
+
+
+def dw_almoco_min_max(settings: Settings | None = None):
+    consultas = (
+        'SELECT MIN("Data") AS dmin, MAX("Data") AS dmax FROM vw_df_almoco;',
+        'SELECT MIN("Data") AS dmin, MAX("Data") AS dmax FROM vw_almoco_cluster;',
+        "SELECT MIN(data) AS dmin, MAX(data) AS dmax FROM evento_acesso_flat;",
+    )
+    for sql in consultas:
+        try:
+            df = query_dw(sql, (), settings=settings)
+        except Exception:
+            continue
         if df.empty or pd.isna(df.loc[0, "dmax"]):
             continue
         return pd.to_datetime(df.loc[0, "dmin"]), pd.to_datetime(df.loc[0, "dmax"])
     return None, None
+
+
+def _empty_almoco_clusters() -> pd.DataFrame:
+    return pd.DataFrame(columns=["Data", "Cadastro", "Clusters"])
+
+
+def _norm_cadastro(value) -> str:
+    try:
+        if pd.isna(value):
+            return ""
+    except Exception:
+        pass
+    txt = str(value).strip()
+    if not txt:
+        return ""
+    txt = txt.replace(" ", "")
+    try:
+        dec = Decimal(txt)
+        if dec.is_finite() and dec == dec.to_integral_value():
+            return str(int(dec))
+    except (InvalidOperation, ValueError):
+        pass
+    return txt
+
+
+def _parse_cluster_set(value) -> set[str]:
+    if value is None:
+        return set()
+    if isinstance(value, float) and pd.isna(value):
+        return set()
+    if isinstance(value, (set, frozenset)):
+        return {str(v).strip() for v in value if str(v).strip()}
+    if isinstance(value, (list, tuple)):
+        return {str(v).strip() for v in value if str(v).strip()}
+    txt = str(value).strip()
+    if not txt:
+        return set()
+    for sep in (";", ",", "/", "\\"):
+        if sep in txt:
+            return {t.strip() for t in txt.split(sep) if t.strip()}
+    return {txt}
+
+
+def _merge_cluster_sets(values: pd.Series) -> set[str]:
+    out: set[str] = set()
+    for value in values:
+        out |= _parse_cluster_set(value)
+    return out
+
+
+def _clusterizar_almoco_bruto(df_loc: pd.DataFrame) -> pd.DataFrame:
+    cols = {str(c).strip() for c in df_loc.columns}
+    required = {"Data", "Cadastro", "Hora", "Dir"}
+    if not required.issubset(cols):
+        return _empty_almoco_clusters()
+
+    df = df_loc.copy()
+    df.columns = [str(c).strip() for c in df.columns]
+    df["Cadastro"] = df["Cadastro"].map(_norm_cadastro)
+    df["Data"] = pd.to_datetime(df["Data"], errors="coerce").dt.normalize()
+    if "Dir" in df.columns:
+        df["Dir"] = df["Dir"].astype(str).str.strip().str.upper()
+
+    hora_txt = df["Hora"].astype(str).str.strip()
+    hora = pd.to_datetime(hora_txt, format="%H:%M:%S", errors="coerce")
+    missing = hora.isna()
+    if missing.any():
+        hora.loc[missing] = pd.to_datetime(
+            hora_txt.loc[missing], format="%H:%M", errors="coerce"
+        )
+    missing = hora.isna()
+    if missing.any():
+        hora.loc[missing] = pd.to_datetime(hora_txt.loc[missing], errors="coerce")
+    df["Hora"] = hora
+
+    df = df.dropna(subset=["Cadastro", "Data", "Hora", "Dir"])
+    if df.empty:
+        return _empty_almoco_clusters()
+
+    h_ini = pd.to_datetime("11:00:00", format="%H:%M:%S").time()
+    h_fim = pd.to_datetime("14:00:00", format="%H:%M:%S").time()
+    df = df[(df["Hora"].dt.time >= h_ini) & (df["Hora"].dt.time <= h_fim)]
+    df = df[df["Dir"].isin(["E", "S"])]
+    if df.empty:
+        return _empty_almoco_clusters()
+
+    def _cluster_por_janela(group: pd.DataFrame, prefixo: str, janela_min: int) -> pd.DataFrame:
+        group = group.sort_values("Hora").copy()
+        minutos = (
+            group["Hora"].dt.hour * 60
+            + group["Hora"].dt.minute
+            + group["Hora"].dt.second / 60.0
+        )
+        novo = (minutos.diff().fillna(9999) >= janela_min).astype(int).cumsum()
+        group["Clusters"] = (
+            group["Data"].dt.strftime("%Y-%m-%d")
+            + "|"
+            + prefixo
+            + "|"
+            + novo.astype(str)
+        )
+        return group
+
+    def _normalizar_coletor(desc) -> str:
+        if not isinstance(desc, str):
+            return "NA"
+        txt = desc.lower().strip()
+        if "ref" in txt:
+            return txt
+        if "port" in txt:
+            return "portaria"
+        return txt or "NA"
+
+    parts: list[pd.DataFrame] = []
+    tem_desc = "Descricao Coletor" in df.columns
+
+    df_e = df[df["Dir"] == "E"]
+    if not df_e.empty:
+        if tem_desc:
+            df_e = df_e.copy()
+            df_e["Descricao Agrupada"] = df_e["Descricao Coletor"].apply(
+                _normalizar_coletor
+            )
+            for (_, _, desc), group in df_e.groupby(
+                ["Data", "Dir", "Descricao Agrupada"], dropna=False
+            ):
+                desc_txt = desc if pd.notna(desc) else "NA"
+                prefixo = f"E|{desc_txt}"
+                janela_min = 1 if str(desc_txt).startswith("ref") else 3
+                parts.append(_cluster_por_janela(group, prefixo, janela_min))
+        else:
+            for _, group in df_e.groupby(["Data", "Dir"], dropna=False):
+                parts.append(_cluster_por_janela(group, "E", 3))
+
+    df_s = df[df["Dir"] == "S"]
+    if not df_s.empty:
+        for _, group in df_s.groupby(["Data", "Dir"], dropna=False):
+            parts.append(_cluster_por_janela(group, "S", 3))
+
+    if not parts:
+        return _empty_almoco_clusters()
+
+    dfc = pd.concat(parts, ignore_index=True)
+    out = (
+        dfc.groupby(["Data", "Cadastro"])["Clusters"]
+        .agg(_merge_cluster_sets)
+        .reset_index()
+    )
+    return out
+
+
+def _coletar_clusters_de_df(df_loc: pd.DataFrame) -> pd.DataFrame:
+    if df_loc is None or df_loc.empty:
+        return _empty_almoco_clusters()
+
+    cols = {str(c).strip() for c in df_loc.columns}
+    df = df_loc.copy()
+    df.columns = [str(c).strip() for c in df.columns]
+
+    if {"Data", "Cadastro", "Clusters"}.issubset(cols):
+        out = df[["Data", "Cadastro", "Clusters"]].copy()
+    elif {"Data", "Cadastro", "Hora", "Dir"}.issubset(cols):
+        out = _clusterizar_almoco_bruto(df)
+    elif {"Data", "Cadastro", "Planta"}.issubset(cols):
+        out = df[["Data", "Cadastro", "Planta"]].copy()
+        out = out.rename(columns={"Planta": "Clusters"})
+    else:
+        return _empty_almoco_clusters()
+
+    out["Cadastro"] = out["Cadastro"].map(_norm_cadastro)
+    out["Data"] = pd.to_datetime(out["Data"], errors="coerce").dt.normalize()
+    out["Clusters"] = out["Clusters"].map(_parse_cluster_set)
+    out = out.dropna(subset=["Cadastro", "Data"])
+    if out.empty:
+        return _empty_almoco_clusters()
+
+    out = (
+        out.groupby(["Data", "Cadastro"])["Clusters"]
+        .agg(_merge_cluster_sets)
+        .reset_index()
+    )
+    return out
+
+
+def build_dataframe_almoco_pessoas(
+    cad_list: Iterable[object],
+    df_almoco_local: pd.DataFrame | None = None,
+    dt_ini=None,
+    dt_fim=None,
+    settings: Settings | None = None,
+) -> pd.DataFrame:
+    """Retorna clusters de almoço por pessoa/dia para cálculo de co-presença semanal."""
+    empty = _empty_almoco_clusters()
+    cad_norm = [_norm_cadastro(c) for c in (cad_list or [])]
+    cad_norm = [c for c in cad_norm if c]
+    if not cad_norm:
+        return empty
+    cad_norm = list(dict.fromkeys(cad_norm))
+    cad_lz = list(dict.fromkeys((c.lstrip("0") or "0") for c in cad_norm))
+    cad_ok = set(cad_norm) | set(cad_lz)
+
+    if dt_ini is None or dt_fim is None:
+        if isinstance(df_almoco_local, pd.DataFrame) and not df_almoco_local.empty:
+            data_series = (
+                df_almoco_local["Data"]
+                if "Data" in df_almoco_local.columns
+                else pd.Series(dtype="datetime64[ns]")
+            )
+            datas_local = pd.to_datetime(data_series, errors="coerce").dropna()
+            if not datas_local.empty:
+                dt_ini = datas_local.min().normalize()
+                dt_fim = datas_local.max().normalize()
+        if dt_ini is None or dt_fim is None:
+            _, dmax = dw_almoco_min_max(settings=settings)
+            if dmax is None:
+                return empty
+            dt_fim = pd.Timestamp(dmax).normalize()
+            dt_ini = (dt_fim - pd.DateOffset(months=3)).normalize()
+    else:
+        dt_ini = pd.Timestamp(dt_ini).normalize()
+        dt_fim = pd.Timestamp(dt_fim).normalize()
+        if dt_ini > dt_fim:
+            dt_ini, dt_fim = dt_fim, dt_ini
+
+    def _filtrar_base(df_in: pd.DataFrame) -> pd.DataFrame:
+        if df_in is None or df_in.empty:
+            return empty
+        out = df_in.copy()
+        out["Cadastro"] = out["Cadastro"].map(_norm_cadastro)
+        out["Data"] = pd.to_datetime(out["Data"], errors="coerce").dt.normalize()
+        out = out.dropna(subset=["Cadastro", "Data"])
+        out = out[out["Cadastro"].isin(cad_ok)]
+        out = out[(out["Data"] >= dt_ini) & (out["Data"] <= dt_fim)]
+        if out.empty:
+            return empty
+        out = (
+            out.groupby(["Data", "Cadastro"])["Clusters"]
+            .agg(_merge_cluster_sets)
+            .reset_index()
+        )
+        return out
+
+    if isinstance(df_almoco_local, pd.DataFrame) and not df_almoco_local.empty:
+        out_local = _filtrar_base(_coletar_clusters_de_df(df_almoco_local))
+        if not out_local.empty:
+            return out_local
+
+    in_sql_raw, in_params_raw = _sql_in_clause(cad_norm)
+    in_sql_lz, in_params_lz = _sql_in_clause(cad_lz)
+    sql_cluster = f"""
+    SELECT
+      a."Data" AS "Data",
+      a."Cadastro" AS "Cadastro",
+      a."Planta" AS "Clusters"
+    FROM vw_almoco_cluster a
+    WHERE (
+      REPLACE(TRIM(a."Cadastro"), '.0', '') {in_sql_raw}
+      OR LTRIM(REPLACE(TRIM(a."Cadastro"), '.0', ''), '0') {in_sql_lz}
+    )
+      AND a."Data" BETWEEN ? AND ?
+    ORDER BY a."Cadastro", a."Data";
+    """
+    params_cluster = tuple(in_params_raw) + tuple(in_params_lz) + (
+        pd.Timestamp(dt_ini).strftime("%Y-%m-%d"),
+        pd.Timestamp(dt_fim).strftime("%Y-%m-%d"),
+    )
+    df_cluster = query_dw(
+        sql_cluster,
+        params=params_cluster,
+        parse_dates=["Data"],
+        settings=settings,
+    )
+    out_cluster = _filtrar_base(_coletar_clusters_de_df(df_cluster))
+    if not out_cluster.empty:
+        return out_cluster
+
+    cad_fetch = list(dict.fromkeys(cad_norm + cad_lz))
+    df_raw = dw_fetch_almoco(
+        cad_fetch,
+        dt_ini=dt_ini,
+        dt_fim=dt_fim,
+        settings=settings,
+    )
+    out_raw = _filtrar_base(_coletar_clusters_de_df(df_raw))
+    if not out_raw.empty:
+        return out_raw
+
+    # Fallback final: extrai almoço da fato de eventos quando agregados ainda não existem.
+    df_eventos = dw_fetch_almoco_eventos(
+        cad_fetch,
+        dt_ini=dt_ini,
+        dt_fim=dt_fim,
+        settings=settings,
+    )
+    out_eventos = _filtrar_base(_coletar_clusters_de_df(df_eventos))
+    if not out_eventos.empty:
+        return out_eventos
+
+    return empty
 
 
 def build_dataframe_diario_area_sql(

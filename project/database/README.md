@@ -6,10 +6,10 @@ Este diretorio concentra os bancos SQLite usados pela aplicacao.
 
 ```text
 project/database/
-├── readme.md
-├── db_login.sqlite
-├── dw_ronda.sqlite
-└── dw_ronda.sqlite-shm
+  ├── readme.md
+  ├── db_login.sqlite
+  ├── dw_ronda.sqlite
+  └── dw_ronda.sqlite-shm
 ```
 
 > Observacao: em execucao, o SQLite tambem pode gerar `dw_ronda.sqlite-wal`.
