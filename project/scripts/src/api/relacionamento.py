@@ -15,13 +15,12 @@ from dash import Input, Output, State, dcc, html, dash_table, no_update, ALL
 from dash.exceptions import PreventUpdate
 import time
 from collections import deque
-from decimal import Decimal, InvalidOperation
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 
 from ..core.repo_global import df_datas, df_semana_merged, df_df_ativos, df_df_gptw, her
-from ..domain.pipeline import dw_fetch_diarios, dw_fetch_almoco, dw_almoco_min_max, query_dw
+from ..domain.pipeline import dw_fetch_diarios, build_dataframe_almoco_pessoas
 from ..domain.tenure import carregar_adm_dem_cache, tempo_de_casa_str
 from ..ui.gptw import df_gptw_tabela_empilhada
 from ..ui.theme import ESTILO_EXIBIR, ESTILO_OCULTO
@@ -40,154 +39,6 @@ def _semana_inicio(s: pd.Series) -> pd.Series:
     out = pd.to_datetime(y + w + "1", format="%G%V%u", errors="coerce")
     out.index = s.index
     return out
-
-
-def _sql_in_clause(values) -> tuple[str, tuple[str, ...]]:
-    vals = [str(v) for v in (values or []) if str(v).strip()]
-    if not vals:
-        return "IN (NULL)", tuple()
-    placeholders = ",".join(["?"] * len(vals))
-    return f"IN ({placeholders})", tuple(vals)
-
-
-def build_dataframe_almoco_pessoas(
-    cad_list,
-    df_almoco_local=None,
-    dt_ini=None,
-    dt_fim=None,
-) -> pd.DataFrame:
-    """Retorna clusters de almoço por pessoa/dia para cálculo de co-presença semanal."""
-    empty = pd.DataFrame(columns=["Data", "Cadastro", "Clusters"])
-    if not cad_list:
-        return empty
-
-    def _norm_cadastro(value) -> str:
-        if value is None or (isinstance(value, float) and pd.isna(value)):
-            return ""
-        txt = str(value).strip()
-        if not txt:
-            return ""
-        txt = txt.replace(" ", "")
-        try:
-            dec = Decimal(txt)
-            if dec.is_finite() and dec == dec.to_integral_value():
-                return str(int(dec))
-        except (InvalidOperation, ValueError):
-            pass
-        return txt
-
-    cad_raw = [str(c).strip() for c in (cad_list or []) if str(c).strip()]
-    cad_norm = [_norm_cadastro(c) for c in cad_raw]
-    cad_norm = [c for c in cad_norm if c]
-    if not cad_norm:
-        return empty
-    cad_lz = [(c.lstrip("0") or "0") for c in cad_norm]
-    cad_ok = set(cad_norm) | set(cad_lz)
-
-    if dt_ini is None or dt_fim is None:
-        _, dmax = dw_almoco_min_max()
-        if dmax is None:
-            return empty
-        dt_fim = pd.Timestamp(dmax).normalize()
-        dt_ini = (dt_fim - pd.DateOffset(months=3)).normalize()
-    else:
-        dt_ini = pd.Timestamp(dt_ini).normalize()
-        dt_fim = pd.Timestamp(dt_fim).normalize()
-        if dt_ini > dt_fim:
-            dt_ini, dt_fim = dt_fim, dt_ini
-
-    # Prioriza dados já carregados (vw_df_almoco) para manter paridade com o notebook.
-    if isinstance(df_almoco_local, pd.DataFrame) and not df_almoco_local.empty:
-        df_loc = df_almoco_local.copy()
-        if {"Cadastro", "Data"}.issubset(df_loc.columns):
-            df_loc["Cadastro"] = df_loc["Cadastro"].map(_norm_cadastro)
-            df_loc["Data"] = pd.to_datetime(df_loc["Data"], errors="coerce").dt.normalize()
-            df_loc = df_loc.dropna(subset=["Cadastro", "Data"])
-            df_loc = df_loc[df_loc["Cadastro"].isin(cad_ok)]
-            df_loc = df_loc[(df_loc["Data"] >= dt_ini) & (df_loc["Data"] <= dt_fim)]
-            if not df_loc.empty:
-                if "Clusters" in df_loc.columns:
-                    def _to_cluster_set(value):
-                        if value is None or (isinstance(value, float) and pd.isna(value)):
-                            return set()
-                        if isinstance(value, (set, frozenset)):
-                            return {str(v).strip() for v in value if str(v).strip()}
-                        if isinstance(value, (list, tuple)):
-                            return {str(v).strip() for v in value if str(v).strip()}
-                        txt = str(value).strip()
-                        if not txt:
-                            return set()
-                        for sep in ("|", ";", ",", "/", "\\"):
-                            if sep in txt:
-                                return {t.strip() for t in txt.split(sep) if t.strip()}
-                        return {txt}
-
-                    out = df_loc[["Data", "Cadastro", "Clusters"]].copy()
-                    out["Clusters"] = out["Clusters"].map(_to_cluster_set)
-                    out = (
-                        out.groupby(["Data", "Cadastro"])["Clusters"]
-                        .agg(lambda sets: set().union(*sets) if len(sets) else set())
-                        .reset_index()
-                    )
-                    return out
-
-                if "Planta" in df_loc.columns:
-                    def _to_planta_set(value):
-                        if value is None or (isinstance(value, float) and pd.isna(value)):
-                            return set()
-                        txt = str(value).strip()
-                        if not txt:
-                            return set()
-                        for sep in ("|", ";", ",", "/", "\\"):
-                            if sep in txt:
-                                return {t.strip() for t in txt.split(sep) if t.strip()}
-                        return {txt}
-
-                    tmp = df_loc[["Data", "Cadastro", "Planta"]].copy()
-                    tmp["Clusters"] = tmp["Planta"].map(_to_planta_set)
-                    out = (
-                        tmp.groupby(["Data", "Cadastro"])["Clusters"]
-                        .agg(lambda sets: set().union(*sets) if len(sets) else set())
-                        .reset_index()
-                    )
-                    return out
-
-    in_sql_raw, in_params_raw = _sql_in_clause(cad_norm)
-    in_sql_lz, in_params_lz = _sql_in_clause(cad_lz)
-    sql = f"""
-    SELECT
-      a."Data" AS "Data",
-      a."Cadastro" AS "Cadastro",
-      REPLACE(GROUP_CONCAT(DISTINCT a."Planta"), ',', '|') AS "Clusters"
-    FROM vw_almoco_cluster a
-    WHERE (
-      REPLACE(TRIM(a."Cadastro"), '.0', '') {in_sql_raw}
-      OR LTRIM(REPLACE(TRIM(a."Cadastro"), '.0', ''), '0') {in_sql_lz}
-    )
-      AND a."Data" BETWEEN ? AND ?
-    GROUP BY a."Data", a."Cadastro"
-    ORDER BY a."Cadastro", a."Data";
-    """
-    params = tuple(in_params_raw) + tuple(in_params_lz) + (
-        pd.Timestamp(dt_ini).strftime("%Y-%m-%d"),
-        pd.Timestamp(dt_fim).strftime("%Y-%m-%d"),
-    )
-    df = query_dw(sql, params=params, parse_dates=["Data"])
-    if df.empty:
-        return empty
-    df["Cadastro"] = df["Cadastro"].map(_norm_cadastro)
-    df["Data"] = pd.to_datetime(df["Data"], errors="coerce").dt.normalize()
-    df["Clusters"] = (
-        df["Clusters"]
-        .fillna("")
-        .astype(str)
-        .str.split("|", regex=False)
-        .apply(lambda x: {str(i).strip() for i in x if str(i).strip()})
-    )
-    df = df[df["Cadastro"].isin(cad_ok)]
-    if df.empty:
-        return empty
-    return df
 
 
 def register(app):
@@ -748,40 +599,30 @@ def register(app):
             dt_ini_ref = pd.Timestamp(dfp['Data'].min()).normalize()
             dt_fim_ref = pd.Timestamp(dfp['Data'].max()).normalize()
 
-            # Prioriza a base canônica de clusters de almoço no mesmo período do gráfico principal.
             dfal = build_dataframe_almoco_pessoas(
                 cad_list,
                 dt_ini=dt_ini_ref,
                 dt_fim=dt_fim_ref,
             )
 
-            # Fallback para base de eventos brutos, caso necessário.
-            if dfal is None or dfal.empty:
-                df_almoco_local = dw_fetch_almoco(
-                    [str(c) for c in cad_list],
-                    dt_ini=dt_ini_ref,
-                    dt_fim=dt_fim_ref,
-                )
-                if df_almoco_local is None or df_almoco_local.empty:
-                    df_almoco_local = query_dw(
-                        'SELECT "Cadastro","Data","Hora","Dir","Planta","Coletor","Descricao Coletor" '
-                        'FROM vw_df_almoco WHERE "Data" BETWEEN ? AND ?;',
-                        params=(
-                            dt_ini_ref.strftime("%Y-%m-%d"),
-                            dt_fim_ref.strftime("%Y-%m-%d"),
-                        ),
-                        parse_dates=["Data"],
-                    )
-                dfal = build_dataframe_almoco_pessoas(
-                    cad_list,
-                    df_almoco_local=df_almoco_local,
-                    dt_ini=dt_ini_ref,
-                    dt_fim=dt_fim_ref,
-                )
-
             if dfal is None or dfal.empty:
                 fig_mini_movel = fig_msg("Sem dados de almoço para as pessoas selecionadas")
             else:
+                def _cad_candidates(value: str) -> list[str]:
+                    txt = str(value).strip()
+                    if not txt:
+                        return []
+                    txt = txt.replace(" ", "")
+                    sem_decimal = re.sub(r"\.0+$", "", txt)
+                    no_zero = sem_decimal.lstrip("0") or "0"
+                    return list(dict.fromkeys([txt, sem_decimal, no_zero]))
+
+                def _get_por_cadastro(mapa_cad: dict, cad: str) -> dict:
+                    for k in _cad_candidates(cad):
+                        if k in mapa_cad:
+                            return mapa_cad[k]
+                    return {}
+
                 dfal['SemIni'] = _semana_inicio(dfal['Data'])
                 dfal = dfal.dropna(subset=['SemIni'])
                 sems = pd.Index(semanas)
@@ -796,10 +637,10 @@ def register(app):
                 pct_medias = []
                 for sem in sems:
                     m = mapa_sem.get(sem, {})
-                    datas_ref = m.get(str(ref), {})
+                    datas_ref = _get_por_cadastro(m, ref)
                     pcts = []
                     for cad in outros:
-                        dias_outro = m.get(str(cad), {})
+                        dias_outro = _get_por_cadastro(m, cad)
                         denom = len(dias_outro)
                         if denom > 0:
                             num = 0
