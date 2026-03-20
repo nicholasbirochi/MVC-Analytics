@@ -36,7 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // restaura a aba ativa pelo hash (#visao-geral, #por-pessoa, #por-area)
+  // restaura a aba ativa pelo hash (#visao-geral, #por-pessoa, #por-area, #relacionamento)
   const fromHash = location.hash.replace('#', '').trim();
   const linkFromHash = fromHash ? getLinkByKey(fromHash) : null;
 
