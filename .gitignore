@@ -49,3 +49,7 @@ Códigos Extras/Documentação/Análise Tempo de Casa/resultado.png
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Logs de execução temporários
+*.log
+Códigos Extras/**/_run_*.log
