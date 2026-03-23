@@ -366,7 +366,8 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 │ │
 │ ├── 📓 DDL.ipynb
 │ ├── 📓 Projeto unificado.ipynb
-│ └── 🖼️ Visualização da Estrutura DW.png
+│ ├── 🖼️ Visualização da Estrutura DW - Camada de Views.png
+│ └── 🖼️ Visualização da Estrutura DW - Modelo Físico.png
 │
 ├── 📁 project/
 │ ├── 📂 database/
