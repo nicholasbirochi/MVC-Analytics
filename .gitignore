@@ -28,6 +28,8 @@ venv/
 *.zip
 *.7z
 *.tar.gz
+*.ico
+*.png
 
 # Pasta específica do projeto
 Códigos Extras/Documentação/Análise Tempo de Casa/resultado.png
