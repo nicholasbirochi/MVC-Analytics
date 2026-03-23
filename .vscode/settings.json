@@ -1,8 +1,10 @@
 {
     "files.exclude": {
         ".git": true,
-        ".venv": true,
         "venv": true,
+        ".env": true,
+        ".venv": true,
+        ".vscode": true,
         "__pycache__": true,
         "**/__pycache__": true,
         "**/__init__.py": true,
