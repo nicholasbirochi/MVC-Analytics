@@ -1,0 +1,67 @@
+[run] notebook=Criando Base das Irregularidades copy.ipynb
+[run] selected_cells=[0, 1, 3, 5, 7, 9, 11, 13, 15, 16, 18]
+[run] cell=0 code_index=1
+[run] cell=1 code_index=2
+[run] cell=3 code_index=3
+[run] cell=5 code_index=4
+[run] cell=7 code_index=5
+[run] cell=9 code_index=6
+[run] cell=11 code_index=7
+[run] cell=13 code_index=8
+[run] cell=15 code_index=9
+[error] cell=15
+Traceback (most recent call last):
+  File "<stdin>", line 28, in <module>
+  File "Criando Base das Irregularidades copy.ipynb:cell15", line 19, in <module>
+  File "C:\Users\A1CLNDO\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pandas\core\indexing.py", line 1185, in __getitem__
+    return self._getitem_tuple(key)
+           ~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\A1CLNDO\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pandas\core\indexing.py", line 1378, in _getitem_tuple
+    return self._getitem_tuple_same_dim(tup)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\A1CLNDO\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pandas\core\indexing.py", line 1021, in _getitem_tuple_same_dim
+    retval = getattr(retval, self.name)._getitem_axis(key, axis=i)
+  File "C:\Users\A1CLNDO\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pandas\core\indexing.py", line 1414, in _getitem_axis
+    return self._getbool_axis(key, axis=axis)
+           ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\Users\A1CLNDO\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pandas\core\indexing.py", line 1212, in _getbool_axis
+    return self.obj._take_with_is_copy(inds, axis=axis)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\A1CLNDO\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pandas\core\generic.py", line 4175, in _take_with_is_copy
+    result = self.take(indices=indices, axis=axis)
+  File "C:\Users\A1CLNDO\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pandas\core\generic.py", line 4155, in take
+    new_data = self._mgr.take(
+        indices,
+        axis=self._get_block_manager_axis(axis),
+        verify=True,
+    )
+  File "C:\Users\A1CLNDO\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pandas\core\internals\managers.py", line 913, in take
+    return self.reindex_indexer(
+           ~~~~~~~~~~~~~~~~~~~~^
+        new_axis=new_labels,
+        ^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+        copy=None,
+        ^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\A1CLNDO\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pandas\core\internals\managers.py", line 707, in reindex_indexer
+    blk.take_nd(
+    ~~~~~~~~~~~^
+        indexer,
+        ^^^^^^^^
+    ...<3 lines>...
+        ),
+        ^^
+    )
+    ^
+  File "C:\Users\A1CLNDO\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pandas\core\internals\blocks.py", line 1373, in take_nd
+    new_values = algos.take_nd(
+        values, indexer, axis=axis, allow_fill=allow_fill, fill_value=fill_value
+    )
+  File "C:\Users\A1CLNDO\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pandas\core\array_algos\take.py", line 117, in take_nd
+    return _take_nd_ndarray(arr, indexer, axis, fill_value, allow_fill)
+  File "C:\Users\A1CLNDO\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pandas\core\array_algos\take.py", line 157, in _take_nd_ndarray
+    out = np.empty(out_shape, dtype=dtype)
+numpy._core._exceptions._ArrayMemoryError: Unable to allocate 227. MiB for an array with shape (29804109, 1) and data type object
+

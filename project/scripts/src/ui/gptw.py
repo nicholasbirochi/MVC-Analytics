@@ -752,9 +752,6 @@ def blocos_movimentacao_turnover(
         return html.Div(
             tbl,
             style={
-                "maxHeight": "260px",
-                "overflowY": "auto",
-                "overflowX": "auto",
                 "border": "1px solid #ddd",
                 "borderRadius": "6px",
                 "position": "relative",
