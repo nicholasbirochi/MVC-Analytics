@@ -1,8 +1,8 @@
 """__init__.py
 
-Módulo do dashboard de dados (Volkswagen do Brasil).
+Módulo do dashboard de dados (Empresa).
 
-Projeto: Dashboard presencialidade — Volkswagen do Brasil
+Projeto: Dashboard presencialidade — Empresa
 Padronização:
 - Tipagem adiantada: `from __future__ import annotations`
 - Logger de módulo: `logging.getLogger(__name__)`
@@ -22,3 +22,4 @@ def register_all(app):
     register_individual(app)
     register_area(app)
     register_relacionamento(app)
+

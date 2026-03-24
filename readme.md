@@ -16,7 +16,9 @@
 ">
   <img
     src="project/website/images/logo_white.png"
-    alt="VW"
+    alt="Logo"
+    loading="lazy"
+    decoding="async"
     style="
       width:clamp(88px, 12vw, 130px);
       height:auto;
@@ -38,17 +40,17 @@
     border-bottom:1px solid rgba(255,255,255,.75);
     max-width:1100px;
   ">
-    Dashboard sobre Monitoramento Comportamental — Volkswagen do Brasil
+    Dashboard sobre Monitoramento Comportamental — Empresa
   </h1>
 </div>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Python-3.11-blue" />
-  <img src="https://img.shields.io/badge/Dash-2.18-3EB489" />
-  <img src="https://img.shields.io/badge/Status-Em%20Uso-brightgreen" />
+  <img src="https://img.shields.io/badge/Python-3.11-blue" loading="lazy" decoding="async" />
+  <img src="https://img.shields.io/badge/Dash-2.18-3EB489" loading="lazy" decoding="async" />
+  <img src="https://img.shields.io/badge/Status-Em%20Uso-brightgreen" loading="lazy" decoding="async" />
 </p>
 <p align="center" style="font-size:14px; color:#f0f0f0; margin-top:-6px;">
-  Desenvolvido por <b>Nicholas Birochi</b> — Data Analytics | Volkswagen do Brasil
+  Desenvolvido por <b>Nicholas Birochi</b> — Data Analytics | Empresa
 </p>
 
 ## 📚 Tabela de Conteúdos
@@ -711,7 +713,7 @@ O teste valida:
 - Renderização dos gráficos é progressiva (`dcc.Store` + `dcc.Interval`)
 
 ## 🪄 Estilo Visual e UX
-- Paleta Volkswagen Data Blue / Gray Neutral  
+- Paleta Empresa Data Blue / Gray Neutral  
 - Inspiração em VS Code (cards, bordas e ícones coloridos)  
 - Layout fluido com Grid + Flexbox Dash  
 - Tags coloridas e pontilhadas com rótulos personalizados  
@@ -788,7 +790,7 @@ O teste valida:
 
 ## 📄 Licença
 Projeto interno — uso corporativo.
-<br>© 2025 Volkswagen do Brasil / Nicholas Birochi
+<br>© 2025 Empresa / Nicholas Birochi
 
 ## 🖋️ Assinatura Profissional
 <!-- Assinatura HTML -->
@@ -797,13 +799,15 @@ Projeto interno — uso corporativo.
     <td style="padding-right: 0px; vertical-align: middle;">
       <img src="project\website\images\logo_white.png"
            width="150"
+           loading="lazy"
+           decoding="async"
            style="vertical-align: middle;"
-           alt="logo_blue VW">
+           alt="logo_blue">
     </td>
     <td style="border-left: 3px solid #ffffffff; padding-left: 10px;">
       <p style="margin: 0; font-size: 17px; font-weight: 700; color: #ffffffff;">Nicholas Birochi</p>
       <p style="margin: 2px 0; color: #444; font-size: 14px;">Estagiário de Análise de Dados | Data Analytics</p>
-      <p style="margin: 2px 0; color: #444; font-size: 14px;">Volkswagen do Brasil</p>
+      <p style="margin: 2px 0; color: #444; font-size: 14px;">Empresa</p>
       <p style="margin: 6px 0; font-size: 13px;">
         <a href="mailto:nicholas.birochi@gmail.com" style="color: #0055A5; text-decoration: none; font-weight: 500;">Email</a> &nbsp;•&nbsp;
         <a href="https://www.linkedin.com/in/nicholas-birochi/" style="color: #0A66C2; text-decoration: none; font-weight: 500;">LinkedIn</a> &nbsp;•&nbsp;
@@ -813,3 +817,6 @@ Projeto interno — uso corporativo.
     </td>
   </tr>
 </table>
+
+
+

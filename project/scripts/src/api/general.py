@@ -2,7 +2,7 @@
 
 Página geral: KPIs, filtros e navegação entre páginas.
 
-Projeto: Dashboard presencialidade — Volkswagen do Brasil
+Projeto: Dashboard presencialidade — Empresa
 Padronização:
 - Tipagem adiantada: `from __future__ import annotations`
 - Logger de módulo: `logging.getLogger(__name__)`
@@ -463,13 +463,13 @@ def register(app):
 
         annotations = [
             dict(x=x_faixas[i], y="Distribuição", text=str(val), showarrow=False,
-                 font=dict(color="black", size=15, family="VW Text"),
+                 font=dict(color="black", size=15, family="Segoe UI"),
                  xanchor="center", yanchor="middle")
             for i, val in enumerate(y_faixas)
         ]
 
         fig_heat.update_layout(
-            title={'text': "Distribuição de Colaboradores por Faixa", 'font': {'family': 'VW Text', 'color': '#000000', 'size': 24}},
+            title={'text': "Distribuição de Colaboradores por Faixa", 'font': {'family': 'Segoe UI', 'color': '#000000', 'size': 24}},
             xaxis_title="Faixa de Média (dias/semana)",
             yaxis_title="",
             xaxis=dict(type='category'),
@@ -521,7 +521,7 @@ def register(app):
         ))
 
         fig_dispersao.update_layout(
-            title={'text': f"Dispersão Geral ({', '.join(faixas) if faixas else 'Todos'})", 'font': {'family': 'VW Text', 'color': '#000000', 'size': 24}},
+            title={'text': f"Dispersão Geral ({', '.join(faixas) if faixas else 'Todos'})", 'font': {'family': 'Segoe UI', 'color': '#000000', 'size': 24}},
             xaxis_title="Média de Presença Semanal",
             yaxis_title="Qtd de Pessoas",
             height=500
@@ -573,7 +573,7 @@ def register(app):
             return figura_vazia_linha("Sem dados por cargo para o período e filtros selecionados.")
 
         fig_cargo.update_layout(
-            title={'text': f"Presença por Cargo ({', '.join(faixas) if faixas else 'Todos'})", 'font': {'family': 'VW Text', 'color': '#000000', 'size': 24}},
+            title={'text': f"Presença por Cargo ({', '.join(faixas) if faixas else 'Todos'})", 'font': {'family': 'Segoe UI', 'color': '#000000', 'size': 24}},
             xaxis_title="Média de Presença Semanal",
             yaxis_title="Qtd de Pessoas",
             height=500,
@@ -647,7 +647,7 @@ def register(app):
 
         titulo_bp = f"Boxplot de Presença por Área ({', '.join(faixas) if faixas else 'Todos'})"
         fig_boxplot.update_layout(
-            title={'text': titulo_bp, 'font': {'family': 'VW Text', 'size': 24}},
+            title={'text': titulo_bp, 'font': {'family': 'Segoe UI', 'size': 24}},
             yaxis_title="Média de Presença Semanal",
             xaxis=dict(
                 title="",
@@ -877,3 +877,6 @@ def register(app):
         ])
 
         return tabela_resumo_area
+
+
+

@@ -2,7 +2,7 @@
 
 Co-presença/relacionamento entre colaboradores e seleção de áreas/subáreas.
 
-Projeto: Dashboard presencialidade — Volkswagen do Brasil
+Projeto: Dashboard presencialidade — Empresa
 Padronização:
 - Tipagem adiantada: `from __future__ import annotations`
 - Logger de módulo: `logging.getLogger(__name__)`
@@ -844,17 +844,17 @@ def register(app):
                 # Cabeçalho
                 html.Div([
                     html.Button(" ↩ ", id='botao-voltar-relacionamento', n_clicks=0, style={
-                        'color': 'Black', 'fontFamily': 'VW Text', 'fontWeight': 'bold', 'margin': '0',
+                        'color': 'Black', 'fontFamily': 'Segoe UI', 'fontWeight': 'bold', 'margin': '0',
                         'display': 'inline-block', 'padding': '5px 10px', 'fontSize': '20px',
                         'backgroundColor': '#e0e0e0', 'border': 'none', 'borderRadius': '5px',
                         'cursor': 'pointer', 'boxShadow': '0px 2px 6px rgba(0,0,0,0.25)'
                     }),
                     html.H2("Relacionamento entre Colaboradores", style={
-                        'margin': '0', 'fontFamily': 'VW Text', 'fontWeight': 'bold', 'textAlign': 'center', 'flex': '1'
+                        'margin': '0', 'fontFamily': 'Segoe UI', 'fontWeight': 'bold', 'textAlign': 'center', 'flex': '1'
                     }),
                     html.Button("🖨️ Imprimir", id='btn-print-relacionamento', n_clicks=0, style={
                         'backgroundColor': 'transparent', 'border': 'none', 'color': 'Black',
-                        'fontFamily': 'VW Text', 'fontWeight': 'bold', 'cursor': 'pointer',
+                        'fontFamily': 'Segoe UI', 'fontWeight': 'bold', 'cursor': 'pointer',
                         'fontSize': '16px', 'padding': '0 16px', 'textDecoration': 'none'
                     })
                 ], style={
@@ -917,7 +917,7 @@ def register(app):
                                 markdown_options={'html': True},
                                 row_deletable=False,
                                 style_table={'marginTop': '8px', 'minWidth': '280px'},
-                                style_cell={'fontFamily': 'VW Text', 'fontSize': '14px', 'padding': '6px'},
+                                style_cell={'fontFamily': 'Segoe UI', 'fontSize': '14px', 'padding': '6px'},
                                 style_header={'backgroundColor': '#f0f0f0', 'fontWeight': 'bold', 'textAlign': 'center'},
                                 style_data={'whiteSpace': 'nowrap'},
                                 style_cell_conditional=[
@@ -944,7 +944,7 @@ def register(app):
                             html.Button(
                                 "🍽️ Almoço", id='btn-modo-rel', n_clicks=0,
                                 style={
-                                    'fontFamily': 'VW Text',
+                                    'fontFamily': 'Segoe UI',
                                     'fontWeight': 'bold',
                                     'padding': '6px 10px',
                                     'cursor': 'pointer',
@@ -1017,3 +1017,6 @@ def register(app):
                                                      'height': '100%', 'backgroundColor': "#ffffff", 'padding': '16px',
                                                      'boxSizing': 'border-box'
                                                      }
+
+
+

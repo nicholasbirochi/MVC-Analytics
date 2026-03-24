@@ -2,6 +2,13 @@
 const senha = document.getElementById('senha');
 const reveal = document.querySelector('.reveal');
 
+// aplica lazy loading para evitar carga simultânea das imagens
+document.querySelectorAll('img').forEach((img) => {
+  if (!img.hasAttribute('loading')) img.setAttribute('loading', 'lazy');
+  if (!img.hasAttribute('decoding')) img.setAttribute('decoding', 'async');
+  if (!img.hasAttribute('fetchpriority')) img.setAttribute('fetchpriority', 'low');
+});
+
 if (reveal && senha) {
   reveal.addEventListener('click', () => {
     const isPwd = senha.type === 'password';

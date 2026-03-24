@@ -2,7 +2,7 @@
 
 Tabelas/indicadores relacionados a GPTW (por área).
 
-Projeto: Dashboard presencialidade — Volkswagen do Brasil
+Projeto: Dashboard presencialidade — Empresa
 Padronização:
 - Tipagem adiantada: `from __future__ import annotations`
 - Logger de módulo: `logging.getLogger(__name__)`
@@ -298,14 +298,14 @@ def mini_tabela_df_turnover(
         "backgroundColor": "#f5f5f5",
         "fontWeight": "bold",
         "textAlign": "center",
-        "fontFamily": "VW Text",
+        "fontFamily": "Segoe UI",
         "fontSize": "30px",
     }
     td = {
         "padding": "4px 8px",
         "border": "1px solid #bbb",
         "textAlign": "center",
-        "fontFamily": "VW Text",
+        "fontFamily": "Segoe UI",
     }
     td_first = {**td, "fontWeight": "bold", "fontSize": "20px"}
     td_sub = {**td, "fontWeight": "600", "fontSize": "14px"}
@@ -497,7 +497,7 @@ def mini_tabela_df_turnover(
             "Sem dados de headcount/turnover para o período selecionado.",
             style={
                 **wrapper_style,
-                "fontFamily": "VW Text",
+                "fontFamily": "Segoe UI",
                 "fontSize": "13px",
                 "opacity": 0.8,
                 "textAlign": "center",
@@ -604,7 +604,7 @@ def blocos_movimentacao_turnover(
         a = str(abrev or "").strip()
         d = str(desc or "").strip()
         if a.casefold() == "fora da vw" or d.casefold() == "fora da vw":
-            return "Fora da VW"
+            return "Fora da Empresa"
         d = "" if d.lower() in {"nan", "none"} else d
         if a and d:
             return f"{a} - {d}"
@@ -612,7 +612,7 @@ def blocos_movimentacao_turnover(
             return a
         if d:
             return d
-        return "Fora da VW"
+        return "Fora da Empresa"
 
     def _mov_detalhe_ano(ano: int) -> pd.DataFrame:
         cols = ["Data", "Cadastro", "Nome", "De", "Para", "Tipo"]
@@ -693,14 +693,14 @@ def blocos_movimentacao_turnover(
         if df_mov is None or df_mov.empty:
             return html.Div(
                 "Sem movimentações detectadas no ano.",
-                style={"fontFamily": "VW Text", "fontSize": "12px", "opacity": 0.8},
+                style={"fontFamily": "Segoe UI", "fontSize": "12px", "opacity": 0.8},
             )
 
         th_m = {
             "padding": "4px 6px",
             "border": "1px solid #ddd",
             "backgroundColor": "#f3f3f3",
-            "fontFamily": "VW Text",
+            "fontFamily": "Segoe UI",
             "fontSize": "12px",
             "textAlign": "left",
             "fontWeight": "bold",
@@ -711,7 +711,7 @@ def blocos_movimentacao_turnover(
         td_m = {
             "padding": "4px 6px",
             "border": "1px solid #e2e2e2",
-            "fontFamily": "VW Text",
+            "fontFamily": "Segoe UI",
             "fontSize": "12px",
             "textAlign": "left",
             "backgroundColor": "#fff",
@@ -784,13 +784,13 @@ def blocos_movimentacao_turnover(
                             "alignItems": "center",
                             "gap": "6px",
                             "cursor": "pointer",
-                            "fontFamily": "VW Text",
+                            "fontFamily": "Segoe UI",
                         },
                     ),
                     style={
                         "listStyle": "none",
                         "textAlign": "left",
-                        "fontFamily": "VW Text",
+                        "fontFamily": "Segoe UI",
                         "padding": "6px 8px",
                         "border": "1px solid #ddd",
                         "borderRadius": "8px",
@@ -802,7 +802,7 @@ def blocos_movimentacao_turnover(
                         html.Div(
                             f"{int(ano)} — {len(mov_det)} movimentações",
                             style={
-                                "fontFamily": "VW Text",
+                                "fontFamily": "Segoe UI",
                                 "fontSize": "12px",
                                 "fontWeight": "bold",
                                 "marginTop": "8px",
@@ -866,14 +866,14 @@ def mini_tabela_df_gptw(
         "backgroundColor": "#f5f5f5",
         "fontWeight": "bold",
         "textAlign": "center",
-        "fontFamily": "VW Text",
+        "fontFamily": "Segoe UI",
         "fontSize": "30px",
     }
     td = {
         "padding": "4px 8px",
         "border": "1px solid #bbb",
         "textAlign": "center",
-        "fontFamily": "VW Text",
+        "fontFamily": "Segoe UI",
     }
     td_first = {**td, "fontWeight": "bold", "fontSize": "20px"}
     arrow_style_base = {"marginLeft": "6px", "fontSize": "12px", "opacity": 0.9}
@@ -1077,3 +1077,6 @@ def mini_tabelas_df_gptw_multi(
         df_df_gptw=df_df_gptw,
         her_df=her_df,
     )
+
+
+

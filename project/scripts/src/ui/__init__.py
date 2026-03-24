@@ -1,8 +1,8 @@
 """__init__.py
 
-Módulo do dashboard de dados (Volkswagen do Brasil).
+Módulo do dashboard de dados (Empresa).
 
-Projeto: Dashboard presencialidade — Volkswagen do Brasil
+Projeto: Dashboard presencialidade — Empresa
 Padronização:
 - Tipagem adiantada: `from __future__ import annotations`
 - Logger de módulo: `logging.getLogger(__name__)`
@@ -11,3 +11,4 @@ Padronização:
 """
 from __future__ import annotations
 import logging
+

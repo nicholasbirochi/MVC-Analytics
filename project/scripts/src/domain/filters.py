@@ -2,7 +2,7 @@
 
 Funções de filtragem de DataFrames e utilitários de seleção.
 
-Projeto: Dashboard presencialidade — Volkswagen do Brasil
+Projeto: Dashboard presencialidade — Empresa
 Padronização:
 - Tipagem adiantada: `from __future__ import annotations`
 - Logger de módulo: `logging.getLogger(__name__)`
@@ -443,3 +443,5 @@ def carregar_media_colaboradores(
 
     _store_frame_cache(_MEDIA_CACHE, _MEDIA_CACHE_LOCK, cache_key, df_media)
     return df_media.copy(deep=True)
+
+
