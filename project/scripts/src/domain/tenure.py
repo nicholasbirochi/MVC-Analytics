@@ -2,7 +2,7 @@
 
 Cálculo de tempo de casa (tenure) para colaboradores.
 
-Projeto: Dashboard presencialidade — Volkswagen do Brasil
+Projeto: Dashboard presencialidade — Empresa
 Padronização:
 - Tipagem adiantada: `from __future__ import annotations`
 - Logger de módulo: `logging.getLogger(__name__)`
@@ -244,3 +244,5 @@ def obter_periodo_admissao(
     if adm is None and dem is None:
         return None, None
     return adm, (pd.Timestamp.max if dem is None or pd.isna(dem) else dem)
+
+

@@ -2,7 +2,7 @@
 
 Tema e padrões visuais para componentes e gráficos.
 
-Projeto: Dashboard presencialidade — Volkswagen do Brasil
+Projeto: Dashboard presencialidade — Empresa
 Padronização:
 - Tipagem adiantada: `from __future__ import annotations`
 - Logger de módulo: `logging.getLogger(__name__)`
@@ -13,15 +13,15 @@ from __future__ import annotations
 
 
 # Estilos utilitários ---------------------------------------------------------
-VW_FONT_FAMILY = "'VW Text', Arial, sans-serif"
-VW_PLOTLY_FONT = "VW Text"
+CORP_FONT_FAMILY = "'Segoe UI', Arial, sans-serif"
+CORP_PLOTLY_FONT = "Segoe UI"
 GLOBAL_CSS = f"""
 @font-face {{
-  font-family: 'VW Text';
-  src: local('VW Text');
+  font-family: 'Segoe UI';
+  src: local('Segoe UI');
 }}
 * {{
-  font-family: {VW_FONT_FAMILY} !important;
+  font-family: {CORP_FONT_FAMILY} !important;
 }}
 """
 
@@ -51,15 +51,15 @@ def aplicar_tema_pb(fig, *, largura_borda=2, so_y_boxplot=False, grade=False, cl
         paper_bgcolor="white",
         plot_bgcolor="white",
         margin=dict(l=60, r=30, t=60, b=50),
-        font=dict(family=VW_PLOTLY_FONT, color="#000000"),
-        hoverlabel=dict(font=dict(family=VW_PLOTLY_FONT)),
+        font=dict(family=CORP_PLOTLY_FONT, color="#000000"),
+        hoverlabel=dict(font=dict(family=CORP_PLOTLY_FONT)),
     )
 
-    # Garante fonte VW na legenda sem sobrescrever outras configs de legenda.
+    # Garante fonte padrão na legenda sem sobrescrever outras configs de legenda.
     try:
         legend_dict = fig.layout.legend.to_plotly_json() if fig.layout.legend else {}
         legend_font = (legend_dict.get("font") or {})
-        legend_font["family"] = VW_PLOTLY_FONT
+        legend_font["family"] = CORP_PLOTLY_FONT
         legend_dict["font"] = legend_font
         fig.update_layout(legend=legend_dict)
     except Exception:
@@ -158,3 +158,7 @@ def aplicar_tema_pb(fig, *, largura_borda=2, so_y_boxplot=False, grade=False, cl
                 )
 
     return fig
+
+
+
+

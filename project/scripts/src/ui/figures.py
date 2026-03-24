@@ -2,7 +2,7 @@
 
 Composição de figuras/plotagens (Plotly/Matplotlib).
 
-Projeto: Dashboard presencialidade — Volkswagen do Brasil
+Projeto: Dashboard presencialidade — Empresa
 Padronização:
 - Tipagem adiantada: `from __future__ import annotations`
 - Logger de módulo: `logging.getLogger(__name__)`
@@ -109,7 +109,7 @@ def _carregar_primeira_data_cache() -> dict[str, pd.Timestamp]:
 
 def _finalizar_heatmap(fig: go.Figure, titulo: str, altura: int = 420) -> go.Figure:
     fig.update_layout(
-        title={"text": titulo, "font": {"family": "VW Text", "size": 22}},
+        title={"text": titulo, "font": {"family": "Segoe UI", "size": 22}},
         height=altura,
     )
     return fig
@@ -307,7 +307,7 @@ def _radar_from_metrics(df: pd.DataFrame, titulo: str, label_col: str, top_n: in
             yref="paper",
         )
         fig.update_layout(
-            title={"text": titulo, "font": {"family": "VW Text", "size": 22}},
+            title={"text": titulo, "font": {"family": "Segoe UI", "size": 22}},
             height=440,
             margin=dict(l=50, r=40, t=70, b=40),
             polar=dict(
@@ -380,7 +380,7 @@ def _radar_from_metrics(df: pd.DataFrame, titulo: str, label_col: str, top_n: in
     )
 
     fig.update_layout(
-        title={"text": titulo, "font": {"family": "VW Text", "size": 22}},
+        title={"text": titulo, "font": {"family": "Segoe UI", "size": 22}},
         height=480,
         margin=dict(l=60, r=60, t=80, b=40),
         polar=dict(
@@ -491,17 +491,17 @@ def grafico_pentagonos_rel_exec_multiplos(
     def _fig_erro(msg: str) -> go.Figure:
         fig = go.Figure()
         fig.update_layout(
-            title={'text': f"{titulo} — ERRO", 'font': {'family': 'VW Text', 'size': 22}, 'x': 0.5, 'xanchor': 'center', 'pad': {'t': 28, 'b': 28}},
+            title={'text': f"{titulo} — ERRO", 'font': {'family': 'Segoe UI', 'size': 22}, 'x': 0.5, 'xanchor': 'center', 'pad': {'t': 28, 'b': 28}},
             height=420,
             margin=dict(l=60, r=40, t=80, b=40),
-            font=dict(family="VW Text"),
+            font=dict(family="Segoe UI"),
             showlegend=False
         )
         fig.add_annotation(
             text=str(msg),
             x=0.5, y=0.5, xref="paper", yref="paper",
             showarrow=False,
-            font=dict(family="VW Text", size=14),
+            font=dict(family="Segoe UI", size=14),
             align="center"
         )
         return fig
@@ -623,8 +623,8 @@ def grafico_pentagonos_rel_exec_multiplos(
     if df_full is None or getattr(df_full, "empty", True):
         fig_empty = go.Figure()
         fig_empty.update_layout(
-            title={'text': titulo, 'font': {'family': 'VW Text', 'size': 22}},
-            height=420, showlegend=False, font=dict(family="VW Text")
+            title={'text': titulo, 'font': {'family': 'Segoe UI', 'size': 22}},
+            height=420, showlegend=False, font=dict(family="Segoe UI")
         )
         return fig_empty
 
@@ -641,8 +641,8 @@ def grafico_pentagonos_rel_exec_multiplos(
     if df_rel.empty:
         fig_empty = go.Figure()
         fig_empty.update_layout(
-            title={'text': titulo, 'font': {'family': 'VW Text', 'size': 22}},
-            height=420, showlegend=False, font=dict(family="VW Text")
+            title={'text': titulo, 'font': {'family': 'Segoe UI', 'size': 22}},
+            height=420, showlegend=False, font=dict(family="Segoe UI")
         )
         return fig_empty
 
@@ -954,20 +954,20 @@ def grafico_pentagonos_rel_exec_multiplos(
         fig.layout[pol_key].radialaxis.tick0 = 0
         fig.layout[pol_key].radialaxis.dtick = 20
         fig.layout[pol_key].radialaxis.showticklabels = True
-        fig.layout[pol_key].radialaxis.tickfont = dict(family="VW Text", size=11)
-        fig.layout[pol_key].angularaxis.tickfont = dict(family="VW Text", size=11)
+        fig.layout[pol_key].radialaxis.tickfont = dict(family="Segoe UI", size=11)
+        fig.layout[pol_key].angularaxis.tickfont = dict(family="Segoe UI", size=11)
         fig.layout[pol_key].radialaxis.ticksuffix = "%"
 
     # ------------------------- layout geral -------------------------
     fig.update_layout(
         title={
             'text': titulo,
-            'font': {'family': 'VW Text', 'size': 22},
+            'font': {'family': 'Segoe UI', 'size': 22},
             'x': 0.5, 'xanchor': 'center',
             'pad': {'t': 28, 'b': 20}
         },
-        font=dict(family="VW Text"),
-        hoverlabel=dict(bgcolor="white", bordercolor="black", font=dict(family="VW Text", color="black")),
+        font=dict(family="Segoe UI"),
+        hoverlabel=dict(bgcolor="white", bordercolor="black", font=dict(family="Segoe UI", color="black")),
         margin=dict(l=70, r=40, t=125, b=60),
         height=max(520, rows * 420),
         showlegend=False,
@@ -1062,18 +1062,18 @@ def grafico_pentagonos_exec_exec_multiplos(
     def _fig_erro(msg: str) -> go.Figure:
         fig = go.Figure()
         fig.update_layout(
-            title={'text': f"{titulo} — ERRO", 'font': {'family': 'VW Text', 'size': 22},
+            title={'text': f"{titulo} — ERRO", 'font': {'family': 'Segoe UI', 'size': 22},
                    'x': 0.5, 'xanchor': 'center', 'pad': {'t': 28, 'b': 28}},
             height=420,
             margin=dict(l=60, r=40, t=125, b=40),
-            font=dict(family="VW Text"),
+            font=dict(family="Segoe UI"),
             showlegend=False
         )
         fig.add_annotation(
             text=str(msg),
             x=0.5, y=0.5, xref="paper", yref="paper",
             showarrow=False,
-            font=dict(family="VW Text", size=14),
+            font=dict(family="Segoe UI", size=14),
             align="center"
         )
         return fig
@@ -1188,9 +1188,9 @@ def grafico_pentagonos_exec_exec_multiplos(
     if df_full is None or getattr(df_full, "empty", True):
         fig_empty = go.Figure()
         fig_empty.update_layout(
-            title={'text': titulo, 'font': {'family': 'VW Text', 'size': 22},
+            title={'text': titulo, 'font': {'family': 'Segoe UI', 'size': 22},
                    'x': 0.5, 'xanchor': 'center', 'pad': {'t': 28, 'b': 28}},
-            height=420, showlegend=False, font=dict(family="VW Text")
+            height=420, showlegend=False, font=dict(family="Segoe UI")
         )
         return fig_empty
 
@@ -1206,9 +1206,9 @@ def grafico_pentagonos_exec_exec_multiplos(
     if df_rel.empty:
         fig_empty = go.Figure()
         fig_empty.update_layout(
-            title={'text': titulo, 'font': {'family': 'VW Text', 'size': 22},
+            title={'text': titulo, 'font': {'family': 'Segoe UI', 'size': 22},
                    'x': 0.5, 'xanchor': 'center', 'pad': {'t': 28, 'b': 28}},
-            height=420, showlegend=False, font=dict(family="VW Text")
+            height=420, showlegend=False, font=dict(family="Segoe UI")
         )
         return fig_empty
 
@@ -1509,20 +1509,20 @@ def grafico_pentagonos_exec_exec_multiplos(
         fig.layout[pol_key].radialaxis.tick0 = 0
         fig.layout[pol_key].radialaxis.dtick = 20
         fig.layout[pol_key].radialaxis.showticklabels = True
-        fig.layout[pol_key].radialaxis.tickfont = dict(family="VW Text", size=11)
-        fig.layout[pol_key].angularaxis.tickfont = dict(family="VW Text", size=11)
+        fig.layout[pol_key].radialaxis.tickfont = dict(family="Segoe UI", size=11)
+        fig.layout[pol_key].angularaxis.tickfont = dict(family="Segoe UI", size=11)
         fig.layout[pol_key].radialaxis.ticksuffix = "%"
 
     # ------------------------- layout geral -------------------------
     fig.update_layout(
         title={
             'text': titulo,
-            'font': {'family': 'VW Text', 'size': 22},
+            'font': {'family': 'Segoe UI', 'size': 22},
             'x': 0.5, 'xanchor': 'center',
             'pad': {'t': 28, 'b': 20}
         },
-        font=dict(family="VW Text"),
-        hoverlabel=dict(bgcolor="white", bordercolor="black", font=dict(family="VW Text", color="black")),
+        font=dict(family="Segoe UI"),
+        hoverlabel=dict(bgcolor="white", bordercolor="black", font=dict(family="Segoe UI", color="black")),
         margin=dict(l=70, r=40, t=125, b=60),
         height=max(520, rows * 420),
         showlegend=False,
@@ -1548,7 +1548,7 @@ def grafico_heatmap_encontros_men(
 
     def _final(_fig: go.Figure) -> go.Figure:
         _fig.update_layout(
-            title={"text": titulo, "font": {"family": "VW Text", "size": 22}},
+            title={"text": titulo, "font": {"family": "Segoe UI", "size": 22}},
             height=420,
         )
         return _fig
@@ -1823,7 +1823,7 @@ def grafico_heatmap_encontros_men(
     linhas = max(len(y_labels), 1)
     altura = max(460, 40 + 23 * max(linhas, 10))
     fig.update_layout(
-        title={"text": titulo, "font": {"family": "VW Text", "size": 22}},
+        title={"text": titulo, "font": {"family": "Segoe UI", "size": 22}},
         xaxis_title="",
         yaxis_title="",
         height=altura,
@@ -1844,9 +1844,9 @@ def grafico_rede_encontros_exec(
 
     def _final(_fig, msg=None):
         _fig.update_layout(
-            title={"text": titulo, "font": {"family": "VW Text", "size": 22}},
+            title={"text": titulo, "font": {"family": "Segoe UI", "size": 22}},
             height=420,
-            font={"family": "VW Text"},
+            font={"family": "Segoe UI"},
         )
         if msg:
             _fig.add_annotation(
@@ -2071,13 +2071,13 @@ def grafico_rede_encontros_exec(
     )
 
     fig.update_layout(
-        title={"text": titulo, "font": {"family": "VW Text", "size": 22}},
+        title={"text": titulo, "font": {"family": "Segoe UI", "size": 22}},
         showlegend=False,
         height=max(460, 420),
         xaxis=dict(visible=False),
         yaxis=dict(visible=False),
         margin=dict(l=90, r=90, t=70, b=60),
-        font=dict(family="VW Text"),
+        font=dict(family="Segoe UI"),
         plot_bgcolor="white",
         paper_bgcolor="white",
         hovermode="closest",
@@ -2109,7 +2109,7 @@ def grafico_heatmap_encontros_exec(
 
     def _final(_fig: go.Figure) -> go.Figure:
         _fig.update_layout(
-            title={"text": titulo, "font": {"family": "VW Text", "size": 22}},
+            title={"text": titulo, "font": {"family": "Segoe UI", "size": 22}},
             height=420,
         )
         return _fig
@@ -2338,7 +2338,7 @@ def grafico_heatmap_encontros_exec(
     linhas = max(len(y_labels), 1)
     altura = max(460, 40 + 22 * max(linhas, 10))
     fig.update_layout(
-        title={"text": titulo, "font": {"family": "VW Text", "size": 22}},
+        title={"text": titulo, "font": {"family": "Segoe UI", "size": 22}},
         xaxis_title="",
         yaxis_title="",
         height=altura,
@@ -2347,4 +2347,7 @@ def grafico_heatmap_encontros_exec(
     fig.update_xaxes(tickangle=-45, automargin=True, autorange="reversed")
     fig.update_yaxes(autorange="reversed", automargin=True)
     return fig
+
+
+
 

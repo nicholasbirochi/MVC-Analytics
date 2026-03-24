@@ -2,7 +2,7 @@
 
 Callbacks e visões por Área/Departamento/Subárea.
 
-Projeto: Dashboard presencialidade — Volkswagen do Brasil
+Projeto: Dashboard presencialidade — Empresa
 Padronização:
 - Tipagem adiantada: `from __future__ import annotations
 `
@@ -65,13 +65,13 @@ def _headcount_card(area: str | None, subarea: str | None):
         "backgroundColor": "#f5f5f5",
         "fontWeight": "bold",
         "textAlign": "center",
-        "fontFamily": "VW Text",
+        "fontFamily": "Segoe UI",
     }
     td = {
         "padding": "4px 8px",
         "border": "1px solid #bbb",
         "textAlign": "center",
-        "fontFamily": "VW Text",
+        "fontFamily": "Segoe UI",
     }
     td_first = {**td, "fontWeight": "bold", "textAlign": "left"}
 
@@ -153,7 +153,7 @@ def areas_toggle_ui():
                     "cursor": "pointer",
                     "transition": "all .18s ease-in-out",
                     "padding": "0",
-                    "fontFamily": "VW Text",
+                    "fontFamily": "Segoe UI",
                 },
                 children=html.Div(
                     [
@@ -211,7 +211,7 @@ def areas_toggle_ui():
                                 "alignItems": "center",
                                 "justifyContent": "center",
                                 "fontSize": "20px",
-                                "fontFamily": "VW Text",
+                                "fontFamily": "Segoe UI",
                                 "transform": "translateX(-25px)",
                                 "transition": "transform .18s ease-in-out, color .18s ease-in-out",
                                 "color": "#0057b8",
@@ -226,7 +226,7 @@ def areas_toggle_ui():
                         "justifyContent": "space-between",
                         "padding": "0 12px",
                         "userSelect": "none",
-                        "fontFamily": "VW Text",
+                        "fontFamily": "Segoe UI",
                     },
                 ),
             ),
@@ -506,10 +506,10 @@ def register(app):
                         fig_men_full.update_layout(
                             title={
                                 'text': f"{titulo_men} — erro ao gerar TEIA",
-                                'font': {'family': 'VW Text', 'size': 22}
+                                'font': {'family': 'Segoe UI', 'size': 22}
                             },
                             height=420,
-                            font={'family': 'VW Text'}
+                            font={'family': 'Segoe UI'}
                         )
                         fig_men_full.add_annotation(
                             text=str(exc)[:200],
@@ -540,10 +540,10 @@ def register(app):
                         fig_exec_full.update_layout(
                             title={
                                 'text': f"{titulo_exec} — erro ao gerar TEIA",
-                                'font': {'family': 'VW Text', 'size': 22}
+                                'font': {'family': 'Segoe UI', 'size': 22}
                             },
                             height=420,
-                            font={'family': 'VW Text'}
+                            font={'family': 'Segoe UI'}
                         )
                         fig_exec_full.add_annotation(
                             text=str(exc)[:200],
@@ -705,7 +705,7 @@ def register(app):
                     [
                         html.H4(
                             "Headcount & Turnover",
-                            style={"textAlign": "center", "margin": "0 0 24px", "fontFamily": "VW Text"},
+                            style={"textAlign": "center", "margin": "0 0 24px", "fontFamily": "Segoe UI"},
                         ),
                         mini_tabela_df_turnover(subarea or area, anos=(2023, 2024, 2025), incluir_macro=True),
                         blocos_movimentacao_turnover(subarea or area, anos=(2023, 2024, 2025)),
@@ -718,14 +718,14 @@ def register(app):
                         "boxShadow": "0 2px 2px rgba(0,0,0,0.08)",
                         "flex": "0 1 270px",
                         "maxWidth": "560px",
-                        "fontFamily": "VW Text",
+                        "fontFamily": "Segoe UI",
                     },
                 ),
                 html.Div(
                     [
                         html.H4(
                             "GPTW",
-                            style={"textAlign": "center", "margin": "0 0 24px", "fontFamily": "VW Text"},
+                            style={"textAlign": "center", "margin": "0 0 24px", "fontFamily": "Segoe UI"},
                         ),
                         html.Div(
                             mini_tabela_df_gptw(subarea or area),
@@ -740,7 +740,7 @@ def register(app):
                         "boxShadow": "0 2px 2px rgba(0,0,0,0.08)",
                         "flex": "0 1 270px",
                         "maxWidth": "560px",
-                        "fontFamily": "VW Text",
+                        "fontFamily": "Segoe UI",
                     },
                 ),
                 html.Div(
@@ -766,7 +766,7 @@ def register(app):
                 "margin": "8px 0 16px",
                 "padding": "10px",
                 "boxSizing": "border-box",
-                "fontFamily": "VW Text",
+                "fontFamily": "Segoe UI",
             },
         )
 
@@ -783,7 +783,7 @@ def register(app):
                         "considerando diferenças de até 1 minuto para o refeitório e 3 minutos "
                         "para as saídas da fábrica, além de estar sendo analisado apenas os últimos 3 meses.",
                         style={
-                            'fontFamily': 'VW Text',
+                            'fontFamily': 'Segoe UI',
                             'fontSize': '14px',
                             'fontWeight': 'bold',
                             'padding': '6px 20px',
@@ -813,7 +813,7 @@ def register(app):
                                     'display': 'inline-flex',
                                     'alignItems': 'center',
                                     'color': 'Black',
-                                    'fontFamily': 'VW Text',
+                                    'fontFamily': 'Segoe UI',
                                     'fontWeight': 'bold',
                                     'padding': '5px 20px',
                                     'fontSize': '20px',
@@ -847,7 +847,7 @@ def register(app):
                                     'backgroundColor': 'transparent',
                                     'border': 'none',
                                     'color': 'Black',
-                                    'fontFamily': 'VW Text',
+                                    'fontFamily': 'Segoe UI',
                                     'fontWeight': 'bold',
                                     'fontSize': '16px',
                                     'cursor': 'pointer',
@@ -863,7 +863,7 @@ def register(app):
                                 style={
                                     'display': 'inline-block',
                                     'color': 'Black',
-                                    'fontFamily': 'VW Text',
+                                    'fontFamily': 'Segoe UI',
                                     'fontWeight': 'bold',
                                     'padding': '10px',
                                     'fontSize': '14px',
@@ -895,7 +895,7 @@ def register(app):
                             'left': '50%',
                             'transform': 'translateX(-50%)',
                             'margin': '0',
-                            'fontFamily': 'VW Text',
+                            'fontFamily': 'Segoe UI',
                             'fontWeight': 'bold',
                             'fontSize': '22px',
                             'whiteSpace': 'nowrap',
@@ -974,7 +974,7 @@ def register(app):
                 cursor: "pointer",
                 transition: "all .18s ease-in-out",
                 padding: "0",
-                fontFamily: "VW Text"
+                fontFamily: "Segoe UI"
             };
             var btn_on = {
                 background: "linear-gradient(#181818,#2a2a2a)",
@@ -1003,7 +1003,7 @@ def register(app):
                 transform: "translateY(-50%)",
                 fontSize: "18px",
                 lineHeight: "18px",
-                fontFamily: "VW Text",
+                fontFamily: "Segoe UI",
                 userSelect: "none"
             };
             var ico_heat_color = { color: "#0057b8", left: "14px" };
@@ -1017,7 +1017,7 @@ def register(app):
                 alignItems: "center",
                 justifyContent: "center",
                 fontSize: "20px",
-                fontFamily: "VW Text",
+                fontFamily: "Segoe UI",
                 transform: "translateX(-25px)"
             };
             var btn_style = Object.assign({}, btn_base);
@@ -1070,3 +1070,6 @@ def register(app):
         Output('dummy-print-area', 'children'),
         Input('btn-print-area', 'n_clicks'),
     )
+
+
+

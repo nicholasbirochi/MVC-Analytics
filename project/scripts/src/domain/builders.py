@@ -2,7 +2,7 @@
 
 Builders para preparar data marts e agregações.
 
-Projeto: Dashboard presencialidade — Volkswagen do Brasil
+Projeto: Dashboard presencialidade — Empresa
 Padronização:
 - Tipagem adiantada: `from __future__ import annotations`
 - Logger de módulo: `logging.getLogger(__name__)`
@@ -537,3 +537,5 @@ def is_valid(val, options) -> bool:
     if val is None or options in (None,):
         return False
     return any(opt.get("value") == val for opt in options or [])
+
+

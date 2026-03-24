@@ -2,7 +2,7 @@
 
 Configura ambiente, caminhos de dados e parametros globais do app.
 
-Projeto: Dashboard presencialidade - Volkswagen do Brasil
+Projeto: Dashboard presencialidade - Empresa
 Padronizacao:
 - Tipagem adiantada: `from __future__ import annotations`
 - Logger de modulo: `logging.getLogger(__name__)`
@@ -286,3 +286,5 @@ def validate_data_files(
             + " | ".join(str(m) for m in missing)
             + " (ou configure RONDA_DW_PATH para usar o DW SQLite canonico)"
         )
+
+

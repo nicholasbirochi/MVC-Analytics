@@ -119,4 +119,5 @@ O arquivo **comparacao_chapa1_chapa2.xlsx** contém, além das colunas originais
 
 - Registros com `Coletor == 999` são descartados conforme regra atual.  
 - O script **normaliza `Data`** para `date` (sem hora).  
-- A lógica é pensada para uso diário pelo **estagiário de Análise de Dados (VW do Brasil)** e pode ser expandida para múltiplos cadastros com pequenas adaptações.
+- A lógica é pensada para uso diário pelo **estagiário de Análise de Dados ( do Brasil)** e pode ser expandida para múltiplos cadastros com pequenas adaptações.
+

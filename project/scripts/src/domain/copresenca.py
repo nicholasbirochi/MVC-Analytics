@@ -2,7 +2,7 @@
 
 Cálculo de co-presença entre colaboradores (relação por dia/semana).
 
-Projeto: Dashboard presencialidade — Volkswagen do Brasil
+Projeto: Dashboard presencialidade — Empresa
 Padronização:
 - Tipagem adiantada: `from __future__ import annotations`
 - Logger de módulo: `logging.getLogger(__name__)`
@@ -152,3 +152,4 @@ def calcular_ordem_heatmap(df_full: pd.DataFrame) -> tuple[list[str], list[str]]
     cad_M = [str(cad_M[i]) for i in order_M]
     cad_E = [str(cad_E[j]) for j in order_E]
     return cad_M, cad_E
+

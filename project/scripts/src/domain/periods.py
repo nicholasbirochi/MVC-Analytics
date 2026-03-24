@@ -2,7 +2,7 @@
 
 Utilitários de datas/intervalos (ISO week, mês, bimestres, etc.).
 
-Projeto: Dashboard presencialidade — Volkswagen do Brasil
+Projeto: Dashboard presencialidade — Empresa
 Padronização:
 - Tipagem adiantada: `from __future__ import annotations`
 - Logger de módulo: `logging.getLogger(__name__)`
@@ -81,3 +81,5 @@ def periodo_limites(indices: Iterable[int]) -> tuple[pd.Timestamp, pd.Timestamp]
     dt_ini = pd.to_datetime(LT_MONTHS[i0]).replace(day=1)
     dt_fim = pd.to_datetime(LT_MONTHS[i1]) + pd.offsets.MonthEnd(0)
     return dt_ini, dt_fim
+
+

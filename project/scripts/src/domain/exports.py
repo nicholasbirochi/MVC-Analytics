@@ -2,7 +2,7 @@
 
 Funções de exportação (imagens, texto, HTML, etc.).
 
-Projeto: Dashboard presencialidade — Volkswagen do Brasil
+Projeto: Dashboard presencialidade — Empresa
 Padronização:
 - Tipagem adiantada: `from __future__ import annotations`
 - Logger de módulo: `logging.getLogger(__name__)`
@@ -79,7 +79,7 @@ def gerar_relatorio_formatado(
     periodo_label_completo: str,
 ) -> str:
     return (
-        "   Relatório Corporativo - Sistema Integrado de Gestão de Frequência da Volkswagen\n\n"
+        "   Relatório Corporativo - Sistema Integrado de Gestão de Frequência da Empresa\n\n"
         "   Este relatório tem como finalidade fornecer uma base de dados consolidada, com visualizações estratégicas e indicadores de performance "
         f"relacionados à presença e ao regime de trabalho dos colaboradores entre {periodo_label_completo}.\n\n"
         rf"  O colaborador {nome_input} ({chapa_input}) apresentou uma média semanal de presença de "
@@ -94,3 +94,5 @@ def gerar_relatorio_formatado(
         "e excluídas do cálculo para evitar distorções. "
         'Foram identificadas as seguintes semanas com presença muito baixa, ou seja, entre "0" e "1" dia durante a semana (Ano-Semana):'
     )
+
+

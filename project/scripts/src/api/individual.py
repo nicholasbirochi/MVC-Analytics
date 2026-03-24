@@ -2,7 +2,7 @@
 
 Callbacks e geração do relatório individual (colaborador).
 
-Projeto: Dashboard presencialidade — Volkswagen do Brasil
+Projeto: Dashboard presencialidade — Empresa
 Padronização:
 - Tipagem adiantada: `from __future__ import annotations`
 - Logger de módulo: `logging.getLogger(__name__)`
@@ -519,7 +519,7 @@ def register(app):
 
         conteudo = html.Div([
             html.Button("Voltar", id='botao-voltar', n_clicks=0, style={
-                'color': 'Black', 'fontFamily': 'VW Text', 'fontWeight': 'bold', 'marginTop': '20px',
+                'color': 'Black', 'fontFamily': 'Segoe UI', 'fontWeight': 'bold', 'marginTop': '20px',
                 'display': 'block', 'marginTop': '10px', 'marginLeft': '10px', 'marginRight': 'auto',
                 'padding': '10px 20px', 'fontSize': '14px', 'backgroundColor': '#e0e0e0', 'border': 'none',
                 'borderRadius': '5px', 'cursor': 'pointer', 'boxShadow': '0px 2px 6px rgba(0, 0, 0, 0.25)'}),
@@ -529,12 +529,12 @@ def register(app):
                 html.A("Baixar PNG", href=png_b64, download=f"relatorio_{chapa_input}.png",
                     style={"marginRight": "20px", "fontSize": "16px",
                             "padding": "8px 14px", "backgroundColor": "#e0e0e0",
-                            "color": "Black", "fontFamily": "VW Text", "borderRadius": "6px",
+                            "color": "Black", "fontFamily": "Segoe UI", "borderRadius": "6px",
                             "textDecoration": "none",}),
                 html.A("Baixar PDF", href=pdf_b64, download=f"relatorio_{chapa_input}.pdf",
                     style={"fontSize": "16px", "padding": "8px 14px",
                             "backgroundColor": "#ff0000", "color": "white",
-                            "fontFamily": "VW Text", "borderRadius": "6px",
+                            "fontFamily": "Segoe UI", "borderRadius": "6px",
                             "textDecoration": "none",}),
             ], style={"textAlign": "center", "marginTop": "10px"}),
 
@@ -547,3 +547,6 @@ def register(app):
 
         # >>> devolvemos o conteúdo individual e escondemos a página geral
         return conteudo, {'display': 'block'}, {'display': 'none'}, no_update
+
+
+

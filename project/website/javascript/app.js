@@ -16,7 +16,18 @@ function getLinkByKey(key) {
   return document.querySelector(`.menu-opcoes a[data-key="${key}"]`);
 }
 
+// aplica lazy loading para evitar carga simultânea das imagens
+function enableLazyImages() {
+  document.querySelectorAll('img').forEach((img) => {
+    if (!img.hasAttribute('loading')) img.setAttribute('loading', 'lazy');
+    if (!img.hasAttribute('decoding')) img.setAttribute('decoding', 'async');
+    if (!img.hasAttribute('fetchpriority')) img.setAttribute('fetchpriority', 'low');
+  });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  enableLazyImages();
+
   // ano do rodapé
   document.getElementById('year').textContent = new Date().getFullYear();
 
