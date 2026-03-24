@@ -14,22 +14,6 @@
   flex-wrap:wrap;
   text-align:center;
 ">
-  <img
-    src="project/website/images/logo_white.png"
-    alt="Logo"
-    loading="lazy"
-    decoding="async"
-    style="
-      width:clamp(88px, 12vw, 130px);
-      height:auto;
-      max-height:72px;
-      object-fit:contain;
-      border-radius:10px;
-      opacity:.9;
-      flex:0 0 auto;
-    "
-  />
-
   <h1 style="
     color:#fff;
     margin:0;
@@ -40,7 +24,7 @@
     border-bottom:1px solid rgba(255,255,255,.75);
     max-width:1100px;
   ">
-    Dashboard sobre Monitoramento Comportamental — Empresa
+    Dashboard sobre Monitoramento Comportamental
   </h1>
 </div>
 
@@ -50,7 +34,7 @@
   <img src="https://img.shields.io/badge/Status-Em%20Uso-brightgreen" loading="lazy" decoding="async" />
 </p>
 <p align="center" style="font-size:14px; color:#f0f0f0; margin-top:-6px;">
-  Desenvolvido por <b>Nicholas Birochi</b> — Data Analytics | Empresa
+  Desenvolvido por <b>Nicholas Birochi</b> — Data Analytics
 </p>
 
 ## 📚 Tabela de Conteúdos
@@ -713,7 +697,7 @@ O teste valida:
 - Renderização dos gráficos é progressiva (`dcc.Store` + `dcc.Interval`)
 
 ## 🪄 Estilo Visual e UX
-- Paleta Empresa Data Blue / Gray Neutral  
+- Paleta Data Blue / Gray Neutral  
 - Inspiração em VS Code (cards, bordas e ícones coloridos)  
 - Layout fluido com Grid + Flexbox Dash  
 - Tags coloridas e pontilhadas com rótulos personalizados  
@@ -790,33 +774,12 @@ O teste valida:
 
 ## 📄 Licença
 Projeto interno — uso corporativo.
-<br>© 2025 Empresa / Nicholas Birochi
+<br>© 2025 / Nicholas Birochi
 
 ## 🖋️ Assinatura Profissional
-<!-- Assinatura HTML -->
-<table style="font-family: 'Segoe UI', Arial, sans-serif; border: none; border-collapse: collapse;">
-  <tr>
-    <td style="padding-right: 0px; vertical-align: middle;">
-      <img src="project\website\images\logo_white.png"
-           width="150"
-           loading="lazy"
-           decoding="async"
-           style="vertical-align: middle;"
-           alt="logo_blue">
-    </td>
-    <td style="border-left: 3px solid #ffffffff; padding-left: 10px;">
-      <p style="margin: 0; font-size: 17px; font-weight: 700; color: #ffffffff;">Nicholas Birochi</p>
-      <p style="margin: 2px 0; color: #444; font-size: 14px;">Estagiário de Análise de Dados | Data Analytics</p>
-      <p style="margin: 2px 0; color: #444; font-size: 14px;">Empresa</p>
-      <p style="margin: 6px 0; font-size: 13px;">
-        <a href="mailto:nicholas.birochi@gmail.com" style="color: #0055A5; text-decoration: none; font-weight: 500;">Email</a> &nbsp;•&nbsp;
-        <a href="https://www.linkedin.com/in/nicholas-birochi/" style="color: #0A66C2; text-decoration: none; font-weight: 500;">LinkedIn</a> &nbsp;•&nbsp;
-        <a href="https://github.com/nicholasbirochi" style="color: #181717; text-decoration: none; font-weight: 500;">GitHub</a> &nbsp;•&nbsp;
-        <a href="https://app.rocketseat.com.br/me/nicholas-birochi-1501" style="color: #8257E5; text-decoration: none; font-weight: 500;">Rocketseat</a>
-      </p>
-    </td>
-  </tr>
-</table>
+Nicholas Birochi  
+Estagiário de Análise de Dados | Data Analytics  
+[Email](mailto:nicholas.birochi@gmail.com) • [LinkedIn](https://www.linkedin.com/in/nicholas-birochi/) • [GitHub](https://github.com/nicholasbirochi) • [Rocketseat](https://app.rocketseat.com.br/me/nicholas-birochi-1501)
 
 
 
