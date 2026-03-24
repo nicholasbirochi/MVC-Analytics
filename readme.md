@@ -43,7 +43,7 @@
 </div>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Python-3.11-blue" />
+  <img src="https://img.shields.io/badge/Python-3.14.2-blue" />
   <img src="https://img.shields.io/badge/Dash-2.18-3EB489" />
   <img src="https://img.shields.io/badge/Status-Em%20Uso-brightgreen" />
 </p>
@@ -79,7 +79,7 @@
 </div>
 
 ## 🧾 Resumo Técnico
-- Linguagem: Python 3.11
+- Linguagem: Python 3.14.2
 - Framework: Dash (Plotly + Flask)
 - Arquitetura: MVC + Camada de Serviços
 - Banco: Parquet + SQLite
