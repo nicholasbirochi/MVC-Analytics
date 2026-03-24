@@ -400,10 +400,6 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 │ │ └── 🐍 security_login.py
 │ │
 │ └── 📂 website/
-│   ├── 📂 images/
-│   │ ├── 🖼️ logo_white.png
-│   │ └── 🧊 logo_blue.ico
-│   │
 │   ├── 📂 javascript/
 │   │ ├── ⚡ app.js
 │   │ └── ⚡ login.js

@@ -28,11 +28,51 @@ venv/
 *.zip
 *.7z
 *.tar.gz
+*.rar
+
+# Mídia e binários visuais
 *.ico
 *.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.svg
+*.bmp
+*.tif
+*.tiff
+
+# Documentos e apresentações
+*.doc
+*.docx
+*.ppt
+*.pptx
+
+# Artefatos de build/cache
+dist/
+build/
+site/
+.cache/
+tmp/
+temp/
+*.tmp
+*.temp
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+node_modules/
+.npm/
+.pnpm-store/
+.yarn/
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+Desktop.ini
 
 # Pasta específica do projeto
 Códigos Extras/Documentação/Análise Tempo de Casa/resultado.png
+project/website/images/
 
 # Arquivos de configuração sensíveis
 .env
