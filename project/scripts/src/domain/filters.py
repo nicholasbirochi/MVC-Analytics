@@ -19,6 +19,7 @@ import pandas as pd
 
 from ..core.config import AREAS_FORA, get_settings
 from ..core import repo_global as repo
+from .cargo import normalize_cargo_columns
 from .periods import LT_MONTHS, periodo_limites
 from .tenure import carregar_adm_dem_cache, sobrepoe_periodo
 
@@ -288,6 +289,7 @@ def _agrupar_media_colaboradores(df_base: pd.DataFrame) -> pd.DataFrame:
     out["Dias Monitorados"] = (
         pd.to_numeric(out["Dias Monitorados"], errors="coerce").fillna(0.0).astype(int)
     )
+    out = normalize_cargo_columns(out, cargo_col="Cargo", fallback_col="Cargo Especifico")
     return out
 
 
@@ -438,6 +440,12 @@ def carregar_media_colaboradores(
     df_media = aplicar_filtro_por_area(df_media, area_selecionada, subarea_selecionada, her_df)
     if "Cargo Especifico" not in df_media.columns and "Cargo" in df_media.columns:
         df_media["Cargo Especifico"] = df_media["Cargo"]
+    if "Cargo" in df_media.columns:
+        df_media = normalize_cargo_columns(
+            df_media,
+            cargo_col="Cargo",
+            fallback_col="Cargo Especifico",
+        )
     if "Nome" in df_media.columns:
         df_media = df_media.sort_values("Nome")
 

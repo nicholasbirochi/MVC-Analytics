@@ -39,6 +39,7 @@ from ..domain.periods import (
     periodo_limites,
 )
 from ..domain.filters import slug
+from ..domain.cargo import normalize_cargo_series
 from ..ui.figures import (
     grafico_heatmap_encontros_men,
     grafico_heatmap_encontros_exec,
@@ -412,9 +413,9 @@ def register(app):
 
         # --- TÍTULO amigável por modo ---
         periodo = f"{m0}/{y0} a {m1}/{y1}"
-        titulo_men = (f"Almoços e Saídas — Mensalistas e Horistas × Executivos ({periodo})"
+        titulo_men = (f"Almoços e Saídas — Mensalistas, Horistas e Terceiros × Executivos ({periodo})"
                       if is_almoco else
-                      f"Presença Percentual de Mensalistas e Horistas com os seus Executivos ({periodo})")
+                      f"Presença Percentual de Mensalistas, Horistas e Terceiros com os seus Executivos ({periodo})")
         titulo_exec = (f"Almoços e Saídas — Executivos × Executivos ({periodo})"
                        if is_almoco else
                        f"Presença Percentual entre Executivos ({periodo})")
@@ -452,22 +453,7 @@ def register(app):
 
                     if "Cargo" in df_net.columns:
                         try:
-                            c = df_net["Cargo"].astype(str).str.strip()
-                            cu = c.str.upper()
-                            df_net["Cargo"] = (
-                                pd.Series(pd.NA, index=df_net.index, dtype="object")
-                                .where(False, other=cu.str[:1])
-                            )
-                            df_net["Cargo"] = df_net["Cargo"].where(
-                                ~(cu.str.startswith("E") | cu.str.contains("EXEC")), "E"
-                            )
-                            df_net["Cargo"] = df_net["Cargo"].where(
-                                ~(cu.str.startswith("M") | cu.str.contains("MENS")), "M"
-                            )
-                            df_net["Cargo"] = df_net["Cargo"].where(
-                                ~(cu.str.startswith("H") | cu.str.contains("HOR")), "H"
-                            )
-                            df_net["Cargo"] = df_net["Cargo"].astype(str)
+                            df_net["Cargo"] = normalize_cargo_series(df_net["Cargo"])
                         except Exception:
                             df_net["Cargo"] = df_net["Cargo"].astype(str)
 
@@ -488,7 +474,7 @@ def register(app):
 
                     try:
                         titulo_men_teia = (
-                            f"Pentágonos de relacionamento (Executivos × Mensalistas e Horistas) ({periodo})"
+                            f"Pentágonos de relacionamento (Executivos × Mensalistas, Horistas e Terceiros) ({periodo})"
                         )
                         fig_men_full = grafico_pentagonos_rel_exec_multiplos(
                             df_net,

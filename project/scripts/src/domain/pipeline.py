@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 
 from ..core.config import Settings, get_settings
+from .cargo import normalize_cargo_columns
 
 _REQUIRED_VIEWS = {
     "vw_colaboradores",
@@ -278,6 +279,12 @@ def load_sources(config: Settings | None = None) -> dict[str, pd.DataFrame]:
 
     if "Área" not in df_colaboradores.columns and "Area" in df_colaboradores.columns:
         df_colaboradores = df_colaboradores.rename(columns={"Area": "Área"})
+    if "Cargo" in df_colaboradores.columns:
+        df_colaboradores = normalize_cargo_columns(
+            df_colaboradores,
+            cargo_col="Cargo",
+            fallback_col="Cargo Especifico",
+        )
 
     return {
         "df_colaboradores": df_colaboradores,
@@ -350,6 +357,12 @@ def build_facts(
     if "Cargo" not in df_semana_merged.columns and "Cargo Especifico" in df_semana_merged.columns:
         df_semana_merged = df_semana_merged.assign(
             Cargo=df_semana_merged["Cargo Especifico"]
+        )
+    if "Cargo" in df_semana_merged.columns:
+        df_semana_merged = normalize_cargo_columns(
+            df_semana_merged,
+            cargo_col="Cargo",
+            fallback_col="Cargo Especifico",
         )
 
     return {
@@ -993,6 +1006,8 @@ def build_dataframe_diario_area_sql(
         return pd.DataFrame(columns=empty_cols)
 
     df["Cadastro"] = df["Cadastro"].astype(str)
+    if "Cargo" in df.columns:
+        df = normalize_cargo_columns(df, cargo_col="Cargo", fallback_col=None)
     df["Contagem Presença"] = (
         pd.to_numeric(df["Contagem Presença"], errors="coerce").fillna(0).astype(int)
     )
@@ -1100,6 +1115,8 @@ def build_dataframe_almoco_area_sql(
         return pd.DataFrame(columns=empty_cols)
 
     df["Cadastro"] = df["Cadastro"].astype(str)
+    if "Cargo" in df.columns:
+        df = normalize_cargo_columns(df, cargo_col="Cargo", fallback_col=None)
     df["Contagem Presença"] = (
         pd.to_numeric(df["Contagem Presença"], errors="coerce").fillna(0).astype(int)
     )

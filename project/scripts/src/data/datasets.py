@@ -21,6 +21,7 @@ from ..core.config import (
     Settings,
     get_settings,
 )
+from ..domain.cargo import normalize_cargo_columns
 from ..domain.pipeline import run_pipeline
 
 ParquetLoader = Callable[[str | bytes | Path], pd.DataFrame]
@@ -61,6 +62,8 @@ def _normalize_semana(df: pd.DataFrame) -> pd.DataFrame:
 
     if "Cargo" not in df.columns and "Cargo Especifico" in df.columns:
         df = df.assign(Cargo=df["Cargo Especifico"])
+    if "Cargo" in df.columns:
+        df = normalize_cargo_columns(df, cargo_col="Cargo", fallback_col="Cargo Especifico")
 
     return df
 
@@ -75,12 +78,16 @@ def _normalize_datas(df: pd.DataFrame) -> pd.DataFrame:
 def _normalize_df_ativos(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     _normalize_cadastro(df)
+    if "Cargo" in df.columns:
+        df = normalize_cargo_columns(df, cargo_col="Cargo", fallback_col="Cargo Especifico")
     return df
 
 
 def _normalize_df_desligados(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     _normalize_cadastro(df)
+    if "Cargo" in df.columns:
+        df = normalize_cargo_columns(df, cargo_col="Cargo", fallback_col="Cargo Especifico")
     return df
 
 

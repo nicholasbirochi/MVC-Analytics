@@ -70,6 +70,7 @@ def _sanitize_object_columns(df: pd.DataFrame) -> pd.DataFrame:
                 cleaned[col] = cleaned[col].astype(str)
     return cleaned
 
+from ..domain.cargo import normalize_cargo_series
 from ..domain.copresenca import calcular_ordem_heatmap
 from ..domain.tenure import carregar_adm_dem_cache, tempo_de_casa_str
 
@@ -226,7 +227,7 @@ def _construir_encontros_exec_men(df_full: pd.DataFrame) -> pd.DataFrame:
         df["Planta"] = [frozenset()] * len(df)
 
     df["Cadastro"] = df["Cadastro"].astype(str)
-    df["Cargo"] = df["Cargo"].astype(str).str.upper().str[:1]
+    df["Cargo"] = normalize_cargo_series(df["Cargo"])
 
     pares: list[tuple[pd.Timestamp, str, str]] = []
     for dia, grupo in df.groupby("Data"):
@@ -648,22 +649,8 @@ def grafico_pentagonos_rel_exec_multiplos(
 
     df_rel["Cadastro"] = df_rel["Cadastro"].map(_safe_hashable).astype(str)
 
-    # normaliza Cargo para E/M
-    c = df_rel["Cargo"].astype(str).str.strip()
-    cu = c.str.upper()
-    df_rel["Cargo"] = np.where(
-        cu.str.startswith("E") | cu.str.contains("EXEC"),
-        "E",
-        np.where(
-            cu.str.startswith("M") | cu.str.contains("MENS"),
-            "M",
-            np.where(
-                cu.str.startswith("H") | cu.str.contains("HOR"),
-                "H",
-                cu.str[:1]
-            )
-        )
-    )
+    # normaliza Cargo para E/M/H (com terceiros tratados como H)
+    df_rel["Cargo"] = normalize_cargo_series(df_rel["Cargo"])
 
     if "Planta" not in df_rel.columns:
         df_rel["Planta"] = "X"
@@ -704,7 +691,7 @@ def grafico_pentagonos_rel_exec_multiplos(
                 for _, r in meta_src.iterrows()}
 
     exec_ids = sorted(meta_src.loc[meta_src["Cargo"].eq("E"), "Cadastro"].unique().tolist())
-    men_ids = sorted(meta_src.loc[meta_src["Cargo"].isin(["M","H"]), "Cadastro"].unique().tolist())  # Mensalistas + Horistas
+    men_ids = sorted(meta_src.loc[meta_src["Cargo"].isin(["M", "H"]), "Cadastro"].unique().tolist())  # Mensalistas + Horistas/Terceiros
 
     if not exec_ids:
         return _raise_or_fig("Nenhum executivo (Cargo=E) encontrado no filtro atual.")
@@ -1003,7 +990,7 @@ def _construir_encontros_exec_exec(df_full: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(columns=["Data", "ExecA", "ExecB"])
 
     df["Cadastro"] = df["Cadastro"].astype(str)
-    df["Cargo"] = df["Cargo"].astype(str).str.upper().str[:1]
+    df["Cargo"] = normalize_cargo_series(df["Cargo"])
     df = df[df["Cargo"].eq("E")].copy()
     if df.empty:
         return pd.DataFrame(columns=["Data", "ExecA", "ExecB"])
@@ -1214,14 +1201,8 @@ def grafico_pentagonos_exec_exec_multiplos(
 
     df_rel["Cadastro"] = df_rel["Cadastro"].map(_safe_hashable).astype(str)
 
-    # normaliza Cargo para E/M
-    c = df_rel["Cargo"].astype(str).str.strip()
-    cu = c.str.upper()
-    df_rel["Cargo"] = np.where(
-        cu.str.startswith("E") | cu.str.contains("EXEC"),
-        "E",
-        np.where(cu.str.startswith("M") | cu.str.contains("MENS"), "M", cu.str[:1])
-    )
+    # normaliza Cargo para E/M/H (com terceiros tratados como H)
+    df_rel["Cargo"] = normalize_cargo_series(df_rel["Cargo"])
 
     # apenas executivos
     df_rel = df_rel[df_rel["Cargo"].eq("E")].copy()
@@ -1873,7 +1854,7 @@ def grafico_rede_encontros_exec(
         if col not in dfp.columns:
             return _final(fig, "Base incompleta para montar a teia")
     dfp["Cadastro"] = dfp["Cadastro"].astype(str)
-    dfp["Cargo"] = dfp["Cargo"].astype(str).str.upper().str[:1]
+    dfp["Cargo"] = normalize_cargo_series(dfp["Cargo"])
     if "Contagem Presença" not in dfp.columns:
         dfp["Contagem Presença"] = 1
     if "Planta" not in dfp.columns:
@@ -2125,7 +2106,7 @@ def grafico_heatmap_encontros_exec(
     if "Cadastro" in dfp.columns:
         dfp["Cadastro"] = dfp["Cadastro"].astype(str)
     if "Cargo" in dfp.columns:
-        dfp["Cargo"] = dfp["Cargo"].astype(str)
+        dfp["Cargo"] = normalize_cargo_series(dfp["Cargo"])
 
     dfp["Data"] = pd.to_datetime(dfp["Data"], errors="coerce")
     dfp = dfp.dropna(subset=["Data"])

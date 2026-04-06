@@ -53,6 +53,7 @@ from ..domain.exports import (
     calcular_percentual_presenca,
 )
 from ..domain.copresenca import calcular_ordem_heatmap
+from ..domain.cargo import HORISTA_GROUP_LABEL, normalize_cargo_columns
 from ..ui.figures import (
     grafico_heatmap_encontros_men,
     grafico_heatmap_encontros_exec,
@@ -83,13 +84,20 @@ def _media_colaboradores(
     subarea_selecionada,
     periodo_idx,
 ) -> pd.DataFrame:
-    return carregar_media_colaboradores(
+    media_df = carregar_media_colaboradores(
         df_desligados=df_desligados,
         viajam=viajam,
         area_selecionada=area_selecionada,
         subarea_selecionada=subarea_selecionada,
         periodo_idx=periodo_idx,
     )
+    if "Cargo" in media_df.columns:
+        media_df = normalize_cargo_columns(
+            media_df,
+            cargo_col="Cargo",
+            fallback_col="Cargo Especifico",
+        )
+    return media_df
 
 
 def _media_ponderada(df: pd.DataFrame, cargo: str | None = None) -> float:
@@ -554,7 +562,7 @@ def register(app):
             return figura_vazia_linha("Sem dados para o período e filtros selecionados.")
 
         fig_cargo = go.Figure()
-        for cod, nome, cor in [('E', 'Executivos', "#1574b3"), ('M', 'Mensalistas', '#7cc3e9'), ('H', 'Horistas', '#3fbe81')]:
+        for cod, nome, cor in [('E', 'Executivos', "#1574b3"), ('M', 'Mensalistas', '#7cc3e9'), ('H', HORISTA_GROUP_LABEL, '#3fbe81')]:
             df_aux = media_presenca_detalhada[media_presenca_detalhada['Cargo'] == cod].copy()
             if df_aux.empty:
                 continue
@@ -726,13 +734,13 @@ def register(app):
 
         colab_items = [
             ("Total de Colaboradores:", total_colaboradores),
-            ("Horistas:", total_horistas),
+            (f"{HORISTA_GROUP_LABEL}:", total_horistas),
             ("Mensalistas:", total_mensalistas),
             ("Executivos:", total_executivos),
         ]
         presenca_items = [
             ("Total:", media_presenca_geral),
-            ("Horistas:", media_presenca_horistas),
+            (f"{HORISTA_GROUP_LABEL}:", media_presenca_horistas),
             ("Mensalistas:", media_presenca_mensalistas),
             ("Executivos:", media_presenca_executivos),
         ]
@@ -837,7 +845,7 @@ def register(app):
                             html.Th('Departamento', style=th_style('left', '0%')),
                             html.Th('Executivos', style=th_style('left', '0%')),
                             html.Th('Mensalistas', style=th_style('left', '0%')),
-                            html.Th('Horistas', style=th_style('left', '0%')),
+                            html.Th(HORISTA_GROUP_LABEL, style=th_style('left', '0%')),
                             html.Th('Total', style=th_style('left', '0%')),
                             html.Th('Média Dia', style=th_style('left', '0%')),
                             html.Th('Média %', style=th_style('left', '0%')),
