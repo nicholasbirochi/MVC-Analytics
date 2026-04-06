@@ -394,11 +394,13 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 │ │ │ ├── 📂 domain/
 │ │ │ │ ├── 🐍 builders.py
 │ │ │ │ ├── 🐍 cache_utils.py
+│ │ │ │ ├── 🐍 cargo.py
 │ │ │ │ ├── 🐍 copresenca.py
 │ │ │ │ ├── 🐍 exports.py
 │ │ │ │ ├── 🐍 filters.py
 │ │ │ │ ├── 🐍 gptw.py
 │ │ │ │ ├── 🐍 periods.py
+│ │ │ │ ├── 🐍 pipeline.py
 │ │ │ │ └── 🐍 tenure.py
 │ │ │ │
 │ │ │ ├── 📂 ui/
