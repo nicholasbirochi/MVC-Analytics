@@ -53,6 +53,7 @@ from ..domain.exports import (
     calcular_percentual_presenca,
 )
 from ..domain.copresenca import calcular_ordem_heatmap
+from ..domain.cargo import HORISTA_LABEL, TERCEIRO_LABEL, normalize_cargo_columns
 from ..ui.figures import (
     grafico_heatmap_encontros_men,
     grafico_heatmap_encontros_exec,
@@ -83,13 +84,20 @@ def _media_colaboradores(
     subarea_selecionada,
     periodo_idx,
 ) -> pd.DataFrame:
-    return carregar_media_colaboradores(
+    media_df = carregar_media_colaboradores(
         df_desligados=df_desligados,
         viajam=viajam,
         area_selecionada=area_selecionada,
         subarea_selecionada=subarea_selecionada,
         periodo_idx=periodo_idx,
     )
+    if "Cargo" in media_df.columns:
+        media_df = normalize_cargo_columns(
+            media_df,
+            cargo_col="Cargo",
+            fallback_col="Cargo Especifico",
+        )
+    return media_df
 
 
 def _media_ponderada(df: pd.DataFrame, cargo: str | None = None) -> float:
@@ -554,7 +562,12 @@ def register(app):
             return figura_vazia_linha("Sem dados para o período e filtros selecionados.")
 
         fig_cargo = go.Figure()
-        for cod, nome, cor in [('E', 'Executivos', "#1574b3"), ('M', 'Mensalistas', '#7cc3e9'), ('H', 'Horistas', '#3fbe81')]:
+        for cod, nome, cor in [
+            ('E', 'Executivos', "#1574b3"),
+            ('M', 'Mensalistas', '#7cc3e9'),
+            ('H', HORISTA_LABEL, '#3fbe81'),
+            ('T', TERCEIRO_LABEL, '#f4a259'),
+        ]:
             df_aux = media_presenca_detalhada[media_presenca_detalhada['Cargo'] == cod].copy()
             if df_aux.empty:
                 continue
@@ -692,10 +705,12 @@ def register(app):
         total_mensalistas = media_df[media_df['Cargo'] == 'M']['Cadastro'].nunique() if 'Cargo' in media_df.columns else 0
         total_executivos = media_df[media_df['Cargo'] == 'E']['Cadastro'].nunique() if 'Cargo' in media_df.columns else 0
         total_horistas = media_df[media_df['Cargo'] == 'H']['Cadastro'].nunique() if 'Cargo' in media_df.columns else 0
+        total_terceiros = media_df[media_df['Cargo'] == 'T']['Cadastro'].nunique() if 'Cargo' in media_df.columns else 0
         media_presenca_geral = _media_ponderada(media_df)
         media_presenca_mensalistas = _media_ponderada(media_df, cargo='M')
         media_presenca_executivos = _media_ponderada(media_df, cargo='E')
         media_presenca_horistas = _media_ponderada(media_df, cargo='H')
+        media_presenca_terceiros = _media_ponderada(media_df, cargo='T')
 
         def _to_number(value):
             if value is None:
@@ -726,13 +741,15 @@ def register(app):
 
         colab_items = [
             ("Total de Colaboradores:", total_colaboradores),
-            ("Horistas:", total_horistas),
+            (f"{HORISTA_LABEL}:", total_horistas),
+            (f"{TERCEIRO_LABEL}:", total_terceiros),
             ("Mensalistas:", total_mensalistas),
             ("Executivos:", total_executivos),
         ]
         presenca_items = [
             ("Total:", media_presenca_geral),
-            ("Horistas:", media_presenca_horistas),
+            (f"{HORISTA_LABEL}:", media_presenca_horistas),
+            (f"{TERCEIRO_LABEL}:", media_presenca_terceiros),
             ("Mensalistas:", media_presenca_mensalistas),
             ("Executivos:", media_presenca_executivos),
         ]
@@ -792,6 +809,7 @@ def register(app):
             Qtd_Mensalistas=('Cargo', lambda x: (x == 'M').sum()),
             Qtd_Executivos=('Cargo', lambda x: (x == 'E').sum()),
             Qtd_Horistas=('Cargo', lambda x: (x == 'H').sum()),
+            Qtd_Terceiros=('Cargo', lambda x: (x == 'T').sum()),
             Media_Dia=('Média Dia', 'mean')
         ).reset_index()
         resumo_area['Média Dia'] = resumo_area['Media_Dia'].round(2)
@@ -837,7 +855,8 @@ def register(app):
                             html.Th('Departamento', style=th_style('left', '0%')),
                             html.Th('Executivos', style=th_style('left', '0%')),
                             html.Th('Mensalistas', style=th_style('left', '0%')),
-                            html.Th('Horistas', style=th_style('left', '0%')),
+                            html.Th(HORISTA_LABEL, style=th_style('left', '0%')),
+                            html.Th(TERCEIRO_LABEL, style=th_style('left', '0%')),
                             html.Th('Total', style=th_style('left', '0%')),
                             html.Th('Média Dia', style=th_style('left', '0%')),
                             html.Th('Média %', style=th_style('left', '0%')),
@@ -854,6 +873,8 @@ def register(app):
                             html.Td(_td_link_area(row['Qtd_Mensalistas'], row['Área']),
                                     style=td_style('left', '0%')),
                             html.Td(_td_link_area(row['Qtd_Horistas'], row['Área']),
+                                    style=td_style('left', '0%')),
+                            html.Td(_td_link_area(row['Qtd_Terceiros'], row['Área']),
                                     style=td_style('left', '0%')),
                             html.Td(_td_link_area(row['Qtd_Pessoas'], row['Área']),
                                     style=td_style('left', '0%')),
