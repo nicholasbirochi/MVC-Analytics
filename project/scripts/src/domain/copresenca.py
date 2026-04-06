@@ -67,7 +67,7 @@ def calcular_ordem_heatmap(df_full: pd.DataFrame) -> tuple[list[str], list[str]]
         return len(tokens), tuple(tokens)
 
     cad_M = sorted(
-        meta.index[meta["Cargo"].isin(["M", "H"])],
+        meta.index[meta["Cargo"].isin(["M", "H", "T"])],
         key=lambda c: (
             _akey(meta.loc[c, "ÁreaNorm"]),
             str(meta.loc[c, "Nome"]).lower(),

@@ -649,7 +649,7 @@ def grafico_pentagonos_rel_exec_multiplos(
 
     df_rel["Cadastro"] = df_rel["Cadastro"].map(_safe_hashable).astype(str)
 
-    # normaliza Cargo para E/M/H (com terceiros tratados como H)
+    # normaliza Cargo para E/M/H/T (terceiros como tipo proprio: T)
     df_rel["Cargo"] = normalize_cargo_series(df_rel["Cargo"])
 
     if "Planta" not in df_rel.columns:
@@ -691,7 +691,9 @@ def grafico_pentagonos_rel_exec_multiplos(
                 for _, r in meta_src.iterrows()}
 
     exec_ids = sorted(meta_src.loc[meta_src["Cargo"].eq("E"), "Cadastro"].unique().tolist())
-    men_ids = sorted(meta_src.loc[meta_src["Cargo"].isin(["M", "H"]), "Cadastro"].unique().tolist())  # Mensalistas + Horistas/Terceiros
+    men_ids = sorted(
+        meta_src.loc[meta_src["Cargo"].isin(["M", "H", "T"]), "Cadastro"].unique().tolist()
+    )  # Mensalistas, Horistas e Terceiros
 
     if not exec_ids:
         return _raise_or_fig("Nenhum executivo (Cargo=E) encontrado no filtro atual.")
@@ -1201,7 +1203,7 @@ def grafico_pentagonos_exec_exec_multiplos(
 
     df_rel["Cadastro"] = df_rel["Cadastro"].map(_safe_hashable).astype(str)
 
-    # normaliza Cargo para E/M/H (com terceiros tratados como H)
+    # normaliza Cargo para E/M/H/T (terceiros como tipo proprio: T)
     df_rel["Cargo"] = normalize_cargo_series(df_rel["Cargo"])
 
     # apenas executivos
@@ -1604,7 +1606,7 @@ def grafico_heatmap_encontros_men(
         se = str(area_e).replace("/", "-").lower().strip()
         return bool(se) and sm.startswith(se)
 
-    mask_m = meta["Cargo"].astype(str).isin(["M", "H"])
+    mask_m = meta["Cargo"].astype(str).isin(["M", "H", "T"])
     mask_e = meta["Cargo"].astype(str).eq("E")
 
     cad_m = sorted(

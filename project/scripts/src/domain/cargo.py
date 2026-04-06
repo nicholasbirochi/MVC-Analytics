@@ -4,14 +4,14 @@ from __future__ import annotations
 import pandas as pd
 
 
-HORISTA_GROUP_LABEL = "Horistas + Terceiros"
+HORISTA_LABEL = "Horistas"
+TERCEIRO_LABEL = "Terceiros"
+# Compatibilidade retroativa para imports existentes.
+HORISTA_GROUP_LABEL = HORISTA_LABEL
 
 
 def normalize_cargo_series(series: pd.Series) -> pd.Series:
-    """Normaliza codigos de cargo para E/M/H.
-
-    Regra adicional: terceiros sao tratados como horistas (H).
-    """
+    """Normaliza codigos de cargo para E/M/H/T."""
     src = series.astype("string").fillna("").str.strip()
     upper = src.str.upper()
     out = upper.str[:1]
@@ -22,18 +22,21 @@ def normalize_cargo_series(series: pd.Series) -> pd.Series:
     horista_like = (
         upper.str.startswith("H")
         | upper.str.contains("HOR", na=False)
-        | upper.str.startswith("T")
+    )
+    terceiro_like = (
+        upper.str.startswith("T")
         | upper.str.contains("TERC", na=False)
         | upper.str.contains("THIRD", na=False)
         | upper.str.contains("OUTSOUR", na=False)
         | upper.str.contains("3R", na=False)
     )
     out = out.where(~horista_like, "H")
+    out = out.where(~terceiro_like, "T")
     return out.fillna("").astype(str)
 
 
 def normalize_cargo_code(value: object) -> str:
-    """Normaliza um unico valor de cargo para E/M/H."""
+    """Normaliza um unico valor de cargo para E/M/H/T."""
     return normalize_cargo_series(pd.Series([value], dtype="string")).iloc[0]
 
 
@@ -59,3 +62,8 @@ def normalize_cargo_columns(
 def horista_like_mask(series: pd.Series) -> pd.Series:
     """Retorna mascara para cargos equivalentes a horista."""
     return normalize_cargo_series(series).eq("H")
+
+
+def terceiro_like_mask(series: pd.Series) -> pd.Series:
+    """Retorna mascara para cargos equivalentes a terceiros."""
+    return normalize_cargo_series(series).eq("T")
