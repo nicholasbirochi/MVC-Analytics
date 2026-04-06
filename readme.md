@@ -74,7 +74,7 @@
 
 ## 💼 Sobre o Projeto
 
-Dashboard corporativo construído com **Dash (Plotly + Flask)** para monitorar a presença semanal de colaboradores (Mensalistas e Executivos), com visão geral, relatórios por área e relatórios individuais — incluindo **validação de co-presença na mesma planta**, sistema de **tags interativas** e **carregamento progressivo de gráficos**.
+Dashboard interno em Dash para acompanhar presença semanal e consultar recortes por área e por colaborador. Os relatórios combinam os registros de presença com as regras de co-presença na mesma planta, mantendo filtros, tabelas e gráficos na mesma interface.
 
 ## ✨ Funcionalidades Principais
 
@@ -769,13 +769,10 @@ O teste valida:
 - Prefira `@cache.memoize()` em cálculos pesados
 
 ## 📄 Licença
-Projeto interno — uso corporativo.
+Projeto interno — uso corporativo. Condições registradas em [license](license).
 <br>© 2025 / Nicholas Birochi
 
 ## 🖋️ Assinatura Profissional
 Nicholas Birochi  
 Estagiário de Análise de Dados | Data Analytics  
 [Email](mailto:nicholas.birochi@gmail.com) • [LinkedIn](https://www.linkedin.com/in/nicholas-birochi/) • [GitHub](https://github.com/nicholasbirochi) • [Rocketseat](https://app.rocketseat.com.br/me/nicholas-birochi-1501)
-
-
-
