@@ -22,6 +22,7 @@ from plotly.colors import sample_colorscale
 from plotly.subplots import make_subplots
 
 from ..core import repo_global as repo
+from ..domain.cargo import normalize_cargo_series
 
 
 def _safe_hashable(value):
@@ -648,22 +649,8 @@ def grafico_pentagonos_rel_exec_multiplos(
 
     df_rel["Cadastro"] = df_rel["Cadastro"].map(_safe_hashable).astype(str)
 
-    # normaliza Cargo para E/M
-    c = df_rel["Cargo"].astype(str).str.strip()
-    cu = c.str.upper()
-    df_rel["Cargo"] = np.where(
-        cu.str.startswith("E") | cu.str.contains("EXEC"),
-        "E",
-        np.where(
-            cu.str.startswith("M") | cu.str.contains("MENS"),
-            "M",
-            np.where(
-                cu.str.startswith("H") | cu.str.contains("HOR"),
-                "H",
-                cu.str[:1]
-            )
-        )
-    )
+    # normaliza Cargo para E/M/H/T (terceiros como tipo proprio: T)
+    df_rel["Cargo"] = normalize_cargo_series(df_rel["Cargo"])
 
     if "Planta" not in df_rel.columns:
         df_rel["Planta"] = "X"
@@ -704,7 +691,9 @@ def grafico_pentagonos_rel_exec_multiplos(
                 for _, r in meta_src.iterrows()}
 
     exec_ids = sorted(meta_src.loc[meta_src["Cargo"].eq("E"), "Cadastro"].unique().tolist())
-    men_ids = sorted(meta_src.loc[meta_src["Cargo"].isin(["M","H"]), "Cadastro"].unique().tolist())  # Mensalistas + Horistas
+    men_ids = sorted(
+        meta_src.loc[meta_src["Cargo"].isin(["M", "H", "T"]), "Cadastro"].unique().tolist()
+    )  # Mensalistas, Horistas e Terceiros
 
     if not exec_ids:
         return _raise_or_fig("Nenhum executivo (Cargo=E) encontrado no filtro atual.")
@@ -1214,14 +1203,8 @@ def grafico_pentagonos_exec_exec_multiplos(
 
     df_rel["Cadastro"] = df_rel["Cadastro"].map(_safe_hashable).astype(str)
 
-    # normaliza Cargo para E/M
-    c = df_rel["Cargo"].astype(str).str.strip()
-    cu = c.str.upper()
-    df_rel["Cargo"] = np.where(
-        cu.str.startswith("E") | cu.str.contains("EXEC"),
-        "E",
-        np.where(cu.str.startswith("M") | cu.str.contains("MENS"), "M", cu.str[:1])
-    )
+    # normaliza Cargo para E/M/H/T (terceiros como tipo proprio: T)
+    df_rel["Cargo"] = normalize_cargo_series(df_rel["Cargo"])
 
     # apenas executivos
     df_rel = df_rel[df_rel["Cargo"].eq("E")].copy()
@@ -1623,7 +1606,7 @@ def grafico_heatmap_encontros_men(
         se = str(area_e).replace("/", "-").lower().strip()
         return bool(se) and sm.startswith(se)
 
-    mask_m = meta["Cargo"].astype(str).isin(["M", "H"])
+    mask_m = meta["Cargo"].astype(str).isin(["M", "H", "T"])
     mask_e = meta["Cargo"].astype(str).eq("E")
 
     cad_m = sorted(

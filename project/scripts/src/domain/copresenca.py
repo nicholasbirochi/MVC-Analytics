@@ -14,6 +14,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from .cargo import normalize_cargo_series
+
 
 def calcular_ordem_heatmap(df_full: pd.DataFrame) -> tuple[list[str], list[str]]:
     """Reproduz a ordenação aplicada aos heatmaps de co-presença."""
@@ -51,6 +53,7 @@ def calcular_ordem_heatmap(df_full: pd.DataFrame) -> tuple[list[str], list[str]]
         meta = meta.rename(columns={area_col: "ÁreaNorm"})
     else:
         meta["ÁreaNorm"] = ""
+    meta["Cargo"] = normalize_cargo_series(meta["Cargo"])
 
     def _tok(texto: str) -> list[str]:
         return [
@@ -64,7 +67,7 @@ def calcular_ordem_heatmap(df_full: pd.DataFrame) -> tuple[list[str], list[str]]
         return len(tokens), tuple(tokens)
 
     cad_M = sorted(
-        meta.index[meta["Cargo"] == "M"],
+        meta.index[meta["Cargo"].isin(["M", "H", "T"])],
         key=lambda c: (
             _akey(meta.loc[c, "ÁreaNorm"]),
             str(meta.loc[c, "Nome"]).lower(),
