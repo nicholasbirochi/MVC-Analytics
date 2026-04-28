@@ -13,7 +13,14 @@ from __future__ import annotations
 from dash import Input, Output, State, dcc, html, no_update
 
 import base64
+import io
+import importlib.util
+import os
+import re
+import textwrap
+import unicodedata
 from collections import defaultdict
+from pathlib import Path
 from urllib.parse import parse_qs, unquote
 import pandas as pd
 import numpy as np
@@ -24,13 +31,13 @@ from matplotlib.colors import ListedColormap
 from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
 import matplotlib.patheffects as patheffects
+from matplotlib.backends.backend_pdf import PdfPages
 
 from ..core.repo_global import (
     df_semana_merged,
     df_datas,
 )
 from ..domain.exports import (
-    fig_to_base64,
     fig_to_bytes,
     gerar_relatorio_formatado,
     calcular_percentual_presenca,
@@ -57,6 +64,485 @@ estilo_exibir = ESTILO_EXIBIR
 estilo_oculto = ESTILO_OCULTO
 ordenacao_dias = ORDENACAO_DIAS
 dias_portugues = DIAS_PORTUGUES
+
+CONSULTA_BASE_URL_DEFAULT = "https://vwbransvprve1.sa.vwg/recursos.humanos.consultapessoal/default.htm"
+CONSULTA_COR_DESTAQUE = "#123B82"
+CONSULTA_COR_CAMPO = "#D4E1F2"
+CONSULTA_COR_VALOR = "#F1EAD3"
+_CONSULTA_RELATORIO_MODULE = None
+_CONSULTA_RELATORIO_MODULE_ATTEMPTED = False
+
+
+def _normalize_ascii_upper(value: object) -> str:
+    txt = str(value or "").strip()
+    if not txt:
+        return ""
+    txt = unicodedata.normalize("NFD", txt)
+    txt = "".join(ch for ch in txt if unicodedata.category(ch) != "Mn")
+    return txt.upper()
+
+
+def _normalize_cadastro_key(value: object) -> str:
+    dig = re.sub(r"\D+", "", str(value or "").strip())
+    if dig.startswith("00") and (len(dig) > 2):
+        dig = dig[2:]
+    return dig or str(value or "").strip()
+
+
+def _split_items_for_display(txt: str) -> list[str]:
+    raw = str(txt or "").replace("\r", "\n")
+    return [p.strip() for p in re.split(r"\s*(?:\||;|\n)\s*", raw) if p and p.strip()]
+
+
+def _first_existing_path(candidates: list[str]) -> str:
+    for cand in candidates:
+        p = str(cand or "").strip()
+        if p and Path(p).exists():
+            return p
+    return ""
+
+
+def _find_repo_root(start: Path) -> Path:
+    cur = Path(start).resolve()
+    for cand in [cur, *cur.parents]:
+        if (cand / "requirements.txt").exists():
+            return cand
+    return cur
+
+
+def _load_relatorio_consulta_module():
+    global _CONSULTA_RELATORIO_MODULE
+    global _CONSULTA_RELATORIO_MODULE_ATTEMPTED
+
+    if _CONSULTA_RELATORIO_MODULE_ATTEMPTED:
+        return _CONSULTA_RELATORIO_MODULE
+    _CONSULTA_RELATORIO_MODULE_ATTEMPTED = True
+
+    here = Path(__file__).resolve()
+    repo_root = _find_repo_root(here.parent)
+    candidates = [
+        repo_root
+        / "Códigos Extras"
+        / "Documentação"
+        / "Irregularidade de 999 como Trajeto"
+        / "gerar_relatorios_por_pessoa.py",
+        repo_root
+        / "Códigos Extras"
+        / "Documentação"
+        / "Analisando Irregularidades dos Registros"
+        / "irregularidade_999_como_trajeto"
+        / "gerar_relatorios_por_pessoa.py",
+    ]
+    mod_path = next((p for p in candidates if p.exists()), None)
+    if mod_path is None:
+        return None
+
+    try:
+        spec = importlib.util.spec_from_file_location("irreg999_consulta_bridge", str(mod_path))
+        if spec is None or spec.loader is None:
+            return None
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _CONSULTA_RELATORIO_MODULE = mod
+        return _CONSULTA_RELATORIO_MODULE
+    except Exception:
+        return None
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = str(os.getenv(name, "")).strip().lower()
+    if not raw:
+        return bool(default)
+    return raw in {"1", "true", "t", "yes", "y", "on", "sim"}
+
+
+def _consulta_info_por_cadastro(chapa: str, nome: str) -> tuple[dict, object | None]:
+    out = {
+        "cadastro": _normalize_cadastro_key(chapa),
+        "ok": False,
+        "mensagem": "Consulta pessoal nao executada.",
+        "url_final": "",
+        "linhas": [],
+        "print_path": "",
+        "mensagem_print": "",
+        "fichas": [],
+        "foto_path": "",
+        "fotos_por_chapa": {},
+        "nome_solicitado": str(nome or "").strip(),
+    }
+
+    mod = _load_relatorio_consulta_module()
+    if mod is None:
+        out["mensagem"] = "Modulo da consulta pessoal nao encontrado no repositorio."
+        return out, None
+
+    base_url = str(
+        os.getenv("CONSULTA_PESSOAL_URL", os.getenv("CONSULTA_PESSOAL_EMAIL", CONSULTA_BASE_URL_DEFAULT))
+    ).strip()
+    user = str(os.getenv("CONSULTA_PESSOAL_USER", "")).strip()
+    password = str(os.getenv("CONSULTA_PESSOAL_PASSWORD", "")).strip()
+    timeout_s = int(max(5, int(str(os.getenv("CONSULTA_PESSOAL_TIMEOUT_S", "20")).strip() or "20")))
+    verify_ssl = _env_bool("CONSULTA_PESSOAL_VERIFY_SSL", default=False)
+    capturar_print = _env_bool("CONSULTA_PESSOAL_CAPTURAR_PRINT", default=False)
+    debug_passos = _env_bool("CONSULTA_PESSOAL_DEBUG_PASSOS", default=False)
+
+    try:
+        client = mod.ConsultaPessoalClient(
+            base_url=base_url,
+            user=user,
+            password=password,
+            timeout_s=timeout_s,
+            verify_ssl=verify_ssl,
+            capturar_print=capturar_print,
+            debug_passos=debug_passos,
+        )
+    except Exception as exc:
+        out["mensagem"] = f"Falha ao inicializar consulta pessoal: {exc}"
+        return out, mod
+
+    if not client.enabled:
+        out["mensagem"] = (
+            "Consulta pessoal desabilitada no MVC. Defina CONSULTA_PESSOAL_USER e CONSULTA_PESSOAL_PASSWORD no .env."
+        )
+        return out, mod
+
+    try:
+        info = client.consultar_por_cadastro(str(chapa), nome=str(nome or ""))
+        if isinstance(info, dict):
+            info["nome_solicitado"] = str(nome or "").strip()
+            if not str(info.get("cadastro") or "").strip():
+                info["cadastro"] = _normalize_cadastro_key(chapa)
+            return info, mod
+    except Exception as exc:
+        out["mensagem"] = f"Falha ao consultar pessoal para {chapa}: {exc}"
+
+    return out, mod
+
+
+def _build_rows_for_fichas(fichas_in: list[dict], linhas_fallback: list[str]) -> list[list[str]]:
+    tokens_menu = {
+        "NOVA PESQUISA",
+        "PESSOAIS",
+        "FUNCIONAIS",
+        "CONSULTA DE PESSOAL",
+        "VWW",
+        "RH HOME",
+        "ANCHIETA",
+        "TAUBATE",
+        "RESENDE",
+        "SAO CARLOS",
+        "SERVICOS FINANCEIROS",
+        "CURITIBA",
+    }
+
+    merged: dict[str, dict] = {}
+    order_keys: list[str] = []
+
+    def _is_placeholder_value(v: str) -> bool:
+        vu = _normalize_ascii_upper(str(v or "")).replace(" ", "")
+        if not vu:
+            return True
+        if re.fullmatch(r"[-|]+", vu):
+            return True
+        return vu in {"N/A", "NA", "SEM_DADO", "SEMINFO"}
+
+    def _fmt_num_pessoal(chave: str, valor: str) -> str:
+        ku = _normalize_ascii_upper(chave)
+        vv = str(valor or "").strip()
+        if ku in {"NUMERO PESSOAL", "NO PESSOAL"}:
+            dig = _normalize_cadastro_key(vv)
+            if dig:
+                return dig
+        return vv
+
+    def _add_row(k: str, v: str) -> None:
+        kk = re.sub(r"\s+", " ", str(k or "")).strip(" \t\r\n:|-")
+        vv = re.sub(r"\s+", " ", str(v or "")).strip(" \t\r\n|")
+        if (not kk) or (not vv):
+            return
+        kvu = _normalize_ascii_upper(f"{kk} {vv}")
+        if any(t in kvu for t in tokens_menu):
+            keep_tokens = {"NUMERO PESSOAL", "NO PESSOAL", "NOME", "UNIDADE ORGANIZACIONAL", "EMPRESA", "FUNCAO"}
+            if not any(t in kvu for t in keep_tokens):
+                return
+        vv = _fmt_num_pessoal(kk, vv)
+        ku = _normalize_ascii_upper(kk)
+        if ku not in merged:
+            merged[ku] = {"campo": kk, "vals": [vv]}
+            order_keys.append(ku)
+        else:
+            vals = merged[ku]["vals"]
+            novo_placeholder = _is_placeholder_value(vv)
+            atuais_nao_placeholder = [x for x in vals if not _is_placeholder_value(str(x))]
+            if (not novo_placeholder) and vals and (not atuais_nao_placeholder):
+                merged[ku]["vals"] = [vv]
+            elif vv not in vals:
+                merged[ku]["vals"].append(vv)
+
+    for ficha in fichas_in:
+        for k, v in list(ficha.get("campos") or []):
+            _add_row(str(k), str(v))
+
+    if not merged:
+        for ln in linhas_fallback:
+            if "|" not in str(ln):
+                continue
+            parts = [p.strip() for p in str(ln).split("|") if str(p).strip()]
+            if len(parts) >= 2:
+                _add_row(parts[0], " | ".join(parts[1:]))
+
+    return [[merged[ku]["campo"], "\n".join(merged[ku]["vals"])] for ku in order_keys]
+
+
+def _profiles_from_consulta(consulta_info: dict | None) -> list[dict]:
+    info = dict(consulta_info or {})
+    fichas = list(info.get("fichas") or [])
+    linhas = list(info.get("linhas") or [])
+    cadastro_base = _normalize_cadastro_key(info.get("cadastro") or "")
+    nome_base = str(info.get("nome_solicitado") or "").strip()
+    print_path = str(info.get("print_path") or "").strip()
+    foto_path = str(info.get("foto_path") or "").strip()
+
+    fotos_raw = dict(info.get("fotos_por_chapa") or {})
+    fotos_map: dict[str, str] = {}
+    for k, v in fotos_raw.items():
+        kk = _normalize_cadastro_key(k)
+        vv = str(v or "").strip()
+        if kk and vv:
+            fotos_map[kk] = vv
+
+    fallback_img = _first_existing_path([print_path, foto_path, *list(fotos_map.values())])
+
+    if fichas:
+        ord_f = {"FUNCIONAIS": 0, "PESSOAIS": 1, "FICHA": 2}
+        fichas = sorted(
+            fichas,
+            key=lambda x: (
+                ord_f.get(_normalize_ascii_upper(str(x.get("tipo") or "")), 9),
+                str(x.get("url") or ""),
+            ),
+        )
+        groups: dict[str, list[dict]] = {}
+        order_keys: list[str] = []
+        for idx, ficha in enumerate(fichas, start=1):
+            campos_f = list(ficha.get("campos") or [])
+            key = _normalize_cadastro_key(ficha.get("chapa") or "")
+            if not key:
+                for k, v in campos_f:
+                    if _normalize_ascii_upper(str(k or "")) in {"NUMERO PESSOAL", "NO PESSOAL"}:
+                        key = _normalize_cadastro_key(v)
+                        break
+            if not key:
+                key = f"SEM_CHAPA_{idx}"
+            if key not in groups:
+                groups[key] = []
+                order_keys.append(key)
+            groups[key].append(ficha)
+
+        profiles: list[dict] = []
+        total = max(1, len(order_keys))
+        for idx, key in enumerate(order_keys, start=1):
+            rows = _build_rows_for_fichas(groups.get(key, []), [])
+            if not rows:
+                continue
+            cad = "" if key.startswith("SEM_CHAPA_") else key
+            img = _first_existing_path([fotos_map.get(key, ""), fallback_img, *list(fotos_map.values())])
+            label = f"Registro {idx}/{total}"
+            if cad:
+                label = f"{label} - No pessoal {cad}"
+            profiles.append(
+                {
+                    "cadastro": cad,
+                    "nome": nome_base,
+                    "rows": rows,
+                    "img_path": img,
+                    "registro_label": label,
+                }
+            )
+        if profiles:
+            return profiles
+
+    rows_fb = _build_rows_for_fichas([], linhas)
+    return [
+        {
+            "cadastro": cadastro_base,
+            "nome": nome_base,
+            "rows": rows_fb,
+            "img_path": fallback_img,
+            "registro_label": "Registro 1/1",
+        }
+    ]
+
+
+def _render_consulta_pdf_page(
+    pdf,
+    profile: dict,
+    status_ok: bool,
+    status_msg: str,
+    idx_page: int,
+    total_pages: int,
+    cadastro_base: str,
+    nome_base: str,
+) -> None:
+    rows = list(profile.get("rows") or [])
+    cadastro = str(profile.get("cadastro") or "").strip() or str(cadastro_base or "").strip()
+    nome = str(profile.get("nome") or "").strip() or str(nome_base or "").strip()
+    registro_label = str(profile.get("registro_label") or f"Registro {idx_page}/{total_pages}")
+    img_path = str(profile.get("img_path") or "").strip()
+    has_img = bool(img_path and Path(img_path).exists())
+
+    def _wrap(txt: str, width: int) -> str:
+        parts = _split_items_for_display(txt)
+        if not parts:
+            base = str(txt or "").strip()
+            parts = [base] if base else []
+        out = [textwrap.fill(p, width=max(20, int(width)), break_long_words=False, break_on_hyphens=False) for p in parts]
+        return "\n".join(out) if out else ""
+
+    fig, ax = plt.subplots(figsize=(11.69, 8.27))
+    ax.axis("off")
+    fig.suptitle("Consulta Pessoal - Relatorio Individual (MVC)", fontsize=15, fontweight="bold", y=0.975)
+
+    header_txt = f"{cadastro} - {nome}" if cadastro and nome else (nome or cadastro or "Registro sem identificacao")
+    ax.text(
+        0.02,
+        0.93,
+        header_txt,
+        fontsize=12,
+        fontweight="bold",
+        color="white",
+        ha="left",
+        va="top",
+        transform=ax.transAxes,
+        bbox=dict(facecolor=CONSULTA_COR_DESTAQUE, edgecolor=CONSULTA_COR_DESTAQUE, boxstyle="round,pad=0.35"),
+    )
+    ax.text(
+        0.02,
+        0.875,
+        f"Status: {'OK' if status_ok else 'FALHA'}",
+        fontsize=10,
+        fontweight="bold",
+        color="white",
+        ha="left",
+        va="top",
+        transform=ax.transAxes,
+        bbox=dict(facecolor=CONSULTA_COR_DESTAQUE, edgecolor=CONSULTA_COR_DESTAQUE, boxstyle="round,pad=0.25"),
+    )
+    ax.text(0.02, 0.835, registro_label, fontsize=9.4, fontweight="bold", ha="left", va="top", transform=ax.transAxes)
+
+    y_msg = 0.79
+    for ln in textwrap.wrap(status_msg or "Sem mensagem.", width=130, break_long_words=False, break_on_hyphens=False)[:3]:
+        ax.text(0.02, y_msg, ln, fontsize=9.0, ha="left", va="top", transform=ax.transAxes)
+        y_msg -= 0.028
+
+    if rows:
+        rows_fmt: list[list[str]] = []
+        row_units: list[float] = []
+        for campo, valor in rows:
+            c = _wrap(campo, 28)
+            v = _wrap(valor, 68)
+            rows_fmt.append([c, v])
+            lc = max(c.count("\n") + 1, v.count("\n") + 1)
+            row_units.append(float(lc) + 0.25)
+
+        width_tbl = 0.62 if has_img else 0.95
+        ax_tbl = fig.add_axes([0.02, 0.05, width_tbl, 0.70])
+        ax_tbl.axis("off")
+        table = ax_tbl.table(
+            cellText=rows_fmt,
+            colLabels=["Campo", "Valor"],
+            colLoc="left",
+            cellLoc="left",
+            colWidths=[0.34, 0.64],
+            loc="upper left",
+        )
+        table.auto_set_font_size(False)
+        n_rows = len(rows_fmt)
+        if n_rows <= 16:
+            fsz = 8.8
+        elif n_rows <= 28:
+            fsz = 8.0
+        elif n_rows <= 42:
+            fsz = 7.2
+        elif n_rows <= 58:
+            fsz = 6.6
+        else:
+            fsz = 6.0
+        table.set_fontsize(fsz)
+        table.scale(1.0, 1.0)
+        header_units = 1.35
+        total_units = header_units + float(sum(row_units)) if row_units else header_units
+        unit_h = 1.0 / max(total_units, 1.0)
+        for (r, c), cell in table.get_celld().items():
+            if r == 0:
+                cell.set_facecolor(CONSULTA_COR_DESTAQUE)
+                cell.set_text_props(color="white", weight="bold")
+                cell.set_height(unit_h * header_units)
+            elif c == 0:
+                cell.set_facecolor(CONSULTA_COR_CAMPO)
+            else:
+                cell.set_facecolor(CONSULTA_COR_VALOR)
+            if r > 0:
+                idx_row = r - 1
+                if 0 <= idx_row < len(row_units):
+                    cell.set_height(unit_h * row_units[idx_row])
+    else:
+        ax.text(0.02, 0.72, "Sem dados estruturados retornados.", fontsize=9.8, ha="left", va="top", transform=ax.transAxes)
+
+    if has_img:
+        try:
+            img = plt.imread(img_path)
+            ax_img = fig.add_axes([0.67, 0.30, 0.30, 0.44])
+            ax_img.imshow(img)
+            ax_img.axis("off")
+            ax_img.set_title(
+                "Imagem Consulta Pessoal",
+                fontsize=9.0,
+                color="white",
+                pad=4,
+                bbox=dict(facecolor=CONSULTA_COR_DESTAQUE, edgecolor=CONSULTA_COR_DESTAQUE, boxstyle="round,pad=0.2"),
+            )
+        except Exception:
+            pass
+
+    ax.text(
+        0.985,
+        0.02,
+        f"Consulta {idx_page}/{total_pages}",
+        fontsize=8.8,
+        ha="right",
+        va="bottom",
+        transform=ax.transAxes,
+        color="#333333",
+    )
+    fig.subplots_adjust(left=0.01, right=0.99, top=0.95, bottom=0.03)
+    pdf.savefig(fig, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _build_pdf_bytes_with_consulta(fig_base, consulta_info: dict, cadastro: str, nome: str) -> bytes:
+    buf = io.BytesIO()
+    status_ok = bool((consulta_info or {}).get("ok"))
+    status_msg = str((consulta_info or {}).get("mensagem") or "Consulta nao executada.").strip()
+    profiles = _profiles_from_consulta(consulta_info)
+
+    with PdfPages(buf) as pdf:
+        pdf.savefig(fig_base, bbox_inches="tight")
+        if profiles:
+            total = len(profiles)
+            for idx, profile in enumerate(profiles, start=1):
+                _render_consulta_pdf_page(
+                    pdf,
+                    profile,
+                    status_ok=status_ok,
+                    status_msg=status_msg,
+                    idx_page=idx,
+                    total_pages=total,
+                    cadastro_base=str(cadastro or ""),
+                    nome_base=str(nome or ""),
+                )
+    buf.seek(0)
+    return buf.read()
 
 
 def register(app):
@@ -507,13 +993,29 @@ def register(app):
         # Layout final
         plt.subplots_adjust(wspace=1.4)
         fig.tight_layout()
-        images_base64 = fig_to_base64(fig)
+        consulta_info, consulta_mod = _consulta_info_por_cadastro(str(chapa_input), str(nome_input))
 
-        # Gera binário
+        # Gera binários
         png_bytes = fig_to_bytes(fig, fmt="png")
-        pdf_bytes = fig_to_bytes(fig, fmt="pdf")
+        pdf_bytes = _build_pdf_bytes_with_consulta(
+            fig,
+            consulta_info=consulta_info,
+            cadastro=str(chapa_input),
+            nome=str(nome_input),
+        )
+        if not pdf_bytes:
+            pdf_bytes = fig_to_bytes(fig, fmt="pdf")
+        plt.close(fig)
 
-        # Converte em strings base64 (isso o Dash aceita)
+        cleanup_fn = getattr(consulta_mod, "cleanup_consulta_pessoal_imagens_temporarias", None)
+        if callable(cleanup_fn):
+            try:
+                cleanup_fn(consulta_info)
+            except Exception:
+                pass
+
+        # Converte em strings base64 (Dash)
+        images_base64 = "data:image/png;base64," + base64.b64encode(png_bytes).decode()
         png_b64 = "data:image/png;base64," + base64.b64encode(png_bytes).decode()
         pdf_b64 = "data:application/pdf;base64," + base64.b64encode(pdf_bytes).decode()
 

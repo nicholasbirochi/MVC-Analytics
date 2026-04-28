@@ -18,7 +18,7 @@ if __package__:
     from .core.config import SETTINGS, configure_runtime, validate_data_files
     from .domain.cache_utils import CacheOptions, as_dict
     from .ui.layout import LAYOUT
-    from .ui.theme import GLOBAL_CSS
+    from .ui.theme import GLOBAL_CSS, LANGUAGE_JS
 else:
     # Suporta execucao direta: `py .\scripts\src\main.py`
     import sys
@@ -32,7 +32,7 @@ else:
     from src.core.config import SETTINGS, configure_runtime, validate_data_files
     from src.domain.cache_utils import CacheOptions, as_dict
     from src.ui.layout import LAYOUT
-    from src.ui.theme import GLOBAL_CSS
+    from src.ui.theme import GLOBAL_CSS, LANGUAGE_JS
 
 
 def create_app() -> Dash:
@@ -61,6 +61,7 @@ def create_app() -> Dash:
             {{%config%}}
             {{%scripts%}}
             {{%renderer%}}
+            <script>{LANGUAGE_JS}</script>
         </footer>
     </body>
 </html>"""

@@ -10,11 +10,188 @@ Padronização:
 - Linhas <= 100 colunas quando possível
 """
 from __future__ import annotations
+from urllib.parse import quote
+
 from dash import html, dcc
 
 from ..domain.periods import LT_MARKS, LT_C1_MIN, LT_C1_MAX, LT_C2_MIN, LT_C2_MAX, LT_MONTHS
 from ..core.repo_global import dropdown_options
 from .theme import VW_PLOTLY_FONT
+
+
+def _flag_uri(svg: str) -> str:
+    """Retorna um SVG inline seguro para usar como imagem no Dash."""
+    return f"data:image/svg+xml;charset=utf-8,{quote(svg, safe='')}"
+
+
+LANGUAGES = (
+    (
+        "pt",
+        "BR",
+        "Brasil",
+        """
+        <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+          <rect width="64" height="64" fill="#009b3a"/>
+          <polygon points="32,9 55,32 32,55 9,32" fill="#ffdf00"/>
+          <circle cx="32" cy="32" r="12" fill="#002776"/>
+          <path d="M19 31c8-5 18-5 26 0" fill="none" stroke="#ffffff"
+                stroke-width="3.2" stroke-linecap="round"/>
+        </svg>
+        """,
+    ),
+    (
+        "en",
+        "US",
+        "United States",
+        """
+        <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+          <rect width="64" height="64" fill="#ffffff"/>
+          <rect width="64" height="5" y="0" fill="#b22234"/>
+          <rect width="64" height="5" y="10" fill="#b22234"/>
+          <rect width="64" height="5" y="20" fill="#b22234"/>
+          <rect width="64" height="5" y="30" fill="#b22234"/>
+          <rect width="64" height="5" y="40" fill="#b22234"/>
+          <rect width="64" height="5" y="50" fill="#b22234"/>
+          <rect width="64" height="4" y="60" fill="#b22234"/>
+          <rect width="30" height="28" x="0" y="0" fill="#3c3b6e"/>
+          <g fill="#ffffff">
+            <circle cx="5" cy="5" r="1.2"/><circle cx="12" cy="5" r="1.2"/>
+            <circle cx="19" cy="5" r="1.2"/><circle cx="26" cy="5" r="1.2"/>
+            <circle cx="8.5" cy="10" r="1.2"/><circle cx="15.5" cy="10" r="1.2"/>
+            <circle cx="22.5" cy="10" r="1.2"/>
+            <circle cx="5" cy="15" r="1.2"/><circle cx="12" cy="15" r="1.2"/>
+            <circle cx="19" cy="15" r="1.2"/><circle cx="26" cy="15" r="1.2"/>
+            <circle cx="8.5" cy="20" r="1.2"/><circle cx="15.5" cy="20" r="1.2"/>
+            <circle cx="22.5" cy="20" r="1.2"/>
+            <circle cx="5" cy="25" r="1.2"/><circle cx="12" cy="25" r="1.2"/>
+            <circle cx="19" cy="25" r="1.2"/><circle cx="26" cy="25" r="1.2"/>
+          </g>
+        </svg>
+        """,
+    ),
+    (
+        "de",
+        "DE",
+        "Germany",
+        """
+        <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+          <rect width="64" height="21.34" y="0" fill="#000000"/>
+          <rect width="64" height="21.33" y="21.34" fill="#dd0000"/>
+          <rect width="64" height="21.33" y="42.67" fill="#ffce00"/>
+        </svg>
+        """,
+    ),
+    (
+        "es",
+        "ES",
+        "Spain",
+        """
+        <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+          <rect width="64" height="64" fill="#f1bf00"/>
+          <rect width="64" height="16" y="0" fill="#aa151b"/>
+          <rect width="64" height="16" y="48" fill="#aa151b"/>
+        </svg>
+        """,
+    ),
+    (
+        "pl",
+        "PL",
+        "Poland",
+        """
+        <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+          <rect width="64" height="64" fill="#ffffff"/>
+          <rect width="64" height="32" y="32" fill="#dc143c"/>
+        </svg>
+        """,
+    ),
+    (
+        "sk",
+        "SK",
+        "Slovakia",
+        """
+        <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+          <rect width="64" height="64" fill="#ee1c25"/>
+          <rect width="64" height="42.67" y="0" fill="#0b4ea2"/>
+          <rect width="64" height="21.33" y="0" fill="#ffffff"/>
+        </svg>
+        """,
+    ),
+    (
+        "zh",
+        "CN",
+        "China",
+        """
+        <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+          <rect width="64" height="64" fill="#de2910"/>
+          <polygon points="14,10 16.8,18 25.2,18 18.4,22.8 21,31 14,25.9
+                           7,31 9.6,22.8 2.8,18 11.2,18" fill="#ffde00"/>
+          <circle cx="28" cy="12" r="2.3" fill="#ffde00"/>
+          <circle cx="32" cy="19" r="2.3" fill="#ffde00"/>
+          <circle cx="31" cy="28" r="2.3" fill="#ffde00"/>
+          <circle cx="24" cy="33" r="2.3" fill="#ffde00"/>
+        </svg>
+        """,
+    ),
+    (
+        "hi",
+        "IN",
+        "India",
+        """
+        <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+          <rect width="64" height="64" fill="#138808"/>
+          <rect width="64" height="42.67" y="0" fill="#ffffff"/>
+          <rect width="64" height="21.33" y="0" fill="#ff9933"/>
+          <circle cx="32" cy="32" r="7.5" fill="none" stroke="#1a4ba0"
+                  stroke-width="2.4"/>
+        </svg>
+        """,
+    ),
+)
+
+
+def language_selector() -> html.Div:
+    """Componente visual de seleção de idioma no padrão do cabeçalho do MVC."""
+    buttons = []
+    for idx, (code, label, title, svg) in enumerate(LANGUAGES):
+        active = code == "pt"
+        buttons.append(
+            html.Button(
+                [
+                    html.Span(
+                        html.Img(src=_flag_uri(svg), alt=""),
+                        className="flag-disc",
+                        **{"aria-hidden": "true"},
+                    ),
+                    html.Span(label, className="flag-label"),
+                ],
+                id=f"idioma-{code}",
+                type="button",
+                title=title,
+                disable_n_clicks=True,
+                className=f"lang-flag{' active' if active else ''}",
+                style={"--menu-y": f"{idx * 54}px"},
+                **{
+                    "aria-label": title,
+                    "aria-pressed": "true" if active else "false",
+                    "data-lang": code,
+                },
+            )
+        )
+
+    return html.Div(
+        html.Div(
+            buttons,
+            id="idioma-picker",
+            className="flag-switcher",
+            role="group",
+            **{
+                "aria-label": "Selecionar idioma",
+                "aria-expanded": "false",
+            },
+        ),
+        className="lang-wrap",
+        style={"fontFamily": VW_PLOTLY_FONT},
+    )
 
 
 LAYOUT = html.Div([
@@ -26,17 +203,31 @@ LAYOUT = html.Div([
 
             # ====== Título ======
             html.Div([
+                html.Div(style={'flex': '0 0 132px', 'minWidth': '132px'}),
                 html.H1([
-                    "Relatório Presencial Geral de toda a Volkswagen",
+                    html.Span(
+                        "Relatório Presencial Geral de toda a Volkswagen",
+                        **{"data-i18n": "main_title"},
+                    ),
                     html.Br(),
                     html.Span(id='periodo-texto')
-                ], style={'textAlign': 'center', 'flex': '1', 'fontFamily': VW_PLOTLY_FONT})
+                ], style={
+                    'textAlign': 'center',
+                    'flex': '1',
+                    'minWidth': '0',
+                    'margin': '0',
+                    'fontFamily': VW_PLOTLY_FONT
+                }),
+                language_selector()
             ], style={
                 'display': 'flex',
-                'justifyContent': 'flex-end',
-                'alignItems': 'center',
+                'justifyContent': 'space-between',
+                'alignItems': 'flex-start',
+                'gap': '16px',
                 'marginBottom': '20px',
                 'fontFamily': VW_PLOTLY_FONT,
+                'position': 'relative',
+                'zIndex': '20',
             }),
 
             # ================== BLOCO DE FILTROS ==================
@@ -44,12 +235,15 @@ LAYOUT = html.Div([
                 html.Div([
                     # --- Bloco A: 2 RadioItems ---
                     html.Div([
-                        html.Label("Mostrar as pessoas desligadas?"),
+                        html.Label(
+                            "Mostrar as pessoas desligadas?",
+                            **{"data-i18n": "show_inactive"},
+                        ),
                         dcc.RadioItems(
                             id='desligados-toggle',
                             options=[
-                                {'label': 'Sim', 'value': 'left'},
-                                {'label': 'Não', 'value': 'right'}
+                                {'label': html.Span('Sim', **{"data-i18n": "yes"}), 'value': 'left'},
+                                {'label': html.Span('Não', **{"data-i18n": "no"}), 'value': 'right'}
                             ],
                             value='left',
                             labelStyle={'display': 'inline-block', 'marginRight': '10px', 'fontFamily': VW_PLOTLY_FONT}
@@ -57,12 +251,15 @@ LAYOUT = html.Div([
                     ], style={'display': 'flex', 'flexDirection': 'column', 'alignItems': 'center', 'fontFamily': VW_PLOTLY_FONT}),
 
                     html.Div([
-                        html.Label("Mostrar as áreas que viajam?"),
+                        html.Label(
+                            "Mostrar as áreas que viajam?",
+                            **{"data-i18n": "show_travel"},
+                        ),
                         dcc.RadioItems(
                             id='viajam-toggle',
                             options=[
-                                {'label': 'Sim', 'value': 'left'},
-                                {'label': 'Não', 'value': 'right'}
+                                {'label': html.Span('Sim', **{"data-i18n": "yes"}), 'value': 'left'},
+                                {'label': html.Span('Não', **{"data-i18n": "no"}), 'value': 'right'}
                             ],
                             value='left',
                             labelStyle={'display': 'inline-block', 'marginRight': '10px', 'fontFamily': VW_PLOTLY_FONT}
@@ -76,8 +273,20 @@ LAYOUT = html.Div([
                         dcc.RadioItems(
                             id='cenario-toggle',
                             options=[
-                                {'label': 'Jan/2024 a Abr/2025', 'value': 'c1'},
-                                {'label': 'Mai/2025 em diante', 'value': 'c2'}
+                                {
+                                    'label': html.Span(
+                                        'Jan/2024 a Abr/2025',
+                                        **{"data-i18n": "scenario_1"},
+                                    ),
+                                    'value': 'c1'
+                                },
+                                {
+                                    'label': html.Span(
+                                        'Mai/2025 em diante',
+                                        **{"data-i18n": "scenario_2"},
+                                    ),
+                                    'value': 'c2'
+                                }
                             ],
                             value='c1',
                             labelStyle={'display': 'inline-block', 'fontFamily': VW_PLOTLY_FONT}
@@ -223,18 +432,25 @@ LAYOUT = html.Div([
                 }),
 
                 # Título principal
-                html.Span("Resumo Específico por Área", style={
-                    'fontWeight': 'bold',
-                    'fontSize': '18px',
-                    'color': '#000000',
-                    'flex': '1',
-                    'textAlign': 'left',
-                    'fontFamily': VW_PLOTLY_FONT,
-                }),
+                html.Span(
+                    "Resumo Específico por Área",
+                    style={
+                        'fontWeight': 'bold',
+                        'fontSize': '18px',
+                        'color': '#000000',
+                        'flex': '1',
+                        'textAlign': 'left',
+                        'fontFamily': VW_PLOTLY_FONT,
+                    },
+                    **{"data-i18n": "area_summary"},
+                ),
 
                 # Novo botão/link para a página de relacionamento
                 dcc.Link(
-                    "Relacionamento entre Colaboradores ⭢",
+                    html.Span(
+                        "Relacionamento entre Colaboradores ⭢",
+                        **{"data-i18n": "relationship_link"},
+                    ),
                     href="/relacionamento",
                     style={
                         'fontFamily': VW_PLOTLY_FONT,
@@ -276,14 +492,18 @@ LAYOUT = html.Div([
                             'fontFamily': VW_PLOTLY_FONT,
                         }
                     ),
-                    html.Span("Presença dos Colaboradores", style={
-                        'fontWeight': 'bold',
-                        'fontSize': '18px',
-                        'color': '#000000',
-                        'flex': '1',
-                        'textAlign': 'left',
-                        'fontFamily': VW_PLOTLY_FONT,
-                    })
+                    html.Span(
+                        "Presença dos Colaboradores",
+                        style={
+                            'fontWeight': 'bold',
+                            'fontSize': '18px',
+                            'color': '#000000',
+                            'flex': '1',
+                            'textAlign': 'left',
+                            'fontFamily': VW_PLOTLY_FONT,
+                        },
+                        **{"data-i18n": "people_presence"},
+                    )
                 ], style={'marginBottom': '8px', 'fontFamily': VW_PLOTLY_FONT}),
 
                 html.Div(

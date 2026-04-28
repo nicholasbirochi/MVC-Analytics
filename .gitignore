@@ -32,9 +32,6 @@ venv/
 *.png
 *.jpg
 
-# Pasta específica do projeto
-Códigos Extras/Documentação/Análise Tempo de Casa/resultado.png
-
 # Arquivos de configuração sensíveis
 .env
 .env.*
@@ -54,3 +51,8 @@ Códigos Extras/Documentação/Análise Tempo de Casa/resultado.png
 # Logs de execução temporários
 *.log
 Códigos Extras/**/_run_*.log
+
+# Artefatos gerados por análises/documentação
+Códigos Extras/Documentação/**/saida*/
+Códigos Extras/Documentação/**/saidas*/
+Códigos Extras/Documentação/**/validations/

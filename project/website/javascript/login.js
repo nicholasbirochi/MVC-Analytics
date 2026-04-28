@@ -11,7 +11,7 @@ if (reveal && senha) {
   });
 }
 
-// Simular login adm (preenche campos "1"/"1")
+// Simular login adm sem preencher senha em código versionado.
 function admLogin() {
   const u = document.getElementById('username');
   const p = document.getElementById('senha');

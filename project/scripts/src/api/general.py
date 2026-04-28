@@ -208,7 +208,14 @@ def register(app):
         i0, i1 = slider_out
         d0 = pd.Timestamp(LT_MONTHS[i0])
         d1 = (pd.Timestamp(LT_MONTHS[i1]) + pd.offsets.MonthEnd(1))
-        periodo_txt = f"Período selecionado: {fmt_mes_ano(d0)} a {fmt_mes_ano(d1)}"
+        periodo_txt = html.Span(
+            f"Período selecionado: {fmt_mes_ano(d0)} a {fmt_mes_ano(d1)}",
+            **{
+                "data-i18n-period": "selected_period",
+                "data-period-start": d0.strftime("%Y-%m"),
+                "data-period-end": d1.strftime("%Y-%m"),
+            },
+        )
 
         # ------ Stores ------
         area_store = area
