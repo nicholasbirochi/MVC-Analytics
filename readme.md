@@ -638,6 +638,10 @@ ND_PANDAS_LOCALE=pt_BR.utf8
 ND_CACHE_TTL=900
 ND_DEBUG=false
 ND_PORT=8050
+
+# Automacao de print da Consulta Pessoal via Playwright
+CONSULTA_PESSOAL_BROWSER_CHANNEL=msedge
+CONSULTA_PESSOAL_BROWSER_EXECUTABLE=
 ```
 
 Sem `RONDA_DW_PATH`, o app tenta fallback parquet legado.
@@ -656,6 +660,7 @@ pyarrow>=16.0
 matplotlib>=3.8
 flask-caching>=2.3
 python-dateutil>=2.9
+playwright>=1.58
 ```
 
 ## 🚀 Como rodar o projeto

@@ -4,6 +4,7 @@ import argparse
 import tempfile
 import os
 import re
+import time
 import textwrap
 import unicodedata
 from pathlib import Path
@@ -318,8 +319,8 @@ class ConsultaPessoalClient:
         self.enabled = bool(self.user and self.password)
         self.capturar_print = bool(capturar_print)
         self.debug_passos = bool(debug_passos)
-        self._selenium_bloqueado = False
-        self._selenium_bloqueio_msg = ""
+        self._playwright_bloqueado = False
+        self._playwright_bloqueio_msg = ""
         self._ultimas_variantes_busca: list[str] = []
         self._debug_form_info = ""
 
@@ -370,29 +371,29 @@ class ConsultaPessoalClient:
             out["mensagem"] = "Consulta textual indisponivel (requests/bs4 nao disponiveis)."
             return out
 
-        sel_out = self._consultar_via_selenium(cad)
+        auto_out = self._consultar_via_playwright(cad)
 
-        if bool(sel_out.get("ok")):
-            if req_out is not None and bool(req_out.get("ok")) and (not sel_out.get("linhas")):
-                sel_out["linhas"] = list(req_out.get("linhas") or [])
-                if not str(sel_out.get("url_final") or "").strip():
-                    sel_out["url_final"] = str(req_out.get("url_final") or "")
+        if bool(auto_out.get("ok")):
+            if req_out is not None and bool(req_out.get("ok")) and (not auto_out.get("linhas")):
+                auto_out["linhas"] = list(req_out.get("linhas") or [])
+                if not str(auto_out.get("url_final") or "").strip():
+                    auto_out["url_final"] = str(req_out.get("url_final") or "")
             if req_out is not None and bool(req_out.get("ok")):
-                if not list(sel_out.get("fichas") or []):
-                    sel_out["fichas"] = list(req_out.get("fichas") or [])
-                if not str(sel_out.get("foto_path") or "").strip():
-                    sel_out["foto_path"] = str(req_out.get("foto_path") or "")
-                if not dict(sel_out.get("fotos_por_chapa") or {}):
-                    sel_out["fotos_por_chapa"] = dict(req_out.get("fotos_por_chapa") or {})
+                if not list(auto_out.get("fichas") or []):
+                    auto_out["fichas"] = list(req_out.get("fichas") or [])
+                if not str(auto_out.get("foto_path") or "").strip():
+                    auto_out["foto_path"] = str(req_out.get("foto_path") or "")
+                if not dict(auto_out.get("fotos_por_chapa") or {}):
+                    auto_out["fotos_por_chapa"] = dict(req_out.get("fotos_por_chapa") or {})
             if req_out is not None and bool(req_out.get("ok")):
-                sel_out["mensagem"] = "Consulta pessoal carregada com sucesso (texto + print)."
+                auto_out["mensagem"] = "Consulta pessoal carregada com sucesso (texto + print)."
             else:
-                sel_out["mensagem"] = "Consulta pessoal carregada com sucesso (via automacao)."
-            return sel_out
+                auto_out["mensagem"] = "Consulta pessoal carregada com sucesso (via automacao)."
+            return auto_out
 
         if req_out is not None and bool(req_out.get("ok")):
-            req_out["mensagem_print"] = str(sel_out.get("mensagem") or "")
-            req_out["print_path"] = str(sel_out.get("print_path") or "")
+            req_out["mensagem_print"] = str(auto_out.get("mensagem") or "")
+            req_out["print_path"] = str(auto_out.get("print_path") or "")
             if not req_out["print_path"]:
                 req_out["print_path"] = self._gerar_print_fallback(
                     cad,
@@ -405,14 +406,14 @@ class ConsultaPessoalClient:
         msgs = []
         if req_out is not None and str(req_out.get("mensagem") or "").strip():
             msgs.append(f"requests: {req_out['mensagem']}")
-        if str(sel_out.get("mensagem") or "").strip():
-            msgs.append(f"selenium: {sel_out['mensagem']}")
+        if str(auto_out.get("mensagem") or "").strip():
+            msgs.append(f"playwright: {auto_out['mensagem']}")
         out["mensagem"] = "Falha ao consultar cadastro {}: {}".format(
             cad,
             " | ".join(msgs) if msgs else "sem detalhes.",
         )
-        out["print_path"] = str(sel_out.get("print_path") or "")
-        out["mensagem_print"] = str(sel_out.get("mensagem") or "")
+        out["print_path"] = str(auto_out.get("print_path") or "")
+        out["mensagem_print"] = str(auto_out.get("mensagem") or "")
         if not out["print_path"]:
             out["print_path"] = self._gerar_print_fallback(
                 cad,
@@ -2234,7 +2235,7 @@ class ConsultaPessoalClient:
         out_pages = sorted([(u, h) for u, h in dedup.items()], key=_page_rank)
         return out_pages
 
-    def _consultar_via_selenium(self, cadastro: str) -> dict:
+    def _consultar_via_playwright(self, cadastro: str) -> dict:
         cad = self._normalizar_numero_pessoal(cadastro)
         out = {
             "cadastro": cad,
@@ -2249,86 +2250,97 @@ class ConsultaPessoalClient:
             "fotos_por_chapa": {},
         }
 
-        if self._selenium_bloqueado:
-            msg_blk = self._selenium_bloqueio_msg or "Selenium/Edge bloqueado por politica corporativa."
+        if self._playwright_bloqueado:
+            msg_blk = self._playwright_bloqueio_msg or "Playwright/browser indisponivel."
             out["mensagem"] = f"Automacao de print indisponivel: {msg_blk}"
             out["mensagem_print"] = out["mensagem"]
             return out
 
         try:
-            from selenium import webdriver
-            from selenium.webdriver.common.by import By
-            from selenium.webdriver.common.keys import Keys
-            from selenium.webdriver.support.ui import WebDriverWait
-            try:
-                from selenium.webdriver.edge.service import Service as EdgeService
-            except Exception:
-                EdgeService = None
+            from playwright.sync_api import sync_playwright
         except Exception as e_imp:
-            out["mensagem"] = f"Selenium indisponivel para captura: {e_imp}"
+            out["mensagem"] = f"Playwright indisponivel para captura: {e_imp}"
             out["mensagem_print"] = out["mensagem"]
             return out
 
-        png_ok = self._temp_image_path(cad, kind="selenium_ok", suffix=".png")
-        png_fail = self._temp_image_path(cad, kind="selenium_fail", suffix=".png")
+        png_ok = self._temp_image_path(cad, kind="playwright_ok", suffix=".png")
+        png_fail = self._temp_image_path(cad, kind="playwright_fail", suffix=".png")
 
-        driver = None
+        timeout_ms = (int(self.timeout_s) * 1000) if int(self.timeout_s) > 0 else 30_000
+        short_timeout_ms = min(max(timeout_ms, 1000), 5000)
 
-        def _build_driver():
-            # Ambiente corporativo pode bloquear DevTools remoto, quebrando webdriver.
-            try:
-                opts = webdriver.EdgeOptions()
-                opts.add_argument("--headless=new")
-                opts.add_argument("--disable-gpu")
-                opts.add_argument("--ignore-certificate-errors")
-                opts.add_argument("--allow-insecure-localhost")
-                opts.add_argument("--no-sandbox")
-                opts.add_argument("--disable-dev-shm-usage")
-                opts.add_argument("--window-size=1600,1100")
-                if EdgeService is not None:
-                    try:
-                        service = EdgeService(log_output=os.devnull)
-                        return webdriver.Edge(service=service, options=opts)
-                    except TypeError:
-                        # fallback para versões que não aceitam log_output
-                        return webdriver.Edge(options=opts)
-                return webdriver.Edge(options=opts)
-            except Exception as e1:
-                msg_edge = self._clean_exc(e1)
-                if self._is_devtools_bloqueado(msg_edge):
-                    raise RuntimeError(
-                        "DevTools remoto do Edge bloqueado pela politica de TI; captura automatica de print indisponivel."
-                    )
-                raise RuntimeError(f"Falha ao iniciar Edge WebDriver: {msg_edge}")
+        def _launch_browser(pw):
+            args = [
+                "--disable-gpu",
+                "--ignore-certificate-errors",
+                "--allow-insecure-localhost",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+            ]
+            executable = str(os.getenv("CONSULTA_PESSOAL_BROWSER_EXECUTABLE", "")).strip()
+            if executable:
+                return pw.chromium.launch(
+                    executable_path=executable,
+                    headless=True,
+                    args=args,
+                    timeout=timeout_ms,
+                )
 
-        def _switch_ctx(frame):
-            driver.switch_to.default_content()
-            if frame is not None:
-                driver.switch_to.frame(frame)
+            preferred = str(os.getenv("CONSULTA_PESSOAL_BROWSER_CHANNEL", "msedge")).strip()
+            channels = []
+            if preferred:
+                channels.append(preferred)
+            for channel in ("msedge", "chrome", "chromium"):
+                if channel not in channels:
+                    channels.append(channel)
+
+            errors: list[str] = []
+            for channel in channels:
+                try:
+                    if channel == "chromium":
+                        return pw.chromium.launch(headless=True, args=args, timeout=timeout_ms)
+                    return pw.chromium.launch(channel=channel, headless=True, args=args, timeout=timeout_ms)
+                except Exception as exc:
+                    errors.append(f"{channel}: {self._clean_exc(exc)}")
+            raise RuntimeError("Falha ao iniciar navegador Playwright: " + " | ".join(errors))
 
         def _iter_contexts(max_frames: int = 10):
-            frames = driver.find_elements(By.XPATH, "//frame|//iframe")
-            return [None] + list(frames[:max_frames])
+            frames = []
+            try:
+                frames.append(page.main_frame)
+                frames.extend(f for f in page.frames if f is not page.main_frame)
+            except Exception:
+                pass
+            return frames[: max_frames + 1]
 
         def _elem_haystack(elem):
+            def _attr(name: str) -> str:
+                try:
+                    return str(elem.get_attribute(name) or "")
+                except Exception:
+                    return ""
+
             attrs = " ".join(
                 [
-                    str(elem.get_attribute("name") or ""),
-                    str(elem.get_attribute("id") or ""),
-                    str(elem.get_attribute("placeholder") or ""),
-                    str(elem.get_attribute("aria-label") or ""),
-                    str(elem.get_attribute("value") or ""),
-                    str(elem.get_attribute("title") or ""),
-                    str(elem.get_attribute("outerHTML") or ""),
+                    _attr("name"),
+                    _attr("id"),
+                    _attr("placeholder"),
+                    _attr("aria-label"),
+                    _attr("value"),
+                    _attr("title"),
+                    _attr("outerHTML"),
                 ]
             )
             around = ""
             try:
                 around = str(
-                    driver.execute_script(
-                        "var e=arguments[0]; var p=e.closest('label,td,tr,div,form,body');"
-                        "return p ? (p.innerText || '') : '';",
-                        elem,
+                    elem.evaluate(
+                        """
+                        el => {
+                            const p = el.closest('label,td,tr,div,form,body');
+                            return p ? (p.innerText || '') : '';
+                        }
+                        """
                     )
                     or ""
                 )
@@ -2340,39 +2352,49 @@ class ConsultaPessoalClient:
             txt = _elem_haystack(elem)
             return sum(1 for h in hints if normalize_ascii_upper(h) in txt)
 
-        def _visible_text_inputs():
-            return [
-                i
-                for i in driver.find_elements(By.TAG_NAME, "input")
-                if i.is_displayed()
-                and (str(i.get_attribute("type") or "text").strip().lower() in {"", "text", "number", "password"})
-            ]
+        def _visible_text_inputs(frame):
+            inputs = []
+            try:
+                candidates = frame.query_selector_all("input")
+            except Exception:
+                return inputs
+            for item in candidates:
+                try:
+                    input_type = str(item.get_attribute("type") or "text").strip().lower()
+                    if item.is_visible() and input_type in {"", "text", "number", "password"}:
+                        inputs.append(item)
+                except Exception:
+                    continue
+            return inputs
 
         def _find_best_context(hints: list[str]):
-            best_ctx = None
+            best_ctx = page.main_frame
             best_score = -1
             for ctx in _iter_contexts():
                 try:
-                    _switch_ctx(ctx)
-                    inputs = _visible_text_inputs()
+                    inputs = _visible_text_inputs(ctx)
                     if len(inputs) < 2:
                         continue
                     score = 0
                     for i in inputs:
                         score += _elem_score(i, hints)
-                    radios = driver.find_elements(By.XPATH, "//input[@type='radio']")
+                    radios = ctx.query_selector_all("input[type='radio']")
                     score += (3 if radios else 0)
                     if score > best_score:
                         best_score = score
                         best_ctx = ctx
                 except Exception:
                     continue
-            _switch_ctx(best_ctx)
             return best_ctx
 
-        def _find_button(hints: list[str]):
-            btns = driver.find_elements(By.XPATH, "//input[@type='submit' or @type='button'] | //button")
-            btns = [b for b in btns if b.is_displayed()]
+        def _find_button(frame, hints: list[str]):
+            btns = []
+            for selector in ("input[type='submit']", "input[type='button']", "button"):
+                try:
+                    btns.extend(frame.query_selector_all(selector))
+                except Exception:
+                    continue
+            btns = [b for b in btns if b.is_visible()]
             if not btns:
                 return None
             btns = sorted(
@@ -2381,7 +2403,9 @@ class ConsultaPessoalClient:
                     1
                     for h in hints
                     if normalize_ascii_upper(h)
-                    in normalize_ascii_upper(str(b.text or "") + " " + str(b.get_attribute("value") or ""))
+                    in normalize_ascii_upper(
+                        str(b.text_content() or "") + " " + str(b.get_attribute("value") or "")
+                    )
                 ),
                 reverse=True,
             )
@@ -2391,167 +2415,190 @@ class ConsultaPessoalClient:
             texts = []
             for ctx in _iter_contexts():
                 try:
-                    _switch_ctx(ctx)
-                    body = driver.find_element(By.TAG_NAME, "body")
-                    txt = str(body.text or "").strip()
+                    txt = str(ctx.evaluate("document.body ? (document.body.innerText || '') : ''") or "").strip()
                     if txt:
                         texts.append(txt)
                 except Exception:
                     continue
-            _switch_ctx(None)
             return texts
 
+        def _wait_after_action() -> None:
+            try:
+                page.wait_for_load_state("domcontentloaded", timeout=short_timeout_ms)
+            except Exception:
+                pass
+
+        def _wait_until(predicate, detail: str) -> None:
+            deadline = time.monotonic() + (timeout_ms / 1000)
+            while True:
+                try:
+                    if predicate():
+                        return
+                except Exception:
+                    pass
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(detail)
+                time.sleep(0.05)
+
+        browser = None
+        context = None
+        page = None
+
         try:
-            driver = _build_driver()
-            if int(self.timeout_s) > 0:
-                driver.set_page_load_timeout(int(self.timeout_s))
-            driver.get(self.base_url)
-            wait_timeout = float(self.timeout_s) if int(self.timeout_s) > 0 else 0.01
-            wait = WebDriverWait(driver, wait_timeout, poll_frequency=0.01)
+            with sync_playwright() as pw:
+                browser = _launch_browser(pw)
+                context = browser.new_context(
+                    ignore_https_errors=not self.verify_ssl,
+                    viewport={"width": 1600, "height": 1100},
+                )
+                page = context.new_page()
+                page.goto(self.base_url, wait_until="domcontentloaded", timeout=timeout_ms)
 
-            _find_best_context(["senha", "password", "no pessoal", "pessoal", "user", "usuario", "login"])
-            inputs_login = _visible_text_inputs()
-            if len(inputs_login) < 2:
-                raise RuntimeError("Campos de login (No Pessoal/Senha) nao encontrados na tela.")
+                login_ctx = _find_best_context(["senha", "password", "no pessoal", "pessoal", "user", "usuario", "login"])
+                inputs_login = _visible_text_inputs(login_ctx)
+                if len(inputs_login) < 2:
+                    raise RuntimeError("Campos de login (No Pessoal/Senha) nao encontrados na tela.")
 
-            pwd_candidates = [
-                i for i in inputs_login if str(i.get_attribute("type") or "").strip().lower() == "password"
-            ]
-            if not pwd_candidates:
-                pwd_candidates = sorted(
-                    inputs_login,
-                    key=lambda e: _elem_score(e, ["senha", "password", "pass", "pwd"]),
+                pwd_candidates = [
+                    i for i in inputs_login if str(i.get_attribute("type") or "").strip().lower() == "password"
+                ]
+                if not pwd_candidates:
+                    pwd_candidates = sorted(
+                        inputs_login,
+                        key=lambda e: _elem_score(e, ["senha", "password", "pass", "pwd"]),
+                        reverse=True,
+                    )
+                inp_pwd = pwd_candidates[0]
+
+                user_candidates = [i for i in inputs_login if i != inp_pwd]
+                user_candidates = sorted(
+                    user_candidates,
+                    key=lambda e: _elem_score(e, ["no pessoal", "pessoal", "numero", "no", "user", "usuario", "chapa"]),
                     reverse=True,
                 )
-            inp_pwd = pwd_candidates[0]
+                if not user_candidates:
+                    raise RuntimeError("Campo de usuario (No Pessoal) nao encontrado na tela.")
+                inp_user = user_candidates[0]
 
-            user_candidates = [i for i in inputs_login if i != inp_pwd]
-            user_candidates = sorted(
-                user_candidates,
-                key=lambda e: _elem_score(e, ["no pessoal", "pessoal", "numero", "no", "user", "usuario", "chapa"]),
-                reverse=True,
-            )
-            if not user_candidates:
-                raise RuntimeError("Campo de usuario (No Pessoal) nao encontrado na tela.")
-            inp_user = user_candidates[0]
+                inp_user.fill(self.user, timeout=short_timeout_ms)
+                inp_pwd.fill(self.password, timeout=short_timeout_ms)
 
-            inp_user.clear()
-            inp_user.send_keys(self.user)
-            inp_pwd.clear()
-            inp_pwd.send_keys(self.password)
+                btn_login = _find_button(login_ctx, ["prosseguir", "entrar", "login", "ok", "acessar"])
+                if btn_login is not None:
+                    btn_login.click(timeout=short_timeout_ms)
+                else:
+                    inp_pwd.press("Enter", timeout=short_timeout_ms)
+                _wait_after_action()
 
-            btn_login = _find_button(["prosseguir", "entrar", "login", "ok", "acessar"])
-            if btn_login is not None:
-                btn_login.click()
-            else:
-                inp_pwd.send_keys(Keys.ENTER)
+                _wait_until(
+                    lambda: any(len(_visible_text_inputs(frame)) > 0 for frame in _iter_contexts()),
+                    "Campos pos-login nao encontrados na tela.",
+                )
 
-            wait.until(lambda d: len(d.find_elements(By.TAG_NAME, "input")) > 0)
+                search_ctx = _find_best_context(["localizar", "pesquisa", "chapa", "pessoal", "matricula"])
+                radios = search_ctx.query_selector_all("input[type='radio']")
+                for r in radios:
+                    marker = _elem_haystack(r)
+                    if ("PESSOAL" in marker) or ("CHAPA" in marker):
+                        if not r.is_checked():
+                            r.click(timeout=short_timeout_ms)
+                        break
 
-            _find_best_context(["localizar", "pesquisa", "chapa", "pessoal", "matricula"])
-            radios = driver.find_elements(By.XPATH, "//input[@type='radio']")
-            for r in radios:
-                marker = _elem_haystack(r)
-                if ("PESSOAL" in marker) or ("CHAPA" in marker):
-                    if not r.is_selected():
-                        r.click()
-                    break
+                search_inputs = [
+                    i
+                    for i in _visible_text_inputs(search_ctx)
+                    if str(i.get_attribute("type") or "text").strip().lower() in {"", "text", "number"}
+                ]
+                if not search_inputs:
+                    raise RuntimeError("Campo de pesquisa nao encontrado na tela de consulta.")
+                search_inputs = sorted(
+                    search_inputs,
+                    key=lambda e: _elem_score(e, ["pessoal", "numero", "chapa", "cadastro", "matricula", "no"]),
+                    reverse=True,
+                )
+                inp_search = search_inputs[0]
+                inp_search.fill(cad, timeout=short_timeout_ms)
 
-            search_inputs = [
-                i
-                for i in driver.find_elements(By.TAG_NAME, "input")
-                if i.is_displayed()
-                and (str(i.get_attribute("type") or "text").strip().lower() in {"", "text", "number"})
-            ]
-            if not search_inputs:
-                raise RuntimeError("Campo de pesquisa nao encontrado na tela de consulta.")
-            search_inputs = sorted(
-                search_inputs,
-                key=lambda e: _elem_score(e, ["pessoal", "numero", "chapa", "cadastro", "matricula", "no"]),
-                reverse=True,
-            )
-            inp_search = search_inputs[0]
-            inp_search.clear()
-            inp_search.send_keys(cad)
+                btn_search = _find_button(search_ctx, ["localizar", "pesquisa", "buscar", "ok", "procurar"])
+                if btn_search is not None:
+                    btn_search.click(timeout=short_timeout_ms)
+                else:
+                    inp_search.press("Enter", timeout=short_timeout_ms)
+                _wait_after_action()
 
-            btn_search = _find_button(["localizar", "pesquisa", "buscar", "ok", "procurar"])
-            if btn_search is not None:
-                btn_search.click()
-            else:
-                inp_search.send_keys(Keys.ENTER)
-
-            wait.until(lambda d: d.current_url is not None)
-
-            clicou_ficha = False
-            for _ in range(3):
-                for ctx in _iter_contexts():
-                    try:
-                        _switch_ctx(ctx)
-                        links = driver.find_elements(By.TAG_NAME, "a")
-                        for a in links:
-                            marker = normalize_ascii_upper(
-                                str(a.get_attribute("href") or "") + " " + str(a.text or "")
-                            )
-                            if ("EXIBEFICHA" in marker) or (cad in marker):
-                                a.click()
-                                clicou_ficha = True
+                clicou_ficha = False
+                for _ in range(3):
+                    for ctx in _iter_contexts():
+                        try:
+                            links = ctx.query_selector_all("a")
+                            for a in links:
+                                marker = normalize_ascii_upper(
+                                    str(a.get_attribute("href") or "") + " " + str(a.text_content() or "")
+                                )
+                                if ("EXIBEFICHA" in marker) or (cad in marker):
+                                    a.click(timeout=short_timeout_ms)
+                                    clicou_ficha = True
+                                    _wait_after_action()
+                                    break
+                            if clicou_ficha:
                                 break
-                        if clicou_ficha:
-                            break
-                    except Exception:
-                        continue
-                if clicou_ficha:
-                    break
+                        except Exception:
+                            continue
+                    if clicou_ficha:
+                        break
 
-            wait.until(lambda d: len(d.find_elements(By.TAG_NAME, "body")) > 0)
-            _switch_ctx(None)
-            driver.save_screenshot(str(png_ok))
+                _wait_until(
+                    lambda: any(ctx.query_selector("body") is not None for ctx in _iter_contexts()),
+                    "Corpo da pagina nao encontrado apos a busca.",
+                )
+                page.screenshot(path=str(png_ok))
 
-            linhas = []
-            for txt in _collect_page_texts():
-                linhas.extend([ln.strip() for ln in txt.splitlines() if str(ln).strip()])
+                linhas = []
+                for txt in _collect_page_texts():
+                    linhas.extend([ln.strip() for ln in txt.splitlines() if str(ln).strip()])
 
-            if not linhas and BeautifulSoup is not None:
-                linhas = self._extract_lines(driver.page_source)
+                if not linhas and BeautifulSoup is not None:
+                    linhas = self._extract_lines(page.content())
 
-            unicas = []
-            seen = set()
-            for ln in linhas:
-                if ln not in seen:
-                    unicas.append(ln)
-                    seen.add(ln)
+                unicas = []
+                seen = set()
+                for ln in linhas:
+                    if ln not in seen:
+                        unicas.append(ln)
+                        seen.add(ln)
 
-            out["ok"] = True
-            out["url_final"] = str(driver.current_url or "")
-            out["linhas"] = unicas[:120]
-            out["print_path"] = str(png_ok)
-            out["mensagem"] = "Consulta pessoal carregada via automacao."
-            out["mensagem_print"] = "Print da tela Consulta Pessoal capturado."
-            return out
+                out["ok"] = True
+                out["url_final"] = str(page.url or "")
+                out["linhas"] = unicas[:120]
+                out["print_path"] = str(png_ok)
+                out["mensagem"] = "Consulta pessoal carregada via automacao."
+                out["mensagem_print"] = "Print da tela Consulta Pessoal capturado."
+                return out
         except Exception as exc:
             try:
-                if driver is not None:
-                    driver.switch_to.default_content()
-                    driver.save_screenshot(str(png_fail))
+                if page is not None:
+                    page.screenshot(path=str(png_fail))
                     out["print_path"] = str(png_fail)
             except Exception:
                 pass
             msg_exc = self._clean_exc(exc)
-            if self._is_devtools_bloqueado(msg_exc):
-                self._selenium_bloqueado = True
-                self._selenium_bloqueio_msg = "DevTools remoto do Edge bloqueado pela politica de TI."
-                out["mensagem"] = (
-                    f"Falha ao automatizar consulta pessoal ({cad}): "
-                    "DevTools remoto do Edge bloqueado pela politica de TI."
-                )
+            if ("Executable doesn't exist" in msg_exc) or ("browser executable" in msg_exc.lower()):
+                self._playwright_bloqueado = True
+                self._playwright_bloqueio_msg = "Navegador Playwright/Edge nao encontrado."
+                out["mensagem"] = f"Falha ao automatizar consulta pessoal ({cad}): navegador Playwright/Edge nao encontrado."
             else:
                 out["mensagem"] = f"Falha ao automatizar consulta pessoal ({cad}): {msg_exc}"
             out["mensagem_print"] = out["mensagem"]
             return out
         finally:
             try:
-                if driver is not None:
-                    driver.quit()
+                if context is not None:
+                    context.close()
+            except Exception:
+                pass
+            try:
+                if browser is not None:
+                    browser.close()
             except Exception:
                 pass
 
