@@ -684,17 +684,19 @@ py -3 -c "import project.scripts.src.main as m; m.create_app(); print('ok')"
 
 ## 🧪 Testes e Validação
 
-Teste de equivalencia notebook vs MVC:
+Suíte automatizada rastreada: não identificada.
+
+Validações mínimas recomendadas:
 
 ```powershell
-# unittest (disponivel por padrao)
-py -3 -m unittest tests.test_equivalence_notebook_vs_mvc -v
+# Compilar arquivos Python sem executar o dashboard
+py -3 -m compileall project "Códigos Extras"
 
-# pytest (se instalado no ambiente)
-pytest tests/test_equivalence_notebook_vs_mvc.py -v
+# Bootstrap do app, quando as variáveis de dados estiverem configuradas
+py -3 -c "import project.scripts.src.main as m; m.create_app(); print('ok')"
 ```
 
-O teste valida:
+Ao reintroduzir testes automatizados, priorize equivalência entre notebook e MVC:
 - mesmas colunas/ordem
 - mesmos valores numéricos
 - delegacao dos builders para SQL canonica
@@ -807,7 +809,7 @@ Projeto interno — uso corporativo.
       <p style="margin: 2px 0; color: #444; font-size: 14px;">Estagiário de Análise de Dados | Data Analytics</p>
       <p style="margin: 2px 0; color: #444; font-size: 14px;">Volkswagen do Brasil</p>
       <p style="margin: 6px 0; font-size: 13px;">
-        <a href="mailto:nicholas.birochi@gmail.com" style="color: #0055A5; text-decoration: none; font-weight: 500;">Email</a> &nbsp;•&nbsp;
+        <span style="color: #0055A5; font-weight: 500;">Email corporativo sob demanda</span> &nbsp;•&nbsp;
         <a href="https://www.linkedin.com/in/nicholas-birochi/" style="color: #0A66C2; text-decoration: none; font-weight: 500;">LinkedIn</a> &nbsp;•&nbsp;
         <a href="https://github.com/nicholasbirochi" style="color: #181717; text-decoration: none; font-weight: 500;">GitHub</a> &nbsp;•&nbsp;
         <a href="https://app.rocketseat.com.br/me/nicholas-birochi-1501" style="color: #8257E5; text-decoration: none; font-weight: 500;">Rocketseat</a>

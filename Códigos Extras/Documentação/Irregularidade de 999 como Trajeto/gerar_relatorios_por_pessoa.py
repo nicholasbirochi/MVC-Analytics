@@ -7,7 +7,7 @@ import re
 import textwrap
 import unicodedata
 from pathlib import Path
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 # Evita backend Tk (TclError) no Python embutido.
 os.environ["MPLBACKEND"] = "Agg"
@@ -73,10 +73,17 @@ if Path.cwd() != SCRIPT_DIR:
     _load_dotenv_simple(Path.cwd() / ".env")
 
 # Mantem fallback para CONSULTA_PESSOAL_EMAIL por compatibilidade com setups antigos.
+DEFAULT_CONSULTA_PESSOAL_URL = "https://example.invalid/consulta-pessoal/default.htm"
 CONSULTA_PESSOAL_URL = (
     str(os.getenv("CONSULTA_PESSOAL_URL", "")).strip()
     or str(os.getenv("CONSULTA_PESSOAL_EMAIL", "")).strip()
-    or "https://vwbransvprve1.sa.vwg/recursos.humanos.consultapessoal/default.htm"
+    or DEFAULT_CONSULTA_PESSOAL_URL
+)
+_parsed_consulta_url = urlparse(CONSULTA_PESSOAL_URL)
+CONSULTA_PESSOAL_ORIGIN = (
+    str(os.getenv("CONSULTA_PESSOAL_ORIGIN", "")).strip()
+    or f"{_parsed_consulta_url.scheme}://{_parsed_consulta_url.netloc}"
+    or "https://example.invalid"
 )
 CONSULTA_PESSOAL_USER = os.getenv("CONSULTA_PESSOAL_USER", "")
 CONSULTA_PESSOAL_PASSWORD = os.getenv("CONSULTA_PESSOAL_PASSWORD", "")
@@ -876,7 +883,7 @@ class ConsultaPessoalClient:
                         u,
                         headers={
                             "Referer": base_url,
-                            "Origin": "https://vwbransvprve1.sa.vwg",
+                            "Origin": CONSULTA_PESSOAL_ORIGIN,
                             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36",
                             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                         },
@@ -1099,7 +1106,7 @@ class ConsultaPessoalClient:
                         timeout=self._timeout_value(),
                         headers={
                             "Referer": str(resp_search.url or ""),
-                            "Origin": "https://vwbransvprve1.sa.vwg",
+                            "Origin": CONSULTA_PESSOAL_ORIGIN,
                             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36",
                             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                         },
@@ -1134,7 +1141,7 @@ class ConsultaPessoalClient:
                         url_exibe,
                         headers={
                             "Referer": str(resp_search.url or ""),
-                            "Origin": "https://vwbransvprve1.sa.vwg",
+                            "Origin": CONSULTA_PESSOAL_ORIGIN,
                             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36",
                             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                         },
@@ -1302,7 +1309,7 @@ class ConsultaPessoalClient:
                                 timeout=self._timeout_value(),
                                 headers={
                                     "Referer": base_ficha,
-                                    "Origin": "https://vwbransvprve1.sa.vwg",
+                                    "Origin": CONSULTA_PESSOAL_ORIGIN,
                                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36",
                                     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                                 },
@@ -2128,7 +2135,7 @@ class ConsultaPessoalClient:
                     timeout=self._timeout_value(),
                     headers={
                         "Referer": base_url,
-                        "Origin": "https://vwbransvprve1.sa.vwg",
+                        "Origin": CONSULTA_PESSOAL_ORIGIN,
                         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36",
                         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                     },
@@ -2161,7 +2168,7 @@ class ConsultaPessoalClient:
                         timeout=self._timeout_value(),
                         headers={
                             "Referer": base_url,
-                            "Origin": "https://vwbransvprve1.sa.vwg",
+                            "Origin": CONSULTA_PESSOAL_ORIGIN,
                             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36",
                             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                         },
@@ -2187,7 +2194,7 @@ class ConsultaPessoalClient:
                     timeout=self._timeout_value(),
                     headers={
                         "Referer": base_url,
-                        "Origin": "https://vwbransvprve1.sa.vwg",
+                        "Origin": CONSULTA_PESSOAL_ORIGIN,
                         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36",
                         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                     },
@@ -2744,7 +2751,7 @@ class ConsultaPessoalClient:
                 timeout=self._timeout_value(),
                 headers={
                     "Referer": str(page_url or self.base_url),
-                    "Origin": "https://vwbransvprve1.sa.vwg",
+                    "Origin": CONSULTA_PESSOAL_ORIGIN,
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36",
                     "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
                 },
@@ -2844,7 +2851,7 @@ class ConsultaPessoalClient:
     def _request_form(self, action: str, method: str, payload: dict[str, str]):
         headers = {
             "Referer": action,
-            "Origin": "https://vwbransvprve1.sa.vwg",
+            "Origin": CONSULTA_PESSOAL_ORIGIN,
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         }

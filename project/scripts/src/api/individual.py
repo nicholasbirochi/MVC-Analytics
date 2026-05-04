@@ -65,7 +65,10 @@ estilo_oculto = ESTILO_OCULTO
 ordenacao_dias = ORDENACAO_DIAS
 dias_portugues = DIAS_PORTUGUES
 
-CONSULTA_BASE_URL_DEFAULT = "https://vwbransvprve1.sa.vwg/recursos.humanos.consultapessoal/default.htm"
+CONSULTA_BASE_URL_DEFAULT = os.getenv(
+    "CONSULTA_PESSOAL_BASE_URL",
+    "https://example.invalid/consulta-pessoal/default.htm",
+).strip()
 CONSULTA_COR_DESTAQUE = "#123B82"
 CONSULTA_COR_CAMPO = "#D4E1F2"
 CONSULTA_COR_VALOR = "#F1EAD3"

@@ -47,14 +47,17 @@ def _ensure_matplotlib() -> bool:
         return False
 
 
-DEFAULT_BASE_URL = "https://vwbransvprve1.sa.vwg/recursos.humanos.consultapessoal/default.htm"
+DEFAULT_BASE_URL = (
+    os.getenv("CONSULTA_PESSOAL_BASE_URL", "https://example.invalid/consulta-pessoal/default.htm")
+    .strip()
+)
 COR_DESTAQUE = "#123B82"
 COR_CABECALHO_TABELA = "#123B82"
 COR_CAMPO = "#D4E1F2"
 COR_VALOR = "#F1EAD3"
 PASTA_SAIDA_CONSULTA = "saidas consulta pessoal"
-PASTA_BASE_CONSULTA = r"Z:\Nicholas Birochi\Consulta Pessoal"
-EXECUTAVEL_CONSULTA = r"Z:\Nicholas Birochi\Consulta Pessoal.exe"
+PASTA_BASE_CONSULTA = os.getenv("CONSULTA_PESSOAL_BASE_DIR", str(Path(__file__).resolve().parent)).strip()
+EXECUTAVEL_CONSULTA = os.getenv("CONSULTA_PESSOAL_EXECUTABLE", "Consulta Pessoal.exe").strip()
 TIPO_BUSCA_AUTO = "auto"
 TIPO_BUSCA_CHAPA = "chapa"
 TIPO_BUSCA_NOME = "nome_completo"
@@ -198,12 +201,13 @@ def _path_under_base(path: Path, base: Path) -> bool:
 
 
 def _env_persist_enabled(repo_root: Path, script_dir: Path) -> bool:
-    # No compartilhamento Z:\Nicholas Birochi nao persistimos nada em arquivos .env.
-    bloqueio_base = Path(r"Z:\Nicholas Birochi")
-    if _path_under_base(script_dir, bloqueio_base):
-        return False
-    if _path_under_base(repo_root, bloqueio_base):
-        return False
+    bloqueio_raw = str(os.getenv("CONSULTA_PESSOAL_NO_PERSIST_BASE", "")).strip()
+    if bloqueio_raw:
+        bloqueio_base = Path(bloqueio_raw)
+        if _path_under_base(script_dir, bloqueio_base):
+            return False
+        if _path_under_base(repo_root, bloqueio_base):
+            return False
     return True
 
 
@@ -2614,7 +2618,7 @@ def _run_web_front(args: argparse.Namespace, script_dir: Path, repo_root: Path) 
                     status_msgs.append(
                         (
                             True,
-                            "Modo sem persistencia em .env ativo para este endereco (Z:\\Nicholas Birochi).",
+                            "Modo sem persistencia em .env ativo para este endereco.",
                         )
                     )
 

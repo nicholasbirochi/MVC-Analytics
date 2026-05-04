@@ -132,17 +132,8 @@ def get_settings() -> Settings:
     base_dir = project_dir
     external_data_dir = (repo_root.parent / "_dados_ronda_local" / "project" / "database").resolve()
     internal_data_dir = (base_dir / "database").resolve()
-    onedrive_data_dir = (
-        Path.home()
-        / "OneDrive - Volkswagen AG"
-        / "Trabalho"
-        / "Projetos"
-        / "3 - Ronda"
-        / "project"
-        / "database"
-    ).resolve()
     default_data_dir = (
-        _freshest_database_dir((external_data_dir, internal_data_dir, onedrive_data_dir))
+        _freshest_database_dir((external_data_dir, internal_data_dir))
         or (external_data_dir if external_data_dir.exists() else internal_data_dir)
     )
     data_dir = _resolve_path(
