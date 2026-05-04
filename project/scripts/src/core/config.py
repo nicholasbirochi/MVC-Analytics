@@ -92,6 +92,29 @@ def _resolve_path(raw: str | None, default: Path, bases: Iterable[Path]) -> Path
     return default
 
 
+def _freshest_database_dir(candidates: Iterable[Path]) -> Path | None:
+    """Escolhe a pasta com o DW SQLite mais recente entre cópias conhecidas."""
+    best: tuple[int, int, Path] | None = None
+    seen: set[str] = set()
+    for raw_dir in candidates:
+        data_dir = Path(raw_dir).resolve()
+        key = str(data_dir).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        dw = data_dir / "dw_ronda.sqlite"
+        if not dw.exists():
+            continue
+        try:
+            st = dw.stat()
+        except OSError:
+            continue
+        item = (int(st.st_mtime_ns), int(st.st_size), data_dir)
+        if (best is None) or (item[:2] > best[:2]):
+            best = item
+    return best[2] if best is not None else None
+
+
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     """Carrega configuracoes a partir de .env + defaults."""
@@ -109,7 +132,19 @@ def get_settings() -> Settings:
     base_dir = project_dir
     external_data_dir = (repo_root.parent / "_dados_ronda_local" / "project" / "database").resolve()
     internal_data_dir = (base_dir / "database").resolve()
-    default_data_dir = external_data_dir if external_data_dir.exists() else internal_data_dir
+    onedrive_data_dir = (
+        Path.home()
+        / "OneDrive - Volkswagen AG"
+        / "Trabalho"
+        / "Projetos"
+        / "3 - Ronda"
+        / "project"
+        / "database"
+    ).resolve()
+    default_data_dir = (
+        _freshest_database_dir((external_data_dir, internal_data_dir, onedrive_data_dir))
+        or (external_data_dir if external_data_dir.exists() else internal_data_dir)
+    )
     data_dir = _resolve_path(
         os.getenv("ND_DATA_DIR"),
         default_data_dir,

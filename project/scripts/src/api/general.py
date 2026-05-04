@@ -11,6 +11,7 @@ Padronização:
 """
 from __future__ import annotations
 from dash import Input, Output, State, callback_context, dcc, html
+from dash.exceptions import PreventUpdate
 import pandas as pd
 import plotly.graph_objects as go
 import time
@@ -59,7 +60,7 @@ from ..ui.figures import (
     grafico_heatmap_encontros_exec,
     figura_vazia_linha,
 )
-from ..ui.theme import aplicar_tema_pb
+from ..ui.theme import ESTILO_EXIBIR, ESTILO_OCULTO, aplicar_tema_pb
 
 
 def _normalizar_faixas(faixas) -> list[str]:
@@ -75,6 +76,89 @@ def _normalizar_cadastro(valor: object) -> str:
     if texto.endswith(".0") and texto[:-2].isdigit():
         return texto[:-2]
     return texto
+
+
+def _normalizar_cargo_prefiltro(cargo) -> list[str]:
+    if not cargo:
+        return []
+    valores = [cargo] if isinstance(cargo, str) else list(cargo)
+    normalizados: list[str] = []
+    for valor in valores:
+        texto = str(valor or "").strip().upper()
+        cod = ""
+        if texto in {"E", "H", "M", "T"}:
+            cod = texto
+        elif texto.startswith("EXEC"):
+            cod = "E"
+        elif texto.startswith("HOR"):
+            cod = "H"
+        elif texto.startswith("MENS"):
+            cod = "M"
+        elif texto.startswith("TERC"):
+            cod = "T"
+
+        if cod and cod not in normalizados:
+            normalizados.append(cod)
+    return normalizados
+
+
+def _normalizar_areas_prefiltro(areas) -> list[str]:
+    if not areas:
+        return []
+    if isinstance(areas, str):
+        areas = [areas]
+    normalizadas: list[str] = []
+    for area in areas:
+        texto = str(area or "").strip()
+        if not texto or texto == "GERAL":
+            continue
+        if texto not in normalizadas:
+            normalizadas.append(texto)
+    return normalizadas
+
+
+def _normalizar_periodo_prefiltro(cenario: object, periodo) -> tuple[str, list[int]]:
+    cenario_norm = "c2" if str(cenario or "").strip().lower() == "c2" else "c1"
+    min_i, max_i = (LT_C2_MIN, LT_C2_MAX) if cenario_norm == "c2" else (LT_C1_MIN, LT_C1_MAX)
+
+    try:
+        v0, v1 = periodo if periodo and len(periodo) == 2 else [min_i, max_i]
+        v0, v1 = int(v0), int(v1)
+    except Exception:
+        v0, v1 = min_i, max_i
+
+    if v1 < min_i or v0 > max_i:
+        return cenario_norm, [min_i, max_i]
+
+    v0 = min(max(v0, min_i), max_i)
+    v1 = min(max(v1, min_i), max_i)
+    if v0 > v1:
+        v0, v1 = min_i, max_i
+    return cenario_norm, [v0, v1]
+
+
+def _aplicar_prefiltros_inicio(
+    media_df: pd.DataFrame,
+    cargo_prefiltro: object = None,
+    areas_prefiltro=None,
+) -> pd.DataFrame:
+    if media_df is None or media_df.empty:
+        return media_df
+
+    out = media_df.copy()
+    cargos = _normalizar_cargo_prefiltro(cargo_prefiltro)
+    if cargos and "Cargo" in out.columns:
+        out = out[out["Cargo"].astype(str).str.upper().str.strip().isin(cargos)].copy()
+
+    areas = _normalizar_areas_prefiltro(areas_prefiltro)
+    if areas and "Área" in out.columns:
+        area_series = out["Área"].astype(str).str.strip()
+        mask = pd.Series(False, index=out.index)
+        for area in areas:
+            mask = mask | area_series.eq(area) | area_series.str.startswith(area)
+        out = out[mask].copy()
+
+    return out
 
 
 def _media_colaboradores(
@@ -116,6 +200,103 @@ def _media_ponderada(df: pd.DataFrame, cargo: str | None = None) -> float:
 
 
 def register(app):
+    @app.callback(
+        Output('tela-inicial-filtros', 'style'),
+        Input('url', 'pathname')
+    )
+    def rotear_tela_prefiltro(pathname):
+        if pathname and pathname.rstrip('/') == "/prefiltro":
+            return {
+                'minHeight': '100vh',
+                'display': 'flex',
+                'alignItems': 'center',
+                'justifyContent': 'center',
+                'padding': '20px',
+                'boxSizing': 'border-box',
+                'backgroundColor': 'white',
+                'fontFamily': 'VW Text',
+            }
+        return ESTILO_OCULTO
+
+    @app.callback(
+        Output('prefiltro-periodo', 'min'),
+        Output('prefiltro-periodo', 'max'),
+        Output('prefiltro-periodo', 'value'),
+        Input('prefiltro-cenario', 'value'),
+        State('prefiltro-periodo', 'value')
+    )
+    def atualizar_periodo_prefiltro(cenario, periodo_atual):
+        cenario_norm, periodo = _normalizar_periodo_prefiltro(cenario, periodo_atual)
+        min_i, max_i = (LT_C2_MIN, LT_C2_MAX) if cenario_norm == "c2" else (LT_C1_MIN, LT_C1_MAX)
+        return min_i, max_i, periodo
+
+    @app.callback(
+        Output('pagina-geral', 'style', allow_duplicate=True),
+        Output('desligados-toggle', 'value'),
+        Output('viajam-toggle', 'value'),
+        Output('dropdown-area', 'value'),
+        Output('cenario-toggle', 'value'),
+        Output('periodo-slider', 'value', allow_duplicate=True),
+        Output('area-selecionada', 'data', allow_duplicate=True),
+        Output('subarea-selecionada', 'data', allow_duplicate=True),
+        Output('periodo-indices', 'data', allow_duplicate=True),
+        Output('cargo-selecionado', 'data'),
+        Output('areas-prefiltro', 'data'),
+        Output('prefiltro-aplicado', 'data'),
+        Output('url', 'pathname', allow_duplicate=True),
+        Input('prefiltro-confirmar', 'n_clicks'),
+        State('prefiltro-cargo', 'value'),
+        State('prefiltro-escopo', 'value'),
+        State('prefiltro-cenario', 'value'),
+        State('prefiltro-periodo', 'value'),
+        State('prefiltro-areas', 'value'),
+        prevent_initial_call=True
+    )
+    def confirmar_prefiltro(n_clicks, cargo, escopo, cenario, periodo, areas):
+        if not n_clicks:
+            raise PreventUpdate
+
+        cenario_norm, periodo_norm = _normalizar_periodo_prefiltro(cenario, periodo)
+        cargo_norm = _normalizar_cargo_prefiltro(cargo)
+        areas_norm = _normalizar_areas_prefiltro(areas)
+        escopo_set = set(escopo or [])
+        desligados = "left" if "desligados" in escopo_set else "right"
+        viajam = "left" if "viajam" in escopo_set else "right"
+
+        area_dropdown = "GERAL"
+        areas_store: list[str] = []
+        if len(areas_norm) == 1:
+            area_dropdown = areas_norm[0]
+        elif len(areas_norm) > 1:
+            areas_store = areas_norm
+
+        return (
+            ESTILO_EXIBIR,
+            desligados,
+            viajam,
+            area_dropdown,
+            cenario_norm,
+            periodo_norm,
+            area_dropdown,
+            None,
+            periodo_norm,
+            cargo_norm,
+            areas_store,
+            True,
+            "/",
+        )
+
+    @app.callback(
+        Output('areas-prefiltro', 'data', allow_duplicate=True),
+        Input('dropdown-area', 'value'),
+        State('areas-prefiltro', 'data'),
+        prevent_initial_call=True
+    )
+    def limpar_prefiltro_multi_area(area, areas_prefiltro):
+        if not areas_prefiltro or area == "GERAL":
+            raise PreventUpdate
+        return []
+
     @app.callback(
         Output('resumo-container', 'style'),
         Output('toggle-resumo-btn', 'children'),
@@ -262,9 +443,25 @@ def register(app):
         Input('faixa-selecionada', 'data'),
         Input('area-selecionada', 'data'),
         Input('subarea-selecionada', 'data'),
-        Input('periodo-indices', 'data')
+        Input('periodo-indices', 'data'),
+        Input('cargo-selecionado', 'data'),
+        Input('areas-prefiltro', 'data'),
+        Input('prefiltro-aplicado', 'data')
     )
-    def atualizar_tabela(df_desligados, viajam, chapa_selecionada, faixas, area_selecionada, subarea_selecionada, periodo_idx):
+    def atualizar_tabela(
+        df_desligados,
+        viajam,
+        chapa_selecionada,
+        faixas,
+        area_selecionada,
+        subarea_selecionada,
+        periodo_idx,
+        cargo_prefiltro,
+        areas_prefiltro,
+        prefiltro_aplicado,
+    ):
+        if not prefiltro_aplicado:
+            return html.Div()
         faixas = _normalizar_faixas(faixas)
         media_df = _media_colaboradores(
             df_desligados,
@@ -273,6 +470,7 @@ def register(app):
             subarea_selecionada,
             periodo_idx,
         )
+        media_df = _aplicar_prefiltros_inicio(media_df, cargo_prefiltro, areas_prefiltro)
         media_colab = media_df[
             ["Área", "Departamento", "Cadastro", "Nome", "Cargo Especifico", "Média Presença"]
         ].copy()
@@ -353,9 +551,24 @@ def register(app):
         Input('faixa-selecionada', 'data'),
         Input('area-selecionada', 'data'),
         Input('subarea-selecionada', 'data'),
-        Input('periodo-indices', 'data')
+        Input('periodo-indices', 'data'),
+        Input('cargo-selecionado', 'data'),
+        Input('areas-prefiltro', 'data'),
+        Input('prefiltro-aplicado', 'data')
     )
-    def atualizar_opcoes_chapa(df_desligados, viajam, faixas, area_selecionada, subarea_selecionada, periodo_idx):
+    def atualizar_opcoes_chapa(
+        df_desligados,
+        viajam,
+        faixas,
+        area_selecionada,
+        subarea_selecionada,
+        periodo_idx,
+        cargo_prefiltro,
+        areas_prefiltro,
+        prefiltro_aplicado,
+    ):
+        if not prefiltro_aplicado:
+            return []
         faixas = _normalizar_faixas(faixas)
         media_df = _media_colaboradores(
             df_desligados,
@@ -364,6 +577,7 @@ def register(app):
             subarea_selecionada,
             periodo_idx,
         )
+        media_df = _aplicar_prefiltros_inicio(media_df, cargo_prefiltro, areas_prefiltro)
         media_presenca = media_df[['Cadastro', 'Nome', 'Média Presença']].copy()
         media_presenca.columns = ['Chapa', 'Nome', 'Média']
         media_presenca["Chapa"] = media_presenca["Chapa"].map(_normalizar_cadastro)
@@ -383,9 +597,24 @@ def register(app):
         Input('faixa-selecionada', 'data'),
         Input('area-selecionada', 'data'),
         Input('subarea-selecionada', 'data'),
-        Input('periodo-indices', 'data')
+        Input('periodo-indices', 'data'),
+        Input('cargo-selecionado', 'data'),
+        Input('areas-prefiltro', 'data'),
+        Input('prefiltro-aplicado', 'data')
     )
-    def atualizar_heatmap(df_desligados, viajam, faixas, area_selecionada, subarea_selecionada, periodo_idx):
+    def atualizar_heatmap(
+        df_desligados,
+        viajam,
+        faixas,
+        area_selecionada,
+        subarea_selecionada,
+        periodo_idx,
+        cargo_prefiltro,
+        areas_prefiltro,
+        prefiltro_aplicado,
+    ):
+        if not prefiltro_aplicado:
+            return figura_vazia_linha("Aguardando filtros iniciais.")
         faixas = _normalizar_faixas(faixas)
         media_df = _media_colaboradores(
             df_desligados,
@@ -394,6 +623,7 @@ def register(app):
             subarea_selecionada,
             periodo_idx,
         )
+        media_df = _aplicar_prefiltros_inicio(media_df, cargo_prefiltro, areas_prefiltro)
         media_presenca_detalhada = media_df[['Cadastro', 'Média Presença']].copy()
 
         media_por_pessoa = media_presenca_detalhada[['Cadastro', 'Média Presença']].copy()
@@ -503,9 +733,24 @@ def register(app):
         Input('faixa-selecionada', 'data'),
         Input('area-selecionada', 'data'),
         Input('subarea-selecionada', 'data'),
-        Input('periodo-indices', 'data')
+        Input('periodo-indices', 'data'),
+        Input('cargo-selecionado', 'data'),
+        Input('areas-prefiltro', 'data'),
+        Input('prefiltro-aplicado', 'data')
     )
-    def atualizar_dispersao(df_desligados, viajam, faixas, area_selecionada, subarea_selecionada, periodo_idx):
+    def atualizar_dispersao(
+        df_desligados,
+        viajam,
+        faixas,
+        area_selecionada,
+        subarea_selecionada,
+        periodo_idx,
+        cargo_prefiltro,
+        areas_prefiltro,
+        prefiltro_aplicado,
+    ):
+        if not prefiltro_aplicado:
+            return figura_vazia_linha("Aguardando filtros iniciais.")
         faixas = _normalizar_faixas(faixas)
         media_df = _media_colaboradores(
             df_desligados,
@@ -514,6 +759,7 @@ def register(app):
             subarea_selecionada,
             periodo_idx,
         )
+        media_df = _aplicar_prefiltros_inicio(media_df, cargo_prefiltro, areas_prefiltro)
         media_presenca_detalhada = media_df[['Cadastro', 'Média Presença']].copy()
 
         media_presenca_detalhada = aplicar_filtro_faixas(media_presenca_detalhada, 'Média Presença', faixas)
@@ -552,9 +798,24 @@ def register(app):
         Input('faixa-selecionada', 'data'),
         Input('area-selecionada', 'data'),
         Input('subarea-selecionada', 'data'),
-        Input('periodo-indices', 'data')
+        Input('periodo-indices', 'data'),
+        Input('cargo-selecionado', 'data'),
+        Input('areas-prefiltro', 'data'),
+        Input('prefiltro-aplicado', 'data')
     )
-    def atualizar_presenca_cargo(df_desligados, viajam, faixas, area_selecionada, subarea_selecionada, periodo_idx):
+    def atualizar_presenca_cargo(
+        df_desligados,
+        viajam,
+        faixas,
+        area_selecionada,
+        subarea_selecionada,
+        periodo_idx,
+        cargo_prefiltro,
+        areas_prefiltro,
+        prefiltro_aplicado,
+    ):
+        if not prefiltro_aplicado:
+            return figura_vazia_linha("Aguardando filtros iniciais.")
         faixas = _normalizar_faixas(faixas)
         media_df = _media_colaboradores(
             df_desligados,
@@ -563,6 +824,7 @@ def register(app):
             subarea_selecionada,
             periodo_idx,
         )
+        media_df = _aplicar_prefiltros_inicio(media_df, cargo_prefiltro, areas_prefiltro)
         media_presenca_detalhada = media_df[['Cadastro', 'Média Presença', 'Cargo']].copy()
         media_presenca_detalhada = aplicar_filtro_faixas(media_presenca_detalhada, 'Média Presença', faixas)
         if media_presenca_detalhada.empty:
@@ -611,11 +873,27 @@ def register(app):
         Input('faixa-selecionada', 'data'),
         Input('area-selecionada', 'data'),
         Input('subarea-selecionada', 'data'),
-        Input('periodo-indices', 'data')
+        Input('periodo-indices', 'data'),
+        Input('cargo-selecionado', 'data'),
+        Input('areas-prefiltro', 'data'),
+        Input('prefiltro-aplicado', 'data')
     )
-    def atualizar_boxplot(df_desligados, viajam, faixas, area_selecionada, subarea_selecionada, periodo_idx):
+    def atualizar_boxplot(
+        df_desligados,
+        viajam,
+        faixas,
+        area_selecionada,
+        subarea_selecionada,
+        periodo_idx,
+        cargo_prefiltro,
+        areas_prefiltro,
+        prefiltro_aplicado,
+    ):
+        if not prefiltro_aplicado:
+            return figura_vazia_linha("Aguardando filtros iniciais.")
         # Se nenhuma área específica foi selecionada, não carrega o gráfico
-        if not area_selecionada or area_selecionada == "GERAL":
+        areas_multiplas = _normalizar_areas_prefiltro(areas_prefiltro)
+        if not area_selecionada or (area_selecionada == "GERAL" and not areas_multiplas):
             # pode retornar um gráfico vazio ou simplesmente não atualizar
             return figura_vazia_linha("Selecione uma área no dropdown para visualizar o Boxplot.")
         faixas = _normalizar_faixas(faixas)
@@ -626,6 +904,7 @@ def register(app):
             subarea_selecionada,
             periodo_idx,
         )
+        media_df = _aplicar_prefiltros_inicio(media_df, cargo_prefiltro, areas_prefiltro)
         medias_individuais = media_df[['Cadastro', 'Nome', 'Área', 'Média Presença']].copy()
         medias_individuais.columns = ['Chapa', 'Nome', 'Área', 'Média Presença']
         medias_individuais['Média Presença'] = medias_individuais['Média Presença'].round(2)
@@ -697,9 +976,23 @@ def register(app):
         Input('viajam-toggle', 'value'),
         Input('area-selecionada', 'data'),
         Input('subarea-selecionada', 'data'),
-        Input('periodo-indices', 'data')
+        Input('periodo-indices', 'data'),
+        Input('cargo-selecionado', 'data'),
+        Input('areas-prefiltro', 'data'),
+        Input('prefiltro-aplicado', 'data')
     )
-    def atualizar_info(df_desligados, viajam, area_selecionada, subarea_selecionada, periodo_idx):
+    def atualizar_info(
+        df_desligados,
+        viajam,
+        area_selecionada,
+        subarea_selecionada,
+        periodo_idx,
+        cargo_prefiltro,
+        areas_prefiltro,
+        prefiltro_aplicado,
+    ):
+        if not prefiltro_aplicado:
+            return html.Div()
         media_df = _media_colaboradores(
             df_desligados,
             viajam,
@@ -707,6 +1000,7 @@ def register(app):
             subarea_selecionada,
             periodo_idx,
         )
+        media_df = _aplicar_prefiltros_inicio(media_df, cargo_prefiltro, areas_prefiltro)
 
         total_colaboradores = media_df['Cadastro'].nunique() if 'Cadastro' in media_df.columns else 0
         total_mensalistas = media_df[media_df['Cargo'] == 'M']['Cadastro'].nunique() if 'Cargo' in media_df.columns else 0
@@ -736,15 +1030,20 @@ def register(app):
             except ValueError:
                 return None
 
-        def _sorted_rows_desc(items, formatter=lambda x: x):
+        def _sorted_rows_desc(items, formatter=lambda x: x, keep_first: bool = False):
             def _sort_key(item):
                 num = _to_number(item[1])
                 return (num is None, num if num is not None else 0)
 
-            items_sorted = sorted(items, key=_sort_key, reverse=True)
+            fixed = list(items[:1]) if keep_first and items else []
+            sortable = list(items[1:]) if keep_first and items else list(items)
+            items_sorted = sorted(sortable, key=_sort_key, reverse=True)
             numericos = [item for item in items_sorted if _to_number(item[1]) is not None]
             nao_numericos = [item for item in items_sorted if _to_number(item[1]) is None]
-            return [html.Tr([html.Td(label), html.Td(formatter(value))]) for label, value in numericos + nao_numericos]
+            return [
+                html.Tr([html.Td(label), html.Td(formatter(value))])
+                for label, value in fixed + numericos + nao_numericos
+            ]
 
         colab_items = [
             ("Total de Colaboradores:", total_colaboradores),
@@ -762,7 +1061,7 @@ def register(app):
         ]
 
         rows = (
-            _sorted_rows_desc(colab_items)
+            _sorted_rows_desc(colab_items, keep_first=True)
             + [
                 html.Tr([html.Td(html.Br()), html.Td()]),
                 html.Tr([html.Th("Média de Presença por Semana", colSpan=2)], style={'fontSize': '20px'}),
@@ -774,6 +1073,7 @@ def register(app):
                 else (
                     lambda x: "0" if (x is None or x != x) else f"{x}"
                 )(_to_number(v)),
+                keep_first=True,
             )
         )
 
@@ -794,9 +1094,24 @@ def register(app):
         Input('faixa-selecionada', 'data'),
         Input('area-selecionada', 'data'),
         Input('subarea-selecionada', 'data'),
-        Input('periodo-indices', 'data')
+        Input('periodo-indices', 'data'),
+        Input('cargo-selecionado', 'data'),
+        Input('areas-prefiltro', 'data'),
+        Input('prefiltro-aplicado', 'data')
     )
-    def atualizar_resumo(df_desligados, viajam, faixas, area_selecionada, subarea_selecionada, periodo_idx):
+    def atualizar_resumo(
+        df_desligados,
+        viajam,
+        faixas,
+        area_selecionada,
+        subarea_selecionada,
+        periodo_idx,
+        cargo_prefiltro,
+        areas_prefiltro,
+        prefiltro_aplicado,
+    ):
+        if not prefiltro_aplicado:
+            return html.Div()
         faixas = _normalizar_faixas(faixas)
         media_df = _media_colaboradores(
             df_desligados,
@@ -805,6 +1120,7 @@ def register(app):
             subarea_selecionada,
             periodo_idx,
         )
+        media_df = _aplicar_prefiltros_inicio(media_df, cargo_prefiltro, areas_prefiltro)
         media_colab_resumo = media_df[
             ['Área', 'Departamento', 'Cadastro', 'Nome', 'Cargo', 'Média Presença']
         ].copy()

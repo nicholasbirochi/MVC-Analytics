@@ -39,6 +39,7 @@ from ..domain.periods import (
     periodo_limites,
 )
 from ..domain.filters import slug
+from ..domain.pipeline import dw_almoco_min_max
 from ..domain.cargo import normalize_cargo_series
 from ..ui.figures import (
     grafico_heatmap_encontros_men,
@@ -57,6 +58,84 @@ from ..ui.theme import ESTILO_EXIBIR, ESTILO_OCULTO, aplicar_tema_pb
 
 estilo_exibir = ESTILO_EXIBIR
 estilo_oculto = ESTILO_OCULTO
+
+_MESES_PT_BR = [
+    "Janeiro",
+    "Fevereiro",
+    "Março",
+    "Abril",
+    "Maio",
+    "Junho",
+    "Julho",
+    "Agosto",
+    "Setembro",
+    "Outubro",
+    "Novembro",
+    "Dezembro",
+]
+
+
+def _fmt_mes_ano(dt) -> str:
+    """Formata mês/ano sem depender da localidade instalada no Windows."""
+    ts = pd.Timestamp(dt)
+    try:
+        mes = ts.month_name(locale="pt_BR").capitalize()
+    except Exception:
+        mes = _MESES_PT_BR[ts.month - 1]
+    return f"{mes}/{ts.year}"
+
+
+def _periodo_label(dt_ini, dt_fim) -> str:
+    return f"{_fmt_mes_ano(dt_ini)} a {_fmt_mes_ano(dt_fim)}"
+
+
+def _titulos_graficos_area(periodo: str, is_almoco: bool) -> tuple[str, str]:
+    titulo_men = (
+        f"Almoços e Saídas — Mensalistas, Horistas e Terceiros × Executivos ({periodo})"
+        if is_almoco
+        else f"Presença Percentual de Mensalistas, Horistas e Terceiros com os seus Executivos ({periodo})"
+    )
+    titulo_exec = (
+        f"Almoços e Saídas — Executivos × Executivos ({periodo})"
+        if is_almoco
+        else f"Presença Percentual entre Executivos ({periodo})"
+    )
+    return titulo_men, titulo_exec
+
+
+def _figuras_heatmap_area(df_full: pd.DataFrame, periodo: str, is_almoco: bool):
+    if df_full is None or df_full.empty:
+        fig = figura_vazia_linha("Sem dados de relacionamento para a área e período selecionados.")
+        return fig, fig
+
+    titulo_men, titulo_exec = _titulos_graficos_area(periodo, is_almoco)
+    try:
+        fig_men = aplicar_tema_pb(
+            grafico_heatmap_encontros_men(
+                df_full,
+                titulo_men,
+                validar_mesma_planta=True,
+            ),
+            so_y_boxplot=False,
+            grade=True,
+        )
+        fig_exec = aplicar_tema_pb(
+            grafico_heatmap_encontros_exec(
+                df_full,
+                titulo_exec,
+                validar_mesma_planta=True,
+            ),
+            so_y_boxplot=False,
+            grade=False,
+            clean=True,
+        )
+    except Exception as exc:
+        fig = figura_vazia_linha(f"Erro ao gerar relacionamento da área: {str(exc)[:180]}")
+        return fig, fig
+
+    fig_men.update_layout(uirevision="area-vis-men")
+    fig_exec.update_layout(uirevision="area-vis-exec")
+    return fig_men, fig_exec
 
 
 def _headcount_card(area: str | None, subarea: str | None):
@@ -312,22 +391,20 @@ def register(app):
                     dt_ini = datas_validas.min()
                     dt_fim = datas_validas.max()
                 else:
-                    # fallback caso a base esteja vazia
-                    dt_ini = pd.Timestamp.today()
-                    dt_fim = pd.Timestamp.today()
+                    _, dmax_almoco = dw_almoco_min_max()
+                    dt_fim = pd.Timestamp(dmax_almoco).normalize() if dmax_almoco is not None else pd.Timestamp.today()
+                    dt_ini = (dt_fim - pd.DateOffset(months=3)).normalize()
             else:
-                # fallback total (sem df_almoco)
-                dt_ini = pd.Timestamp.today()
-                dt_fim = pd.Timestamp.today()
+                _, dmax_almoco = dw_almoco_min_max()
+                dt_fim = pd.Timestamp(dmax_almoco).normalize() if dmax_almoco is not None else pd.Timestamp.today()
+                dt_ini = (dt_fim - pd.DateOffset(months=3)).normalize()
         else:
             # 🔹 Mantém lógica normal (usando o slider)
             i0, i1 = slider_val_out
             dt_ini, dt_fim = periodo_limites([i0, i1])
 
         # --- Criação do texto do período ---
-        m0, y0 = dt_ini.month_name('pt_BR').capitalize(), dt_ini.year
-        m1, y1 = dt_fim.month_name('pt_BR').capitalize(), dt_fim.year
-        periodo = f"{m0}/{y0} a {m1}/{y1}"
+        periodo = _periodo_label(dt_ini, dt_fim)
         periodo_txt_out = ""
         periodo_data_out = [i0, i1] if not is_almoco else None
 
@@ -372,7 +449,7 @@ def register(app):
             callback_unificado._df_cache = {}
         cache_map = callback_unificado._df_cache
 
-        precisa_df = bool(area_base) and (mudou_area_ou_sub or mudou_periodo or mudou_filtros or (trig in ('initial', 'areas_vis_state')) or (df_key not in cache_map))
+        precisa_df = bool(area_base) and (mudou_area_ou_sub or mudou_periodo or mudou_filtros or (trig == 'initial') or (df_key not in cache_map))
 
         if precisa_df:
             if is_almoco:
@@ -412,13 +489,7 @@ def register(app):
             df_full = cache_map.get(df_key, pd.DataFrame())
 
         # --- TÍTULO amigável por modo ---
-        periodo = f"{m0}/{y0} a {m1}/{y1}"
-        titulo_men = (f"Almoços e Saídas — Mensalistas, Horistas e Terceiros × Executivos ({periodo})"
-                      if is_almoco else
-                      f"Presença Percentual de Mensalistas, Horistas e Terceiros com os seus Executivos ({periodo})")
-        titulo_exec = (f"Almoços e Saídas — Executivos × Executivos ({periodo})"
-                       if is_almoco else
-                       f"Presença Percentual entre Executivos ({periodo})")
+        titulo_men, titulo_exec = _titulos_graficos_area(periodo, is_almoco)
 
         # --- Evita piscar o gráfico sem design ---
         fig_men_out = no_update
@@ -540,20 +611,10 @@ def register(app):
                             showarrow=False
                         )
                 else:
-                    fig_men_full = aplicar_tema_pb(
-                        grafico_heatmap_encontros_men(
-                            df_full, titulo_men, validar_mesma_planta=True
-                        ),
-                        so_y_boxplot=False,
-                        grade=True,
-                    )
-                    fig_exec_full = aplicar_tema_pb(
-                        grafico_heatmap_encontros_exec(
-                            df_full, titulo_exec, validar_mesma_planta=True
-                        ),
-                        so_y_boxplot=False,
-                        grade=False,
-                        clean=True,
+                    fig_men_full, fig_exec_full = _figuras_heatmap_area(
+                        df_full,
+                        periodo,
+                        is_almoco,
                     )
                 fig_cache[fig_key] = (fig_men_full, fig_exec_full)
 
@@ -562,6 +623,12 @@ def register(app):
 
             fig_men_out = fig_men_full
             fig_exec_out = fig_exec_full
+        else:
+            fig_men_out, fig_exec_out = _figuras_heatmap_area(
+                df_full,
+                periodo,
+                is_almoco,
+            )
 
         # retorna tudo normalmente
         return (
@@ -606,11 +673,20 @@ def register(app):
             texto_toggle = "Relacionamento do Almoço da Área ⭢"
             href_toggle = f"/area/{slug(subarea or area)}?modo=almoco"
 
-        # ======= CONSTRÓI O RELATÓRIO (FIGURAS INICIAIS) =======
+        # ======= FIGURAS INICIAIS LEVES =======
+        # Os gráficos pesados carregam pelo callback para a página abrir imediatamente.
         if is_almoco:
-            df_full = build_dataframe_almoco_area(area, subarea, her, df_almoco, df_df_ativos)
+            _, dmax_almoco = dw_almoco_min_max()
+            dt_fim_inicial = pd.Timestamp(dmax_almoco).normalize() if dmax_almoco is not None else pd.Timestamp.today()
+            dt_ini_inicial = (dt_fim_inicial - pd.DateOffset(months=3)).normalize()
+            periodo_inicial = _periodo_label(dt_ini_inicial, dt_fim_inicial)
         else:
-            df_full = build_dataframe_diario_area(area, subarea, her, df_datas, df_df_ativos)
+            try:
+                max_i_inicial = lt_idx_of(LT_FIM_ABS.year, LT_FIM_ABS.month)
+            except Exception:
+                max_i_inicial = len(LT_MONTHS) - 1
+            dt_ini_inicial, dt_fim_inicial = periodo_limites([0, max_i_inicial])
+            periodo_inicial = _periodo_label(dt_ini_inicial, dt_fim_inicial)
 
         fig_heatmap_men = figura_vazia_linha("Carregando informações de relacionamento da área...")
         fig_heatmap_exec = figura_vazia_linha("Carregando informações de relacionamento da área...")

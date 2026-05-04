@@ -82,7 +82,7 @@ CONSULTA_PESSOAL_USER = os.getenv("CONSULTA_PESSOAL_USER", "")
 CONSULTA_PESSOAL_PASSWORD = os.getenv("CONSULTA_PESSOAL_PASSWORD", "")
 CONSULTA_PESSOAL_TIMEOUT_S = max(_env_int("CONSULTA_PESSOAL_TIMEOUT_S", 0), 0)
 CONSULTA_PESSOAL_CAPTURAR_PRINT = False
-CONSULTA_PESSOAL_DEBUG_PASSOS = True
+CONSULTA_PESSOAL_DEBUG_PASSOS = False
 
 
 def parse_args() -> argparse.Namespace:
@@ -204,6 +204,47 @@ def normalize_ascii_upper(value: object) -> str:
     txt = unicodedata.normalize("NFKD", str(value))
     txt = txt.encode("ascii", "ignore").decode("ascii")
     return txt.strip().upper()
+
+
+def normalizar_cpf_value(value: object) -> str:
+    dig = re.sub(r"\D+", "", str(value or "").strip())
+    return dig if len(dig) == 11 else ""
+
+
+def valor_cpf_vazio_ou_zero(value: object) -> bool:
+    txt = str(value or "").strip()
+    dig = re.sub(r"\D+", "", txt)
+    if not txt:
+        return True
+    if dig and set(dig) <= {"0"}:
+        return True
+    txt_u = normalize_ascii_upper(txt).replace(" ", "")
+    return txt_u in {"*", "**", "***", "NA", "N/A", "SEMINFO", "SEMDADO"}
+
+
+def garantir_cpf_rows(rows: list[list[str]], cpf: str) -> list[list[str]]:
+    cpf_norm = normalizar_cpf_value(cpf)
+    if not cpf_norm:
+        return rows
+
+    out: list[list[str]] = []
+    found = False
+    for row in list(rows or []):
+        if not row:
+            continue
+        campo = str(row[0] if len(row) > 0 else "")
+        valor = str(row[1] if len(row) > 1 else "")
+        campo_u = normalize_ascii_upper(campo)
+        if campo_u in {"CNPF", "CPF"}:
+            found = True
+            campo = "CNPF"
+            if valor_cpf_vazio_ou_zero(valor):
+                valor = cpf_norm
+        out.append([campo, valor])
+
+    if not found:
+        out.append(["CNPF", cpf_norm])
+    return out
 
 
 def normalize_dir_value(value: object) -> str:
@@ -453,6 +494,7 @@ class ConsultaPessoalClient:
             out["mensagem"] = "Consulta textual indisponivel (requests/bs4 nao disponiveis)."
             return out
 
+        req_out["cpf_consultado"] = normalizar_cpf_value(cpf_hint)
         if not self.capturar_print:
             return req_out
 
@@ -2358,7 +2400,7 @@ class ConsultaPessoalClient:
                 driver.set_page_load_timeout(int(self.timeout_s))
             driver.get(self.base_url)
             wait_timeout = float(self.timeout_s) if int(self.timeout_s) > 0 else 0.01
-            wait = WebDriverWait(driver, wait_timeout)
+            wait = WebDriverWait(driver, wait_timeout, poll_frequency=0.01)
 
             _find_best_context(["senha", "password", "no pessoal", "pessoal", "user", "usuario", "login"])
             inputs_login = _visible_text_inputs()
@@ -3606,6 +3648,11 @@ def gerar_pdf_pessoa(
         consulta_url = str((consulta_pessoal or {}).get("url_final") or "")
         consulta_print_path = str((consulta_pessoal or {}).get("print_path") or "").strip()
         consulta_foto_path = str((consulta_pessoal or {}).get("foto_path") or "").strip()
+        consulta_cpf = normalizar_cpf_value(
+            (consulta_pessoal or {}).get("cpf_consultado")
+            or (consulta_pessoal or {}).get("cpf")
+            or (consulta_pessoal or {}).get("cadastro")
+        )
         fotos_por_chapa_raw = dict((consulta_pessoal or {}).get("fotos_por_chapa") or {})
         fotos_por_chapa: dict[str, str] = {}
 
@@ -3621,8 +3668,9 @@ def gerar_pdf_pessoa(
             if kk and vv:
                 fotos_por_chapa[kk] = vv
 
-        img_candidates = [consulta_print_path, consulta_foto_path]
+        img_candidates = [consulta_foto_path]
         img_candidates.extend([str(v or "").strip() for v in fotos_por_chapa.values()])
+        img_candidates.append(consulta_print_path)
         consulta_img_path = ""
         for cand in img_candidates:
             if cand and Path(cand).exists():
@@ -3860,15 +3908,18 @@ def gerar_pdf_pessoa(
             total_registros = max(1, len(ordem_grupos))
             for idx_g, chave in enumerate(ordem_grupos, start=1):
                 fichas_grupo = list(grupos.get(chave, []))
-                rows = _build_rows_for_fichas(fichas_grupo, [])
+                rows = garantir_cpf_rows(_build_rows_for_fichas(fichas_grupo, []), consulta_cpf)
                 campos_raw: list[tuple[str, str]] = []
                 for ficha_g in fichas_grupo:
                     for k_raw, v_raw in list(ficha_g.get("campos") or []):
                         campos_raw.append((str(k_raw), str(v_raw)))
                 if (not rows) and campos_raw:
-                    rows = _build_rows_from_linhas_consulta([f"{k}: {v}" for k, v in campos_raw])
+                    rows = garantir_cpf_rows(
+                        _build_rows_from_linhas_consulta([f"{k}: {v}" for k, v in campos_raw]),
+                        consulta_cpf,
+                    )
                 if not rows:
-                    rows = _build_rows_from_linhas_consulta(linhas_consulta)
+                    rows = garantir_cpf_rows(_build_rows_from_linhas_consulta(linhas_consulta), consulta_cpf)
                 if not rows:
                     rows = [["Status consulta", consulta_msg or "Sem dados estruturados retornados."]]
                 img_reg = str(fotos_por_chapa.get(chave) or "").strip()
@@ -3890,9 +3941,12 @@ def gerar_pdf_pessoa(
                 )
 
         if not perfis:
-            rows_fallback = _build_rows_for_fichas([], linhas_consulta)
+            rows_fallback = garantir_cpf_rows(_build_rows_for_fichas([], linhas_consulta), consulta_cpf)
             if not rows_fallback:
-                rows_fallback = _build_rows_from_linhas_consulta(linhas_consulta)
+                rows_fallback = garantir_cpf_rows(
+                    _build_rows_from_linhas_consulta(linhas_consulta),
+                    consulta_cpf,
+                )
             if not rows_fallback:
                 rows_fallback = [["Status consulta", consulta_msg or "Sem dados estruturados retornados."]]
             perfis.append(

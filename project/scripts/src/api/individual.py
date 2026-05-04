@@ -102,6 +102,28 @@ def _first_existing_path(candidates: list[str]) -> str:
     return ""
 
 
+def _image_data_uri(path_raw: str) -> str:
+    path = Path(str(path_raw or "").strip())
+    if (not path.exists()) or (not path.is_file()):
+        return ""
+    mime_by_ext = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".bmp": "image/bmp",
+        ".webp": "image/webp",
+    }
+    mime = mime_by_ext.get(path.suffix.lower(), "")
+    if not mime:
+        return ""
+    try:
+        payload = base64.b64encode(path.read_bytes()).decode("ascii")
+    except Exception:
+        return ""
+    return f"data:{mime};base64,{payload}"
+
+
 def _find_repo_root(start: Path) -> Path:
     cur = Path(start).resolve()
     for cand in [cur, *cur.parents]:
@@ -181,9 +203,12 @@ def _consulta_info_por_cadastro(chapa: str, nome: str) -> tuple[dict, object | N
     ).strip()
     user = str(os.getenv("CONSULTA_PESSOAL_USER", "")).strip()
     password = str(os.getenv("CONSULTA_PESSOAL_PASSWORD", "")).strip()
-    timeout_s = int(max(5, int(str(os.getenv("CONSULTA_PESSOAL_TIMEOUT_S", "20")).strip() or "20")))
+    try:
+        timeout_s = int(max(0, int(str(os.getenv("CONSULTA_PESSOAL_TIMEOUT_S", "0")).strip() or "0")))
+    except Exception:
+        timeout_s = 0
     verify_ssl = _env_bool("CONSULTA_PESSOAL_VERIFY_SSL", default=False)
-    capturar_print = _env_bool("CONSULTA_PESSOAL_CAPTURAR_PRINT", default=False)
+    capturar_print = _env_bool("CONSULTA_PESSOAL_CAPTURAR_PRINT", default=True)
     debug_passos = _env_bool("CONSULTA_PESSOAL_DEBUG_PASSOS", default=False)
 
     try:
@@ -311,7 +336,7 @@ def _profiles_from_consulta(consulta_info: dict | None) -> list[dict]:
         if kk and vv:
             fotos_map[kk] = vv
 
-    fallback_img = _first_existing_path([print_path, foto_path, *list(fotos_map.values())])
+    fallback_img = _first_existing_path([foto_path, *list(fotos_map.values()), print_path])
 
     if fichas:
         ord_f = {"FUNCIONAIS": 0, "PESSOAIS": 1, "FICHA": 2}
@@ -1007,6 +1032,19 @@ def register(app):
             pdf_bytes = fig_to_bytes(fig, fmt="pdf")
         plt.close(fig)
 
+        consulta_preview_src = _image_data_uri(
+            _first_existing_path(
+                [
+                    str((consulta_info or {}).get("print_path") or ""),
+                    str((consulta_info or {}).get("foto_path") or ""),
+                    *[
+                        str(v or "")
+                        for v in dict((consulta_info or {}).get("fotos_por_chapa") or {}).values()
+                    ],
+                ]
+            )
+        )
+
         cleanup_fn = getattr(consulta_mod, "cleanup_consulta_pessoal_imagens_temporarias", None)
         if callable(cleanup_fn):
             try:
@@ -1026,10 +1064,9 @@ def register(app):
                 'padding': '10px 20px', 'fontSize': '14px', 'backgroundColor': '#e0e0e0', 'border': 'none',
                 'borderRadius': '5px', 'cursor': 'pointer', 'boxShadow': '0px 2px 6px rgba(0, 0, 0, 0.25)'}),
 
-            # Botões de download
             html.Div([
                 html.A("Baixar PNG", href=png_b64, download=f"relatorio_{chapa_input}.png",
-                    style={"marginRight": "20px", "fontSize": "16px",
+                    style={"fontSize": "16px", "marginRight": "20px",
                             "padding": "8px 14px", "backgroundColor": "#e0e0e0",
                             "color": "Black", "fontFamily": "VW Text", "borderRadius": "6px",
                             "textDecoration": "none",}),
@@ -1040,11 +1077,18 @@ def register(app):
                             "textDecoration": "none",}),
             ], style={"textAlign": "center", "marginTop": "10px"}),
 
-            # Imagem inline
+            html.Img(
+                src=consulta_preview_src,
+                style={
+                    'width': '100%', 'maxWidth': '1100px', 'marginTop': '20px', 'marginBottom': '24px',
+                    'background': 'white', 'display': 'block', 'marginLeft': 'auto', 'marginRight': 'auto'
+                }
+            ) if consulta_preview_src else None,
+
             html.Img(src=images_base64, style={
                 'width': '100%', 'maxWidth': '1400px', 'marginTop': '20px', 'background': 'white',
                 'display': 'block', 'marginLeft': 'auto', 'marginRight': 'auto'
-            })
+            }),
         ])
 
         # >>> devolvemos o conteúdo individual e escondemos a página geral

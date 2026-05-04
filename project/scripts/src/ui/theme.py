@@ -154,6 +154,193 @@ GLOBAL_CSS = f"""
   min-width: 28px;
   text-align: left;
 }}
+.prefiltro-panel {{
+  width: min(980px, calc(100vw - 32px));
+  background: #e0e0e0;
+  border: 1px solid rgba(0, 0, 0, 0.10);
+  border-radius: 20px;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.16);
+  overflow: hidden;
+}}
+.prefiltro-header {{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 24px 28px 20px;
+  background: #ffffff;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+}}
+.prefiltro-form-grid {{
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.85fr);
+  gap: 18px;
+  padding: 22px 28px 8px;
+}}
+.prefiltro-field {{
+  min-width: 0;
+}}
+.prefiltro-field-wide {{
+  grid-column: 1 / -1;
+}}
+.prefiltro-field-shell {{
+  background: rgba(255, 255, 255, 0.70);
+  border: 1px solid rgba(0, 0, 0, 0.10);
+  border-radius: 10px;
+  padding: 14px;
+}}
+.prefiltro-field-title {{
+  display: block;
+  margin-bottom: 10px;
+  color: #000000;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0;
+}}
+.prefiltro-cargo-lista {{
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+  gap: 10px;
+}}
+.prefiltro-opcoes-lista {{
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}}
+.prefiltro-cargo-lista label,
+.prefiltro-opcoes-lista label,
+.prefiltro-cenario-lista label {{
+  display: inline-flex !important;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  margin: 0 !important;
+  padding: 10px 12px;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  border-radius: 8px;
+  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.07);
+  cursor: pointer;
+  line-height: 1.15;
+  min-width: 0;
+  transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
+}}
+.prefiltro-cargo-lista label:has(input:checked),
+.prefiltro-opcoes-lista label:has(input:checked),
+.prefiltro-cenario-lista label:has(input:checked) {{
+  background: #f7fbff;
+  border-color: rgba(0, 30, 80, 0.72);
+  box-shadow: 0 7px 16px rgba(0, 30, 80, 0.14);
+}}
+.prefiltro-cargo-lista input,
+.prefiltro-opcoes-lista input,
+.prefiltro-cenario-lista input {{
+  width: 16px;
+  height: 16px;
+  margin: 0 !important;
+  accent-color: #001e50;
+  flex: 0 0 auto;
+}}
+.prefiltro-cargo-badge {{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: #e0e0e0;
+  color: #000000;
+  font-weight: 800;
+  flex: 0 0 28px;
+}}
+.prefiltro-cargo-lista label span:last-child {{
+  min-width: 0;
+  overflow-wrap: normal;
+  white-space: nowrap;
+}}
+.prefiltro-cenario-lista {{
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}}
+.prefiltro-footer {{
+  display: flex;
+  justify-content: flex-end;
+  padding: 14px 28px 26px;
+}}
+.prefiltro-confirmar {{
+  min-width: 150px;
+}}
+@media (max-width: 1120px) {{
+  .prefiltro-panel {{
+    width: min(980px, calc(100vw - 28px));
+  }}
+  .prefiltro-form-grid {{
+    grid-template-columns: 1fr;
+  }}
+  .prefiltro-cargo-lista {{
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }}
+}}
+@media (max-width: 980px) {{
+  .prefiltro-panel {{
+    width: min(760px, calc(100vw - 28px));
+  }}
+  .prefiltro-header {{
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 22px 24px 18px;
+  }}
+  .prefiltro-form-grid {{
+    grid-template-columns: 1fr;
+    padding: 20px 24px 6px;
+  }}
+  .prefiltro-cargo-lista {{
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }}
+  .prefiltro-footer {{
+    padding: 14px 24px 24px;
+  }}
+}}
+@media (max-width: 620px) {{
+  .prefiltro-panel {{
+    width: calc(100vw - 20px);
+    border-radius: 14px;
+  }}
+  .prefiltro-header {{
+    padding: 18px;
+  }}
+  .prefiltro-form-grid {{
+    gap: 14px;
+    padding: 16px 18px 4px;
+  }}
+  .prefiltro-field-shell {{
+    padding: 12px;
+  }}
+  .prefiltro-cargo-lista {{
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }}
+  .prefiltro-opcoes-lista {{
+    grid-template-columns: 1fr;
+  }}
+  .prefiltro-cenario-lista label {{
+    flex: 1 1 100%;
+    justify-content: flex-start;
+  }}
+  .prefiltro-footer {{
+    padding: 12px 18px 20px;
+  }}
+  .prefiltro-confirmar {{
+    width: 100%;
+  }}
+}}
+@media (max-width: 390px) {{
+  .prefiltro-cargo-lista {{
+    grid-template-columns: 1fr;
+  }}
+}}
 @media (max-width: 760px) {{
   .lang-wrap {{
     flex-basis: 112px;

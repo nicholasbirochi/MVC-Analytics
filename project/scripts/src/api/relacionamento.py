@@ -1012,6 +1012,9 @@ def register(app):
             # mostra a aba e esconde a home
             return conteudo, {'display': 'block'}, {'display': 'none'}
 
+        if pathname and pathname.rstrip('/') == '/prefiltro':
+            return no_update, {'display': 'none'}, {'display': 'none'}
+
         # Quando está em qualquer outra página
         return no_update, {'display': 'none'}, {'display': 'flex', 'flexDirection': 'column', 'width': '100%',
                                                      'height': '100%', 'backgroundColor': "#ffffff", 'padding': '16px',

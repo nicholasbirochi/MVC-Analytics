@@ -13,6 +13,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from dateutil.easter import easter
+from matplotlib.colors import BoundaryNorm, ListedColormap
+from matplotlib.patches import Patch
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -25,7 +27,11 @@ RULE_CHANGE_DATE = pd.Timestamp("2025-05-01")
 REQ_PRESENTIAL_DAYS = 3.0
 REQ_PRESENTIAL_DAYS_HOLIDAY_WEEK = 2.0
 ADHERENCE_THRESHOLD_PCT = 90.0
+NON_COMPLIANCE_GAP_PCT = 100.0 - ADHERENCE_THRESHOLD_PCT
+NON_COMPLIANCE_LIST_LABEL = "Colaboradores que descumpriram abaixo de 10% da meta estabelecida"
+NON_COMPLIANCE_SHORT_LABEL = "Descumprimento abaixo de 10% da meta"
 AREA_EXCLUDE_PREFIXES = ("B-V", "B-SNP")
+B_SKL_EXCLUDE_PREFIX = "B-SKL"
 MANAGEMENT_FOCUS_EXCLUDE_TERMS = ("POS VENDAS", "EXTERIOR")
 COLLECTIVE_VACATION_PERIODS = (
     (pd.Timestamp("2023-12-18"), pd.Timestamp("2024-01-07")),
@@ -43,16 +49,17 @@ BRAZIL_FIXED_HOLIDAYS = (
     (12, 25, "Natal"),
 )
 REQUEST_SPECIFICATIONS = (
-    "Responder primeiro a quantidade de pessoas abaixo de 90% e as faixas pedidas.",
+    "Responder primeiro a quantidade de colaboradores no critério de descumprimento abaixo de 10% da meta estabelecida e as faixas pedidas.",
     "Usar o dw_ronda.sqlite como base oficial.",
     "Tirar pessoas ja desligadas do calculo.",
     "Incluir a logo da Volkswagen na apresentacao.",
     "Deixar o texto maior para leitura em tela e projetor.",
     "Remover semanas com ferias coletivas do calculo.",
     "Em semana com feriado, considerar critica apenas presenca de 0 ou 1 dia.",
+    "Remover B-SKL do calculo, mantendo os executivos dessas areas.",
 )
 PRESENTATION_AUTHOR_NAME = "Nicholas Birochi"
-PRESENTATION_AUTHOR_ROLE = "Estagiário"
+PRESENTATION_AUTHOR_ROLE = "Auditoria Interna"
 PRESENTATION_AUTHOR_TEAM = "Volkswagen do Brasil"
 
 
@@ -69,7 +76,7 @@ class AnalysisConfig:
 def parse_args() -> AnalysisConfig:
     parser = argparse.ArgumentParser(
         description=(
-            "Gera a estatistica de presencialidade fraca para a apresentacao Seitz "
+            "Gera a estatistica de presencialidade fraca para apresentacao executiva "
             "a partir do DW SQLite do projeto."
         )
     )
@@ -185,6 +192,156 @@ def normalize_text(series: pd.Series) -> pd.Series:
     return series.fillna("").astype(str).str.strip()
 
 
+def build_factory_scope_audit(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
+    work = df.copy()
+    work["Area"] = normalize_text(work["Area"])
+    work["Heranca"] = normalize_text(work["Heranca"])
+    work["Departamento"] = normalize_text(work["Departamento"])
+    work["Cargo"] = normalize_text(work["Cargo"])
+
+    area_in_factory_scope = work["Area"].str.startswith("B-")
+    excluded_prefix = work["Area"].str.startswith(AREA_EXCLUDE_PREFIXES) | work["Heranca"].str.startswith(
+        AREA_EXCLUDE_PREFIXES
+    )
+    b_skl_scope = work["Area"].str.startswith(B_SKL_EXCLUDE_PREFIX) | work["Heranca"].str.startswith(
+        B_SKL_EXCLUDE_PREFIX
+    )
+    b_skl_non_executive = b_skl_scope & ~work["Cargo"].eq("E")
+    included = area_in_factory_scope & ~excluded_prefix & ~b_skl_non_executive
+
+    work["motivo_filtro_area"] = np.select(
+        [~area_in_factory_scope, excluded_prefix, b_skl_non_executive],
+        [
+            "Area fora do prefixo B-",
+            "Area/Heranca B-V ou B-SNP",
+            "B-SKL removido para nao executivos",
+        ],
+        default="Analisada",
+    )
+    work["filtro_area_resultado"] = np.where(included, "Analisada", "Fora da analise")
+    work["b_skl_executivo_mantido"] = b_skl_scope & work["Cargo"].eq("E") & included
+    return work, included
+
+
+def build_excluded_area_summary(raw_df: pd.DataFrame) -> pd.DataFrame:
+    audit_df, included = build_factory_scope_audit(raw_df)
+    audit_display = audit_df.copy()
+    audit_display["Area"] = audit_display["Area"].replace("", "(sem area informada)")
+    audit_display["Departamento"] = audit_display["Departamento"].replace("", "(sem departamento informado)")
+    audit_display["Heranca"] = audit_display["Heranca"].replace("", "(sem heranca informada)")
+    columns = [
+        "Area",
+        "Departamento",
+        "Heranca",
+        "Motivo",
+        "Pessoas Fora",
+        "Registros Semanais Fora",
+        "Cargos Fora",
+        "Executivos B-SKL Mantidos",
+    ]
+    excluded = audit_display.loc[~included].copy()
+    if excluded.empty:
+        return pd.DataFrame(columns=columns)
+
+    excluded_summary = (
+        excluded.groupby(["Area", "Departamento", "Heranca", "motivo_filtro_area"], as_index=False)
+        .agg(
+            **{
+                "Pessoas Fora": ("Cadastro", "nunique"),
+                "Registros Semanais Fora": ("Cadastro", "size"),
+                "Cargos Fora": (
+                    "Cargo",
+                    lambda values: " / ".join(sorted(dict.fromkeys(str(v) for v in values if str(v).strip()))),
+                ),
+            }
+        )
+        .rename(columns={"motivo_filtro_area": "Motivo"})
+    )
+
+    kept_exec = audit_display.loc[audit_display["b_skl_executivo_mantido"]].copy()
+    if not kept_exec.empty:
+        kept_exec_summary = (
+            kept_exec.groupby(["Area", "Departamento", "Heranca"], as_index=False)
+            .agg(**{"Executivos B-SKL Mantidos": ("Cadastro", "nunique")})
+        )
+        excluded_summary = excluded_summary.merge(
+            kept_exec_summary,
+            on=["Area", "Departamento", "Heranca"],
+            how="left",
+        )
+    else:
+        excluded_summary["Executivos B-SKL Mantidos"] = 0
+
+    excluded_summary["Executivos B-SKL Mantidos"] = (
+        pd.to_numeric(excluded_summary["Executivos B-SKL Mantidos"], errors="coerce")
+        .fillna(0)
+        .astype(int)
+    )
+    return (
+        excluded_summary[columns]
+        .sort_values(["Motivo", "Area", "Departamento"], kind="mergesort")
+        .reset_index(drop=True)
+    )
+
+
+def build_filter_criteria_table(
+    config: AnalysisConfig,
+    week_rules_df: pd.DataFrame,
+    excluded_areas_df: pd.DataFrame,
+) -> pd.DataFrame:
+    analyzed_weeks = week_rules_df.loc[~week_rules_df["semana_ferias_coletivas"]].copy()
+    excluded_people = int(excluded_areas_df["Pessoas Fora"].sum()) if not excluded_areas_df.empty else 0
+    excluded_area_count = int(excluded_areas_df["Area"].nunique()) if not excluded_areas_df.empty else 0
+    rows = [
+        {
+            "Filtro": "Base",
+            "Regra usada": str(config.dw_path),
+            "Impacto": "DW oficial usado como origem do recorte.",
+        },
+        {
+            "Filtro": "Periodo",
+            "Regra usada": (
+                f"{analyzed_weeks['semana_inicio'].min().strftime('%Y-%m-%d')} a "
+                f"{analyzed_weeks['semana_inicio'].max().strftime('%Y-%m-%d')}"
+                if not analyzed_weeks.empty
+                else "Sem semanas analisadas"
+            ),
+            "Impacto": "Semanas de ferias coletivas ficam fora do calculo.",
+        },
+        {
+            "Filtro": "Status",
+            "Regra usada": "Desligado = Nao",
+            "Impacto": "Pessoas desligadas nao entram no calculo.",
+        },
+        {
+            "Filtro": "Cargo",
+            "Regra usada": "Cargo em M ou E",
+            "Impacto": "Recorte gerencial e executivo.",
+        },
+        {
+            "Filtro": "Areas",
+            "Regra usada": "Area iniciando em B-, sem B-V, B-SNP e B-SKL; executivos B-SKL permanecem.",
+            "Impacto": f"{excluded_people} colaboradores em {excluded_area_count} area(s) ficaram fora pelo filtro de area.",
+        },
+        {
+            "Filtro": "Semana normal",
+            "Regra usada": f"Meta de {float(config.required_days):.1f} dias presenciais.",
+            "Impacto": "Base para calcular aderencia semanal fora de feriados.",
+        },
+        {
+            "Filtro": "Semana com feriado",
+            "Regra usada": f"Critica apenas com 0 ou 1 dia presencial; meta de {REQ_PRESENTIAL_DAYS_HOLIDAY_WEEK:.1f} dias.",
+            "Impacto": "Permite avaliar possivel emenda de feriado com home office.",
+        },
+        {
+            "Filtro": "Entra na lista",
+            "Regra usada": NON_COMPLIANCE_LIST_LABEL,
+            "Impacto": "Mesma regra numerica anterior, com leitura pelo descumprimento da meta.",
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
 def build_brazil_holidays_df(years: range) -> pd.DataFrame:
     rows: list[tuple[pd.Timestamp, str]] = []
     for year in years:
@@ -291,15 +448,8 @@ def copy_logo_asset(assets_dir: Path) -> Path | None:
 
 
 def apply_factory_filters(df: pd.DataFrame) -> pd.DataFrame:
-    work = df.copy()
-    work["Area"] = normalize_text(work["Area"])
-    work["Heranca"] = normalize_text(work["Heranca"])
-    work = work[work["Area"].str.startswith("B-")].copy()
-    exclude_mask = work["Area"].str.startswith(AREA_EXCLUDE_PREFIXES) | work["Heranca"].str.startswith(
-        AREA_EXCLUDE_PREFIXES
-    )
-    work = work[~exclude_mask].copy()
-    return work
+    work, included = build_factory_scope_audit(df)
+    return work.loc[included].copy()
 
 
 def classify_media_bucket(avg_days: float, required_days: float) -> str:
@@ -314,7 +464,7 @@ def classify_media_bucket(avg_days: float, required_days: float) -> str:
     if avg_days <= 2.5:
         return "De 2,0 a 2,5"
     if avg_days < (required_days * 0.9):
-        return "Acima de 2,5 e abaixo de 90%"
+        return f"Acima de 2,5 e {NON_COMPLIANCE_SHORT_LABEL}"
     return "Aderente"
 
 
@@ -394,7 +544,7 @@ def build_bucket_tables(bad: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
         "De 1,0 a 1,5",
         "De 1,5 a 2,0",
         "De 2,0 a 2,5",
-        "Acima de 2,5 e abaixo de 90%",
+        f"Acima de 2,5 e {NON_COMPLIANCE_SHORT_LABEL}",
     ]
     distribution = (
         bad.assign(Faixa=bad["faixa_media_dias"])
@@ -529,8 +679,11 @@ def build_weekly_manager_summary(df: pd.DataFrame) -> pd.DataFrame:
             total_pessoas=("Cadastro", "nunique"),
             pessoas_criticas=("critico_semana", "sum"),
             media_presenca=("Contagem Presenca", "mean"),
+            mediana_presenca=("Contagem Presenca", "median"),
             media_meta=("meta_dias_semana", "mean"),
+            mediana_meta=("meta_dias_semana", "median"),
             semana_feriado=("semana_feriado", "max"),
+            pessoas_0_ou_1_dia=("Contagem Presenca", lambda values: int((values <= 1.0).sum())),
         )
         .sort_values("Data", kind="mergesort")
         .reset_index(drop=True)
@@ -540,12 +693,241 @@ def build_weekly_manager_summary(df: pd.DataFrame) -> pd.DataFrame:
     ).round(1)
     weekly["media_movel_4s"] = weekly["percentual_criticas"].rolling(4, min_periods=1).mean().round(1)
     weekly["media_presenca"] = weekly["media_presenca"].round(2)
+    weekly["mediana_presenca"] = weekly["mediana_presenca"].round(2)
     weekly["media_meta"] = weekly["media_meta"].round(2)
+    weekly["mediana_meta"] = weekly["mediana_meta"].round(2)
     weekly["aderencia_media_pct"] = (weekly["media_presenca"] / weekly["media_meta"] * 100.0).round(1)
+    weekly["aderencia_mediana_pct"] = (weekly["mediana_presenca"] / weekly["mediana_meta"] * 100.0).round(1)
+    weekly["percentual_0_ou_1_dia"] = (
+        weekly["pessoas_0_ou_1_dia"] / weekly["total_pessoas"] * 100.0
+    ).round(1)
     weekly["media_presenca_movel_4s"] = weekly["media_presenca"].rolling(4, min_periods=1).mean().round(2)
+    weekly["mediana_presenca_movel_4s"] = weekly["mediana_presenca"].rolling(4, min_periods=1).mean().round(2)
     weekly["rotulo_semana"] = pd.to_datetime(weekly["Data"]).dt.strftime("%d/%m")
     weekly["tipo_semana"] = np.where(weekly["semana_feriado"], "Feriado", "Normal")
     return weekly
+
+
+def build_week_type_median_summary(weekly_df: pd.DataFrame) -> pd.DataFrame:
+    columns = [
+        "Tipo Semana",
+        "Semanas",
+        "Mediana Dias",
+        "Media Dias",
+        "Menor Mediana",
+        "Percentual 0 ou 1 Dia",
+        "Criticidade Media",
+    ]
+    if weekly_df.empty:
+        return pd.DataFrame(columns=columns)
+
+    summary = (
+        weekly_df.groupby("tipo_semana", as_index=False)
+        .agg(
+            Semanas=("Data", "nunique"),
+            **{
+                "Mediana Dias": ("mediana_presenca", "median"),
+                "Media Dias": ("media_presenca", "mean"),
+                "Menor Mediana": ("mediana_presenca", "min"),
+                "Percentual 0 ou 1 Dia": ("percentual_0_ou_1_dia", "mean"),
+                "Criticidade Media": ("percentual_criticas", "mean"),
+            },
+        )
+        .rename(columns={"tipo_semana": "Tipo Semana"})
+    )
+    for col in ["Mediana Dias", "Media Dias", "Menor Mediana"]:
+        summary[col] = pd.to_numeric(summary[col], errors="coerce").round(2)
+    for col in ["Percentual 0 ou 1 Dia", "Criticidade Media"]:
+        summary[col] = pd.to_numeric(summary[col], errors="coerce").round(1)
+    order = pd.Categorical(summary["Tipo Semana"], categories=["Normal", "Feriado"], ordered=True)
+    return summary.assign(_order=order).sort_values("_order", kind="mergesort").drop(columns="_order").reset_index(drop=True)
+
+
+def classify_bridge_signal(median_gap_days: float, zero_one_gap_pct: float) -> str:
+    if median_gap_days >= 1.0 and zero_one_gap_pct >= 5.0:
+        return "Alto"
+    if median_gap_days >= 1.0 or zero_one_gap_pct >= 5.0:
+        return "Moderado"
+    return "Baixo"
+
+
+def bridge_signal_score(signal: object) -> int:
+    return {"Baixo": 0, "Moderado": 1, "Alto": 2}.get(str(signal), -1)
+
+
+def build_holiday_bridge_investigation(weekly_df: pd.DataFrame) -> pd.DataFrame:
+    columns = [
+        "Semana",
+        "Mediana Dias",
+        "Media Dias",
+        "Dif Mediana vs Normal",
+        "Percentual 0 ou 1 Dia",
+        "Dif Percentual 0 ou 1 vs Normal",
+        "Sinal Emenda",
+    ]
+    if weekly_df.empty:
+        return pd.DataFrame(columns=columns)
+
+    week_type_summary = build_week_type_median_summary(weekly_df)
+    normal_row = week_type_summary.loc[week_type_summary["Tipo Semana"].eq("Normal")]
+    if normal_row.empty:
+        return pd.DataFrame(columns=columns)
+
+    normal_median_days = float(normal_row["Mediana Dias"].iloc[0])
+    normal_zero_one_pct = float(normal_row["Percentual 0 ou 1 Dia"].iloc[0])
+    holidays = weekly_df.loc[weekly_df["semana_feriado"]].copy()
+    if holidays.empty:
+        return pd.DataFrame(columns=columns)
+
+    holidays["Semana"] = pd.to_datetime(holidays["Data"], errors="coerce")
+    holidays["Mediana Dias"] = pd.to_numeric(holidays["mediana_presenca"], errors="coerce")
+    holidays["Media Dias"] = pd.to_numeric(holidays["media_presenca"], errors="coerce")
+    holidays["Dif Mediana vs Normal"] = normal_median_days - holidays["Mediana Dias"]
+    holidays["Percentual 0 ou 1 Dia"] = pd.to_numeric(holidays["percentual_0_ou_1_dia"], errors="coerce")
+    holidays["Dif Percentual 0 ou 1 vs Normal"] = holidays["Percentual 0 ou 1 Dia"] - normal_zero_one_pct
+    holidays["Sinal Emenda"] = holidays.apply(
+        lambda row: classify_bridge_signal(
+            float(row["Dif Mediana vs Normal"]),
+            float(row["Dif Percentual 0 ou 1 vs Normal"]),
+        ),
+        axis=1,
+    )
+    for col in [
+        "Mediana Dias",
+        "Media Dias",
+        "Dif Mediana vs Normal",
+        "Percentual 0 ou 1 Dia",
+        "Dif Percentual 0 ou 1 vs Normal",
+    ]:
+        holidays[col] = pd.to_numeric(holidays[col], errors="coerce").round(2)
+    return holidays[columns].sort_values("Semana", kind="mergesort").reset_index(drop=True)
+
+
+def build_holiday_bridge_window(weekly_df: pd.DataFrame) -> pd.DataFrame:
+    columns = [
+        "Feriado",
+        "Janela Ordem",
+        "Janela",
+        "Semana",
+        "Mediana Dias",
+        "Media Dias",
+        "Dif Mediana vs Normal",
+        "Percentual 0 ou 1 Dia",
+        "Dif Percentual 0 ou 1 vs Normal",
+        "Sinal Emenda",
+    ]
+    if weekly_df.empty:
+        return pd.DataFrame(columns=columns)
+
+    week_type_summary = build_week_type_median_summary(weekly_df)
+    normal_row = week_type_summary.loc[week_type_summary["Tipo Semana"].eq("Normal")]
+    if normal_row.empty:
+        return pd.DataFrame(columns=columns)
+
+    normal_median_days = float(normal_row["Mediana Dias"].iloc[0])
+    normal_zero_one_pct = float(normal_row["Percentual 0 ou 1 Dia"].iloc[0])
+    work = weekly_df.copy()
+    work["Data"] = pd.to_datetime(work["Data"], errors="coerce").dt.normalize()
+    week_by_date = work.dropna(subset=["Data"]).drop_duplicates(subset=["Data"]).set_index("Data")
+    holiday_dates = sorted(work.loc[work["semana_feriado"].fillna(False), "Data"].dropna().unique())
+
+    rows: list[dict[str, object]] = []
+    windows = [(-1, "Semana anterior"), (0, "Semana do feriado"), (1, "Semana posterior")]
+    for holiday_date_raw in holiday_dates:
+        holiday_date = pd.Timestamp(holiday_date_raw).normalize()
+        for offset, label in windows:
+            week_date = holiday_date + pd.Timedelta(days=offset * 7)
+            base_row = {
+                "Feriado": holiday_date,
+                "Janela Ordem": offset,
+                "Janela": label,
+                "Semana": week_date,
+                "Mediana Dias": np.nan,
+                "Media Dias": np.nan,
+                "Dif Mediana vs Normal": np.nan,
+                "Percentual 0 ou 1 Dia": np.nan,
+                "Dif Percentual 0 ou 1 vs Normal": np.nan,
+                "Sinal Emenda": "Sem dados",
+            }
+            if week_date in week_by_date.index:
+                week = week_by_date.loc[week_date]
+                median_days = float(week["mediana_presenca"])
+                zero_one_pct = float(week["percentual_0_ou_1_dia"])
+                median_gap = normal_median_days - median_days
+                zero_one_gap = zero_one_pct - normal_zero_one_pct
+                base_row.update(
+                    {
+                        "Mediana Dias": median_days,
+                        "Media Dias": float(week["media_presenca"]),
+                        "Dif Mediana vs Normal": median_gap,
+                        "Percentual 0 ou 1 Dia": zero_one_pct,
+                        "Dif Percentual 0 ou 1 vs Normal": zero_one_gap,
+                        "Sinal Emenda": classify_bridge_signal(median_gap, zero_one_gap),
+                    }
+                )
+            rows.append(base_row)
+
+    out = pd.DataFrame(rows, columns=columns)
+    for col in [
+        "Mediana Dias",
+        "Media Dias",
+        "Dif Mediana vs Normal",
+        "Percentual 0 ou 1 Dia",
+        "Dif Percentual 0 ou 1 vs Normal",
+    ]:
+        out[col] = pd.to_numeric(out[col], errors="coerce").round(2)
+    return out.sort_values(["Feriado", "Janela Ordem"], kind="mergesort").reset_index(drop=True)
+
+
+def build_holiday_bridge_window_summary(window_df: pd.DataFrame) -> pd.DataFrame:
+    columns = [
+        "Feriado",
+        "Semana anterior",
+        "Semana do feriado",
+        "Semana posterior",
+        "Sinal Geral",
+        "Leitura",
+    ]
+    if window_df.empty:
+        return pd.DataFrame(columns=columns)
+
+    rows: list[dict[str, object]] = []
+    for holiday_date, group in window_df.groupby("Feriado", sort=True):
+        by_label = {str(row["Janela"]): row for row in group.to_dict(orient="records")}
+        before = by_label.get("Semana anterior")
+        holiday = by_label.get("Semana do feriado")
+        after = by_label.get("Semana posterior")
+        surrounding_scores = [
+            bridge_signal_score(row.get("Sinal Emenda"))
+            for row in (before, after)
+            if row is not None and bridge_signal_score(row.get("Sinal Emenda")) >= 0
+        ]
+        holiday_score = bridge_signal_score(holiday.get("Sinal Emenda")) if holiday is not None else -1
+        general_score = max(surrounding_scores + ([holiday_score] if holiday_score >= 0 else [-1]))
+        general_signal = {2: "Alto", 1: "Moderado", 0: "Baixo"}.get(general_score, "Sem dados")
+
+        if surrounding_scores and max(surrounding_scores) >= 2:
+            reading = "Sinal forte no entorno do feriado; vale olhar se houve emenda antes/depois."
+        elif surrounding_scores and max(surrounding_scores) == 1:
+            reading = "Há sinal moderado no entorno; possível uso de home office colado ao feriado."
+        elif holiday_score >= 2:
+            reading = "Sinal concentrado na própria semana do feriado."
+        elif holiday_score == 1:
+            reading = "Queda aparece principalmente na semana do feriado."
+        else:
+            reading = "Sem indício relevante de emenda no entorno."
+
+        rows.append(
+            {
+                "Feriado": pd.Timestamp(holiday_date),
+                "Semana anterior": before,
+                "Semana do feriado": holiday,
+                "Semana posterior": after,
+                "Sinal Geral": general_signal,
+                "Leitura": reading,
+            }
+        )
+    return pd.DataFrame(rows, columns=columns)
 
 
 def build_department_management_summary(
@@ -741,7 +1123,7 @@ def build_exec_summary(
         ("Meta presencial por semana", f"{config.required_days:.1f} dias"),
         ("Meta em semana com feriado", f"{REQ_PRESENTIAL_DAYS_HOLIDAY_WEEK:.1f} dias"),
         ("Regra especial em semana de feriado", "Critica apenas se houver 0 ou 1 dia presencial"),
-        ("Limite de nao aderencia", f"< {config.adherence_threshold_pct:.0f}%"),
+        ("Limite de nao aderencia", NON_COMPLIANCE_LIST_LABEL),
         ("Universo considerado", str(total_people)),
         ("Status dos desligados", "Fora do calculo"),
         ("Semanas de feriado consideradas", str(int(len(holiday_weeks)))),
@@ -750,7 +1132,7 @@ def build_exec_summary(
         ("Percentual nao aderente", f"{pct_bad:.1f}%"),
         (
             "Resposta curta",
-            f"{bad_people} pessoas abaixo de {config.adherence_threshold_pct:.0f}% ({pct_bad:.1f}% das pessoas consideradas).",
+            f"{bad_people} colaboradores no criterio de descumprimento abaixo de {NON_COMPLIANCE_GAP_PCT:.0f}% da meta estabelecida ({pct_bad:.1f}% das pessoas consideradas).",
         ),
         ("Media da meta semanal no periodo", f"{avg_required:.2f} dias"),
         ("Media semanal dos nao aderentes", f"{avg_bad:.2f} dias"),
@@ -760,14 +1142,14 @@ def build_exec_summary(
         ("Até 2,0 dias", f"{cumulative_df.loc[cumulative_df['Faixa'].eq('Até 2,0 dias'), 'Percentual'].iloc[0]:.1f}%"),
         ("Até 2,5 dias", f"{cumulative_df.loc[cumulative_df['Faixa'].eq('Até 2,5 dias'), 'Percentual'].iloc[0]:.1f}%"),
         (
-            "Acima de 2,5 e abaixo de 90%",
-            f"{distribution_df.loc[distribution_df['Faixa'].eq('Acima de 2,5 e abaixo de 90%'), 'Percentual'].iloc[0]:.1f}%",
+            f"Acima de 2,5 e {NON_COMPLIANCE_SHORT_LABEL}",
+            f"{distribution_df.loc[distribution_df['Faixa'].eq(f'Acima de 2,5 e {NON_COMPLIANCE_SHORT_LABEL}'), 'Percentual'].iloc[0]:.1f}%",
         ),
         ("Datas das semanas com feriado", holiday_weeks_str),
         ("Datas das semanas removidas por ferias", removed_vacation_weeks_str),
         (
             "Regras aplicadas",
-            "Desligados removidos, cargos M/E, area iniciando em B-, excluidas areas B-V e B-SNP, com regra especial para semanas de feriado.",
+            "Desligados removidos, cargos M/E, area iniciando em B-, excluidas areas B-V, B-SNP e B-SKL, mantendo executivos B-SKL, com regra especial para semanas de feriado.",
         ),
     ]
     return pd.DataFrame(rows, columns=["Indicador", "Valor"])
@@ -776,6 +1158,8 @@ def build_exec_summary(
 def save_excel(
     output_path: Path,
     exec_summary: pd.DataFrame,
+    filter_criteria_df: pd.DataFrame,
+    excluded_areas_df: pd.DataFrame,
     cumulative_df: pd.DataFrame,
     distribution_df: pd.DataFrame,
     cargo_df: pd.DataFrame,
@@ -793,10 +1177,10 @@ def save_excel(
         "Universo considerado": "Pessoas consideradas",
         "Status dos desligados": "Desligados",
         "Limite de nao aderencia": "Entra na lista",
-        "Nao aderentes": "Abaixo de 90%",
+        "Nao aderentes": NON_COMPLIANCE_SHORT_LABEL,
         "Percentual nao aderente": "% das pessoas consideradas",
-        "Media semanal dos nao aderentes": "Media semanal abaixo de 90%",
-        "Mediana semanal dos nao aderentes": "Mediana semanal abaixo de 90%",
+        "Media semanal dos nao aderentes": "Media semanal dos colaboradores em descumprimento",
+        "Mediana semanal dos nao aderentes": "Mediana semanal dos colaboradores em descumprimento",
         "Media da meta semanal no periodo": "Meta media no periodo",
     }
     exec_summary_display = exec_summary.copy()
@@ -809,7 +1193,7 @@ def save_excel(
     quick_read_df = pd.DataFrame(
         [
             {
-                "Pergunta": "Quem esta abaixo de 90%?",
+                "Pergunta": "Quem entra no criterio de descumprimento?",
                 "Resposta": f"{summary_map['Nao aderentes']} pessoas ({summary_map['Percentual nao aderente']} das pessoas consideradas).",
             },
             {
@@ -822,16 +1206,17 @@ def save_excel(
             },
             {
                 "Pergunta": "Quem entrou no calculo?",
-                "Resposta": "Pessoas ativas M/E, areas B-, sem B-V e B-SNP.",
+                "Resposta": "Pessoas ativas M/E, areas B-, sem B-V, B-SNP e B-SKL; executivos B-SKL permanecem.",
             },
         ]
     )
     top_volume_df, top_rate_df = build_management_focus_tables(area_df)
+    week_type_median_df = build_week_type_median_summary(weekly_manager_df)
     deep_dive_note_df = pd.DataFrame(
         [
             {
                 "Leitura": "Volume",
-                "Como usar": "Onde ha mais pessoas abaixo de 90%. Melhor para priorizar impacto.",
+                "Como usar": "Onde ha mais colaboradores em descumprimento. Melhor para priorizar impacto.",
             },
             {
                 "Leitura": "Percentual",
@@ -866,16 +1251,36 @@ def save_excel(
             value="Top 10 por percentual da area",
         )
         specs_df.to_excel(writer, sheet_name="Especificacoes", index=False)
+        filter_criteria_df.to_excel(writer, sheet_name="Filtros e Areas Fora", index=False)
+        excluded_areas_df.to_excel(
+            writer,
+            sheet_name="Filtros e Areas Fora",
+            startrow=len(filter_criteria_df) + 3,
+            index=False,
+        )
+        ws_filters = writer.sheets["Filtros e Areas Fora"]
+        ws_filters.cell(row=len(filter_criteria_df) + 3, column=1, value="Areas fora do recorte analisado")
         exec_summary_display.to_excel(writer, sheet_name="Resumo Executivo", index=False)
         cumulative_df.to_excel(writer, sheet_name="Faixas Cumulativas", index=False)
         distribution_df.to_excel(writer, sheet_name="Distribuicao Faixas", index=False)
         cargo_df.to_excel(writer, sheet_name="Resumo Cargo", index=False)
         area_df.to_excel(writer, sheet_name="Resumo Areas", index=False)
         weekly_manager_df.to_excel(writer, sheet_name="Resumo Semanal Gestao", index=False)
+        week_type_median_df.to_excel(writer, sheet_name="Medianas Semana", index=False)
+        build_holiday_bridge_investigation(weekly_manager_df).to_excel(
+            writer,
+            sheet_name="Investigacao Feriados",
+            index=False,
+        )
+        build_holiday_bridge_window(weekly_manager_df).to_excel(
+            writer,
+            sheet_name="Janela Feriados",
+            index=False,
+        )
         department_recent_df.to_excel(writer, sheet_name="Resumo Departamentos", index=False)
         department_heatmap_df.to_excel(writer, sheet_name="Heatmap Departamentos")
         week_rules_df.to_excel(writer, sheet_name="Regras Semanais", index=False)
-        bad.to_excel(writer, sheet_name="Abaixo de 90", index=False)
+        bad.to_excel(writer, sheet_name="Descump Meta 10pct", index=False)
         all_people.to_excel(writer, sheet_name="Pessoas Consideradas", index=False)
 
 
@@ -908,7 +1313,7 @@ def plot_distribution(distribution_df: pd.DataFrame, out_path: Path) -> None:
         )
     _apply_chart_style(
         ax,
-        "Pessoas abaixo de 90% por média semanal presencial",
+        "Colaboradores em descumprimento por média semanal presencial",
         ylabel="Quantidade de pessoas",
     )
     ax.tick_params(axis="x", labelrotation=15)
@@ -932,8 +1337,8 @@ def plot_top_areas(area_df: pd.DataFrame, out_path: Path, top_n: int = 10) -> No
         )
     _apply_chart_style(
         ax,
-        "Areas com mais pessoas abaixo de 90% de aderencia",
-        xlabel="Pessoas abaixo de 90%",
+        "Areas com mais colaboradores em descumprimento",
+        xlabel="Colaboradores em descumprimento",
     )
     fig.savefig(out_path, dpi=180, bbox_inches="tight")
     plt.close(fig)
@@ -954,8 +1359,8 @@ def plot_cargo_summary(cargo_df: pd.DataFrame, out_path: Path) -> None:
         )
     _apply_chart_style(
         ax,
-        "Pessoas abaixo de 90% por cargo",
-        ylabel="Pessoas abaixo de 90%",
+        "Colaboradores em descumprimento por cargo",
+        ylabel="Colaboradores em descumprimento",
     )
     fig.savefig(out_path, dpi=180, bbox_inches="tight")
     plt.close(fig)
@@ -979,8 +1384,8 @@ def plot_cumulative_thresholds(cumulative_df: pd.DataFrame, out_path: Path) -> N
     ax.set_ylim(0, min(max(ymax * 1.18, ymax + 8.0), 110.0))
     _apply_chart_style(
         ax,
-        "Faixas acumuladas pedidas no briefing",
-        ylabel="% das pessoas abaixo de 90%",
+        "Distribuição dos Colaboradores",
+        ylabel="% dos colaboradores em descumprimento",
     )
     ax.tick_params(axis="x", labelrotation=10)
     fig.savefig(out_path, dpi=180, bbox_inches="tight")
@@ -991,6 +1396,7 @@ def plot_weekly_criticality(weekly_df: pd.DataFrame, out_path: Path) -> None:
     fig, ax = plt.subplots(figsize=(15.4, 8.2), constrained_layout=True)
     x = np.arange(len(weekly_df))
     media_presenca = weekly_df["media_presenca"].to_numpy(dtype=float)
+    mediana_presenca = weekly_df["mediana_presenca"].to_numpy(dtype=float)
     rolling = weekly_df["media_presenca_movel_4s"].to_numpy(dtype=float)
     media_meta = weekly_df["media_meta"].to_numpy(dtype=float)
     holiday_mask = weekly_df["semana_feriado"].to_numpy(dtype=bool)
@@ -999,12 +1405,22 @@ def plot_weekly_criticality(weekly_df: pd.DataFrame, out_path: Path) -> None:
     ax.plot(x, media_presenca, color="#0f4c81", linewidth=4.0, marker="o", markersize=6.1, label="Presença média", zorder=3)
     ax.plot(
         x,
+        mediana_presenca,
+        color="#734b9a",
+        linewidth=3.2,
+        marker="D",
+        markersize=5.4,
+        label="Presença mediana",
+        zorder=4,
+    )
+    ax.plot(
+        x,
         rolling,
         color="#88aecd",
         linewidth=3.0,
         linestyle="--",
         label="Média móvel 4 semanas",
-        zorder=4,
+        zorder=5,
     )
     ax.plot(x, media_meta, color="#7cb59b", linewidth=3.0, linestyle="-.", label="Meta da semana", zorder=2)
     if holiday_mask.any():
@@ -1042,15 +1458,103 @@ def plot_weekly_criticality(weekly_df: pd.DataFrame, out_path: Path) -> None:
     tick_labels = weekly_df.iloc[tick_positions]["Data"].dt.strftime("%d/%m").tolist()
     ax.set_xticks(tick_positions)
     ax.set_xticklabels(tick_labels)
-    ymax = max(float(np.nanmax(media_presenca)), float(np.nanmax(rolling)), float(np.nanmax(media_meta)), 1.0)
+    ymax = max(
+        float(np.nanmax(media_presenca)),
+        float(np.nanmax(mediana_presenca)),
+        float(np.nanmax(rolling)),
+        float(np.nanmax(media_meta)),
+        1.0,
+    )
     ax.set_ylim(0, max(ymax * 1.16, ymax + 0.5))
     _apply_chart_style(
         ax,
-        "Tendência semanal da presença média versus meta",
+        "Tendência semanal da presença média e mediana versus meta",
         xlabel="Semanas monitoradas",
-        ylabel="Dias presenciais médios por pessoa",
+        ylabel="Dias presenciais por pessoa",
     )
     ax.legend(frameon=False, fontsize=13, loc="upper right", ncol=2)
+    fig.savefig(out_path, dpi=180, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_holiday_bridge_window(window_df: pd.DataFrame, out_path: Path) -> None:
+    if window_df.empty:
+        fig, ax = plt.subplots(figsize=(12.0, 5.6), constrained_layout=True)
+        ax.text(0.5, 0.5, "Sem dados para investigar janela de feriados", ha="center", va="center", fontsize=18, color="#5c677d")
+        ax.axis("off")
+        fig.savefig(out_path, dpi=180, bbox_inches="tight")
+        plt.close(fig)
+        return
+
+    ordered_holidays = sorted(pd.to_datetime(window_df["Feriado"].dropna().unique()).tolist())
+    ordered_windows = ["Semana anterior", "Semana do feriado", "Semana posterior"]
+    scores = np.full((len(ordered_holidays), len(ordered_windows)), np.nan)
+    labels = np.full((len(ordered_holidays), len(ordered_windows)), "", dtype=object)
+    for i, holiday_date in enumerate(ordered_holidays):
+        holiday_rows = window_df[pd.to_datetime(window_df["Feriado"]).eq(pd.Timestamp(holiday_date))]
+        for j, window_label in enumerate(ordered_windows):
+            row = holiday_rows[holiday_rows["Janela"].eq(window_label)]
+            if row.empty:
+                labels[i, j] = "-"
+                continue
+            record = row.iloc[0]
+            score = bridge_signal_score(record["Sinal Emenda"])
+            if score < 0 or pd.isna(record["Mediana Dias"]):
+                labels[i, j] = "-"
+                continue
+            scores[i, j] = score
+            labels[i, j] = (
+                f"{float(record['Mediana Dias']):.1f}d\n"
+                f"{float(record['Percentual 0 ou 1 Dia']):.1f}%"
+            )
+
+    fig_height = max(7.6, 0.62 * len(ordered_holidays) + 3.6)
+    fig, ax = plt.subplots(figsize=(13.8, fig_height), constrained_layout=True)
+    cmap = ListedColormap(["#dcefe5", "#f7e7ad", "#efb3c0"])
+    cmap.set_bad("#edf1f5")
+    norm = BoundaryNorm([-0.5, 0.5, 1.5, 2.5], cmap.N)
+    im = ax.imshow(np.ma.masked_invalid(scores), cmap=cmap, norm=norm, aspect="auto")
+
+    ax.set_xticks(np.arange(len(ordered_windows)))
+    ax.set_xticklabels(["Anterior", "Feriado", "Posterior"], fontsize=15, fontweight="semibold")
+    ax.set_yticks(np.arange(len(ordered_holidays)))
+    ax.set_yticklabels([pd.Timestamp(value).strftime("%d/%m/%Y") for value in ordered_holidays], fontsize=13.5)
+    ax.tick_params(top=False, bottom=True, labeltop=False, labelbottom=True)
+    ax.set_xticks(np.arange(scores.shape[1] + 1) - 0.5, minor=True)
+    ax.set_yticks(np.arange(scores.shape[0] + 1) - 0.5, minor=True)
+    ax.grid(which="minor", color="white", linestyle="-", linewidth=1.4)
+    ax.tick_params(which="minor", bottom=False, left=False)
+
+    for i in range(scores.shape[0]):
+        for j in range(scores.shape[1]):
+            value = scores[i, j]
+            text = labels[i, j]
+            color = "#1f2937" if np.isnan(value) or value < 2 else "#ffffff"
+            ax.text(j, i, text, ha="center", va="center", fontsize=12.5, fontweight="semibold", color=color)
+
+    _apply_chart_style(
+        ax,
+        "Janela do feriado: sinal de possível emenda",
+        xlabel="Cada célula mostra mediana de dias presenciais e % com 0 ou 1 dia",
+        ylabel="Semana do feriado",
+    )
+    ax.set_title("Janela do feriado: sinal de possível emenda", fontsize=24, fontweight="bold", color="#0f2f59", pad=40)
+    ax.legend(
+        handles=[
+            Patch(facecolor="#dcefe5", edgecolor="none", label="Baixo"),
+            Patch(facecolor="#f7e7ad", edgecolor="none", label="Moderado"),
+            Patch(facecolor="#efb3c0", edgecolor="none", label="Alto"),
+        ],
+        frameon=False,
+        loc="upper right",
+        bbox_to_anchor=(0.99, 1.24),
+        borderaxespad=0.0,
+        handlelength=1.9,
+        handletextpad=0.5,
+        columnspacing=1.6,
+        ncol=3,
+        fontsize=13,
+    )
     fig.savefig(out_path, dpi=180, bbox_inches="tight")
     plt.close(fig)
 
@@ -1145,6 +1649,8 @@ def build_html_report(
     html_path: Path,
     metadata: dict[str, object],
     exec_summary: pd.DataFrame,
+    filter_criteria_df: pd.DataFrame,
+    excluded_areas_df: pd.DataFrame,
     cumulative_df: pd.DataFrame,
     distribution_df: pd.DataFrame,
     area_df: pd.DataFrame,
@@ -1152,6 +1658,7 @@ def build_html_report(
     department_recent_df: pd.DataFrame,
     chart_cumulative: Path,
     chart_weekly: Path,
+    chart_holiday_bridge: Path,
     chart_department_heatmap: Path,
     chart_distribution: Path,
     logo_path: Path | None,
@@ -1159,7 +1666,10 @@ def build_html_report(
     summary_map = dict(exec_summary.values.tolist())
     chart_cumulative_rel = chart_cumulative.relative_to(html_path.parent).as_posix()
     chart_weekly_rel = chart_weekly.relative_to(html_path.parent).as_posix()
+    chart_holiday_bridge_rel = chart_holiday_bridge.relative_to(html_path.parent).as_posix()
     chart_distribution_rel = chart_distribution.relative_to(html_path.parent).as_posix()
+    rules_page_path = html_path.with_name("regras_areas_nao_analisadas.html")
+    rules_page_rel = rules_page_path.relative_to(html_path.parent).as_posix()
     logo_rel = logo_path.relative_to(html_path.parent).as_posix() if logo_path is not None else ""
     favicon_html = (
         f'  <link rel="icon" type="image/png" href="{logo_rel}">\n'
@@ -1173,6 +1683,37 @@ def build_html_report(
         f"<tr><td>{escape(str(row['Faixa']))}</td><td>{int(row['Pessoas'])}</td><td>{float(row['Percentual']):.1f}%</td></tr>"
         for row in cumulative_records
     )
+    filter_criteria_records = filter_criteria_df.to_dict(orient="records")
+    filter_criteria_html = "\n".join(
+        (
+            f'<tr data-filter-row="{idx}">'
+            f'<td data-filter-field="filter">{escape(str(row["Filtro"]))}</td>'
+            f'<td data-filter-field="rule">{escape(str(row["Regra usada"]))}</td>'
+            f'<td data-filter-field="impact">{escape(str(row["Impacto"]))}</td>'
+            "</tr>"
+        )
+        for idx, row in enumerate(filter_criteria_records)
+    )
+    if excluded_areas_df.empty:
+        excluded_areas_html = (
+            '<tr><td colspan="6" id="excluded-empty-message">'
+            "Nenhuma área ficou fora do recorte de áreas."
+            "</td></tr>"
+        )
+    else:
+        excluded_areas_html = "\n".join(
+            (
+                "<tr>"
+                f"<td>{escape(str(row['Area']))}</td>"
+                f"<td>{escape(str(row['Departamento']))}</td>"
+                f"<td>{escape(str(row['Heranca']))}</td>"
+                f'<td data-area-reason="{escape(str(row["Motivo"]))}">{escape(str(row["Motivo"]))}</td>'
+                f"<td>{int(row['Pessoas Fora'])}</td>"
+                f"<td>{int(row['Executivos B-SKL Mantidos'])}</td>"
+                "</tr>"
+            )
+            for row in excluded_areas_df.to_dict(orient="records")
+        )
     top_volume_df, top_rate_df = build_management_focus_tables(area_df)
 
     def format_optional_days(value: object) -> str:
@@ -1196,6 +1737,94 @@ def build_html_report(
 
     top_volume_html = build_focus_rows(top_volume_df)
     top_rate_html = build_focus_rows(top_rate_df)
+    week_type_median_df = build_week_type_median_summary(weekly_manager_df)
+    normal_median = week_type_median_df.loc[
+        week_type_median_df["Tipo Semana"].eq("Normal"), "Mediana Dias"
+    ]
+    holiday_median = week_type_median_df.loc[
+        week_type_median_df["Tipo Semana"].eq("Feriado"), "Mediana Dias"
+    ]
+    normal_zero_one = week_type_median_df.loc[
+        week_type_median_df["Tipo Semana"].eq("Normal"), "Percentual 0 ou 1 Dia"
+    ]
+    holiday_zero_one = week_type_median_df.loc[
+        week_type_median_df["Tipo Semana"].eq("Feriado"), "Percentual 0 ou 1 Dia"
+    ]
+    normal_median_days = float(normal_median.iloc[0]) if not normal_median.empty else 0.0
+    holiday_median_days = float(holiday_median.iloc[0]) if not holiday_median.empty else 0.0
+    normal_zero_one_pct = float(normal_zero_one.iloc[0]) if not normal_zero_one.empty else 0.0
+    holiday_zero_one_pct = float(holiday_zero_one.iloc[0]) if not holiday_zero_one.empty else 0.0
+    median_gap_holiday = normal_median_days - holiday_median_days
+    zero_one_gap_holiday = holiday_zero_one_pct - normal_zero_one_pct
+    median_gap_phrase_pt = (
+        "sem diferença"
+        if abs(median_gap_holiday) < 0.005
+        else f"{abs(median_gap_holiday):.2f} dia(s) {'abaixo' if median_gap_holiday > 0 else 'acima'}"
+    )
+    zero_one_gap_phrase_pt = (
+        "sem diferença"
+        if abs(zero_one_gap_holiday) < 0.05
+        else f"{abs(zero_one_gap_holiday):.1f} p.p. {'acima' if zero_one_gap_holiday > 0 else 'abaixo'}"
+    )
+    median_gap_phrase_en = (
+        "no difference"
+        if abs(median_gap_holiday) < 0.005
+        else f"{abs(median_gap_holiday):.2f} day(s) {'lower' if median_gap_holiday > 0 else 'higher'}"
+    )
+    holiday_bridge_df = build_holiday_bridge_investigation(weekly_manager_df)
+    holiday_bridge_window_df = build_holiday_bridge_window(weekly_manager_df)
+    holiday_bridge_window_summary_df = build_holiday_bridge_window_summary(holiday_bridge_window_df)
+    high_signal_weeks = int(holiday_bridge_df["Sinal Emenda"].eq("Alto").sum()) if not holiday_bridge_df.empty else 0
+    moderate_signal_weeks = int(holiday_bridge_df["Sinal Emenda"].eq("Moderado").sum()) if not holiday_bridge_df.empty else 0
+    week_type_median_html = "\n".join(
+        (
+            "<tr>"
+            f"<td data-week-type=\"{escape(str(row['Tipo Semana']))}\">{escape(str(row['Tipo Semana']))}</td>"
+            f"<td>{int(row['Semanas'])}</td>"
+            f"<td>{float(row['Mediana Dias']):.2f}</td>"
+            f"<td>{float(row['Media Dias']):.2f}</td>"
+            f"<td>{float(row['Menor Mediana']):.2f}</td>"
+            f"<td>{float(row['Percentual 0 ou 1 Dia']):.1f}%</td>"
+            "</tr>"
+        )
+        for row in week_type_median_df.to_dict(orient="records")
+    )
+    def format_bridge_window_cell(record: object) -> str:
+        if not isinstance(record, dict) or pd.isna(record.get("Mediana Dias")):
+            return '<span class="muted-cell" data-bridge-empty>Sem dados</span>'
+        signal = str(record.get("Sinal Emenda", "Sem dados"))
+        signal_class = {
+            "Baixo": "signal-low",
+            "Moderado": "signal-medium",
+            "Alto": "signal-high",
+        }.get(signal, "signal-none")
+        return (
+            f"<strong>{pd.Timestamp(record['Semana']).strftime('%d/%m')}</strong><br>"
+            f"{float(record['Mediana Dias']):.2f}d <span data-bridge-median-word>mediana</span><br>"
+            f"{float(record['Percentual 0 ou 1 Dia']):.1f}% <span data-bridge-zero-one-prefix>com</span> 0/1<br>"
+            f'<span class="signal-badge {signal_class}" data-signal-label="{escape(signal)}">{escape(signal)}</span>'
+        )
+
+    if holiday_bridge_window_summary_df.empty:
+        holiday_week_median_html = (
+            '<tr><td colspan="6" id="holiday-empty-message">'
+            "Nenhuma semana com feriado no período analisado."
+            "</td></tr>"
+        )
+    else:
+        holiday_week_median_html = "\n".join(
+            (
+                "<tr>"
+                f"<td>{pd.Timestamp(row['Feriado']).strftime('%d/%m/%Y')}</td>"
+                f"<td>{format_bridge_window_cell(row['Semana anterior'])}</td>"
+                f"<td>{format_bridge_window_cell(row['Semana do feriado'])}</td>"
+                f"<td>{format_bridge_window_cell(row['Semana posterior'])}</td>"
+                f'<td data-signal-label="{escape(str(row["Sinal Geral"]))}">{escape(str(row["Sinal Geral"]))}</td>'
+                f'<td data-reading-key="{escape(str(row["Leitura"]))}">{escape(str(row["Leitura"]))}</td>'
+                "</tr>"
+            )
+            for row in holiday_bridge_window_summary_df.to_dict(orient="records")
+        )
     faixa_principal_pct = float(
         distribution_df.loc[distribution_df["Faixa"].eq("De 2,0 a 2,5"), "Percentual"].iloc[0]
     )
@@ -1364,6 +1993,539 @@ def build_html_report(
         f"{row['Area']} | {row['Departamento']} ({float(row['criticidade_media_recente']):.1f}%)"
         for row in department_recent_df.head(3).to_dict(orient="records")
     )
+    excluded_people_count = int(excluded_areas_df["Pessoas Fora"].sum()) if not excluded_areas_df.empty else 0
+    excluded_area_count = int(excluded_areas_df["Area"].nunique()) if not excluded_areas_df.empty else 0
+
+    def filter_row_value(filter_name: str, column_name: str) -> str:
+        for row in filter_criteria_records:
+            if str(row.get("Filtro", "")) == filter_name:
+                return str(row.get(column_name, ""))
+        return ""
+
+    source_rule = filter_row_value("Base", "Regra usada")
+    period_rule = filter_row_value("Periodo", "Regra usada")
+    filter_rows_pt = [
+        {"filter": str(row["Filtro"]), "rule": str(row["Regra usada"]), "impact": str(row["Impacto"])}
+        for row in filter_criteria_records
+    ]
+    filter_rows_en = [
+        {
+            "filter": "Source",
+            "rule": source_rule,
+            "impact": "Official DW used as the scope source.",
+        },
+        {
+            "filter": "Period",
+            "rule": period_rule,
+            "impact": "Collective vacation weeks are excluded from the calculation.",
+        },
+        {
+            "filter": "Status",
+            "rule": "Terminated = No",
+            "impact": "Terminated employees are not included in the calculation.",
+        },
+        {
+            "filter": "Role",
+            "rule": "Role in M or E",
+            "impact": "Managerial and executive scope.",
+        },
+        {
+            "filter": "Areas",
+            "rule": "Area starts with B-, excluding B-V, B-SNP and B-SKL; B-SKL executives remain.",
+            "impact": f"{excluded_people_count} employees across {excluded_area_count} area(s) were excluded by the area filter.",
+        },
+        {
+            "filter": "Regular week",
+            "rule": f"Target of {float(metadata['required_days']):.1f} on-site days.",
+            "impact": "Baseline for weekly adherence outside holiday weeks.",
+        },
+        {
+            "filter": "Holiday week",
+            "rule": f"Critical only with 0 or 1 on-site day; target of {REQ_PRESENTIAL_DAYS_HOLIDAY_WEEK:.1f} days.",
+            "impact": "Supports evaluating a possible holiday bridge with home office.",
+        },
+        {
+            "filter": "List criterion",
+            "rule": "Employees below 10% of the established target.",
+            "impact": "Same numeric rule as before, presented as target non-compliance.",
+        },
+    ]
+
+    def make_rules_page_rows(text: dict[str, str]) -> list[dict[str, str]]:
+        return [
+            {
+                "filter": text["source"],
+                "rule": source_rule,
+                "impact": text["source_impact"],
+            },
+            {
+                "filter": text["period"],
+                "rule": period_rule,
+                "impact": text["period_impact"],
+            },
+            {
+                "filter": text["status"],
+                "rule": text["status_rule"],
+                "impact": text["status_impact"],
+            },
+            {
+                "filter": text["role"],
+                "rule": text["role_rule"],
+                "impact": text["role_impact"],
+            },
+            {
+                "filter": text["areas"],
+                "rule": text["areas_rule"],
+                "impact": text["areas_impact"].format(
+                    people=excluded_people_count,
+                    areas=excluded_area_count,
+                ),
+            },
+            {
+                "filter": text["regular_week"],
+                "rule": text["regular_rule"].format(days=float(metadata["required_days"])),
+                "impact": text["regular_impact"],
+            },
+            {
+                "filter": text["holiday_week"],
+                "rule": text["holiday_rule"].format(days=REQ_PRESENTIAL_DAYS_HOLIDAY_WEEK),
+                "impact": text["holiday_impact"],
+            },
+            {
+                "filter": text["list_criterion"],
+                "rule": text["list_rule"],
+                "impact": text["list_impact"],
+            },
+        ]
+
+    rules_page_overrides = {
+        "de": {
+            "filter_title": "Verwendete Regeln und nicht analysierte Bereiche",
+            "filter_note": "Eigene Seite mit dem Berechnungsumfang und der vollständigen Liste der Bereiche außerhalb der Analyse.",
+            "filter_open_button": "Seite öffnen",
+            "rules_overlay_close": "Schließen",
+            "rules_page_back": "Zurück zur Präsentation",
+            "rules_page_rules_title": "Verwendete Regeln",
+            "rules_page_rules_note": "Umfang und Kriterien zur Berechnung der Beschäftigten im Kriterium der Zielabweichung.",
+            "filter_h_filter": "Filter",
+            "filter_h_rule": "Verwendete Regel",
+            "filter_h_impact": "Auswirkung",
+            "excluded_title": "Nicht analysierte Bereiche",
+            "excluded_note": "Vollständige Liste der Bereiche außerhalb des Analyseumfangs.",
+            "excluded_h_area": "Bereich",
+            "excluded_h_dept": "Abteilung",
+            "excluded_h_heritage": "Zuordnung",
+            "excluded_h_reason": "Grund",
+            "excluded_h_people": "Personen außen",
+            "excluded_h_exec": "Beibehaltene Executives",
+            "rules_page_filter_rows": make_rules_page_rows(
+                {
+                    "source": "Quelle",
+                    "source_impact": "Offizielles DW als Ursprung des Umfangs.",
+                    "period": "Zeitraum",
+                    "period_impact": "Werksferienwochen werden aus der Berechnung entfernt.",
+                    "status": "Status",
+                    "status_rule": "Ausgeschieden = Nein",
+                    "status_impact": "Ausgeschiedene Beschäftigte fließen nicht in die Berechnung ein.",
+                    "role": "Rolle",
+                    "role_rule": "Rolle M oder E",
+                    "role_impact": "Management- und Executive-Umfang.",
+                    "areas": "Bereiche",
+                    "areas_rule": "Bereich beginnt mit B-, ohne B-V, B-SNP und B-SKL; B-SKL Executives bleiben enthalten.",
+                    "areas_impact": "{people} Beschäftigte in {areas} Bereich(en) wurden durch den Bereichsfilter ausgeschlossen.",
+                    "regular_week": "Normale Woche",
+                    "regular_rule": "Ziel von {days:.1f} Präsenztagen.",
+                    "regular_impact": "Basis zur Berechnung der wöchentlichen Zielerfüllung außerhalb von Feiertagswochen.",
+                    "holiday_week": "Feiertagswoche",
+                    "holiday_rule": "Kritisch nur bei 0 oder 1 Präsenztag; Ziel von {days:.1f} Tagen.",
+                    "holiday_impact": "Hilft, eine mögliche Feiertagsbrücke mit Homeoffice zu bewerten.",
+                    "list_criterion": "Listenkriterium",
+                    "list_rule": "Beschäftigte unter 10% des festgelegten Ziels.",
+                    "list_impact": "Gleiche numerische Regel wie zuvor, als Zielabweichung formuliert.",
+                }
+            ),
+            "excluded_reason_map": {
+                "Area fora do prefixo B-": "Bereich außerhalb des Präfixes B-",
+                "Area/Heranca B-V ou B-SNP": "Bereich/Zuordnung B-V oder B-SNP",
+                "B-SKL removido para nao executivos": "B-SKL für Nicht-Executives entfernt",
+            },
+            "excluded_empty_message": "Kein Bereich lag außerhalb des Bereichsumfangs.",
+        },
+        "es": {
+            "filter_title": "Reglas usadas y áreas no analizadas",
+            "filter_note": "Página dedicada al alcance del cálculo y a la lista completa de áreas fuera del análisis.",
+            "filter_open_button": "Abrir página",
+            "rules_overlay_close": "Cerrar",
+            "rules_page_back": "Volver a la presentación",
+            "rules_page_rules_title": "Reglas usadas",
+            "rules_page_rules_note": "Alcance y criterios usados para calcular los colaboradores en incumplimiento de la meta establecida.",
+            "filter_h_filter": "Filtro",
+            "filter_h_rule": "Regla usada",
+            "filter_h_impact": "Impacto",
+            "excluded_title": "Áreas no analizadas",
+            "excluded_note": "Lista completa de áreas fuera del alcance analizado.",
+            "excluded_h_area": "Área",
+            "excluded_h_dept": "Departamento",
+            "excluded_h_heritage": "Herencia",
+            "excluded_h_reason": "Motivo",
+            "excluded_h_people": "Personas fuera",
+            "excluded_h_exec": "Ejecutivos mantenidos",
+            "rules_page_filter_rows": make_rules_page_rows(
+                {
+                    "source": "Base",
+                    "source_impact": "DW oficial usado como origen del alcance.",
+                    "period": "Período",
+                    "period_impact": "Las semanas de vacaciones colectivas quedan fuera del cálculo.",
+                    "status": "Estado",
+                    "status_rule": "Desvinculado = No",
+                    "status_impact": "Las personas desvinculadas no entran en el cálculo.",
+                    "role": "Cargo",
+                    "role_rule": "Cargo M o E",
+                    "role_impact": "Alcance gerencial y ejecutivo.",
+                    "areas": "Áreas",
+                    "areas_rule": "Área iniciando en B-, sin B-V, B-SNP y B-SKL; ejecutivos B-SKL permanecen.",
+                    "areas_impact": "{people} colaboradores en {areas} área(s) quedaron fuera por el filtro de área.",
+                    "regular_week": "Semana normal",
+                    "regular_rule": "Meta de {days:.1f} días presenciales.",
+                    "regular_impact": "Base para calcular adherencia semanal fuera de feriados.",
+                    "holiday_week": "Semana con feriado",
+                    "holiday_rule": "Crítica solo con 0 o 1 día presencial; meta de {days:.1f} días.",
+                    "holiday_impact": "Permite evaluar posible puente de feriado con home office.",
+                    "list_criterion": "Criterio de lista",
+                    "list_rule": "Colaboradores por debajo del 10% de la meta establecida.",
+                    "list_impact": "Misma regla numérica anterior, leída como incumplimiento de meta.",
+                }
+            ),
+            "excluded_reason_map": {
+                "Area fora do prefixo B-": "Área fuera del prefijo B-",
+                "Area/Heranca B-V ou B-SNP": "Área/herencia B-V o B-SNP",
+                "B-SKL removido para nao executivos": "B-SKL removido para no ejecutivos",
+            },
+            "excluded_empty_message": "Ninguna área quedó fuera del alcance de áreas.",
+        },
+        "fr": {
+            "filter_title": "Règles utilisées et zones non analysées",
+            "filter_note": "Page dédiée au périmètre de calcul et à la liste complète des zones hors analyse.",
+            "filter_open_button": "Ouvrir la page",
+            "rules_overlay_close": "Fermer",
+            "rules_page_back": "Retour à la présentation",
+            "rules_page_rules_title": "Règles utilisées",
+            "rules_page_rules_note": "Périmètre et critères utilisés pour calculer les collaborateurs dans le critère de non-respect de l'objectif.",
+            "filter_h_filter": "Filtre",
+            "filter_h_rule": "Règle utilisée",
+            "filter_h_impact": "Impact",
+            "excluded_title": "Zones non analysées",
+            "excluded_note": "Liste complète des zones hors périmètre analysé.",
+            "excluded_h_area": "Zone",
+            "excluded_h_dept": "Département",
+            "excluded_h_heritage": "Héritage",
+            "excluded_h_reason": "Motif",
+            "excluded_h_people": "Personnes hors périmètre",
+            "excluded_h_exec": "Executives maintenus",
+            "rules_page_filter_rows": make_rules_page_rows(
+                {
+                    "source": "Source",
+                    "source_impact": "DW officiel utilisé comme source du périmètre.",
+                    "period": "Période",
+                    "period_impact": "Les semaines de congés collectifs sont exclues du calcul.",
+                    "status": "Statut",
+                    "status_rule": "Sorti = Non",
+                    "status_impact": "Les personnes sorties ne sont pas incluses dans le calcul.",
+                    "role": "Rôle",
+                    "role_rule": "Rôle M ou E",
+                    "role_impact": "Périmètre management et executive.",
+                    "areas": "Zones",
+                    "areas_rule": "Zone commençant par B-, hors B-V, B-SNP et B-SKL; les executives B-SKL restent inclus.",
+                    "areas_impact": "{people} collaborateurs dans {areas} zone(s) ont été exclus par le filtre de zone.",
+                    "regular_week": "Semaine normale",
+                    "regular_rule": "Objectif de {days:.1f} jours sur site.",
+                    "regular_impact": "Base pour calculer l'adhérence hebdomadaire hors semaines avec jour férié.",
+                    "holiday_week": "Semaine avec jour férié",
+                    "holiday_rule": "Critique uniquement avec 0 ou 1 jour sur site; objectif de {days:.1f} jours.",
+                    "holiday_impact": "Aide à évaluer un possible pont avec home office.",
+                    "list_criterion": "Critère de liste",
+                    "list_rule": "Collaborateurs sous 10% de l'objectif établi.",
+                    "list_impact": "Même règle numérique qu'avant, formulée comme non-respect de l'objectif.",
+                }
+            ),
+            "excluded_reason_map": {
+                "Area fora do prefixo B-": "Zone hors préfixe B-",
+                "Area/Heranca B-V ou B-SNP": "Zone/héritage B-V ou B-SNP",
+                "B-SKL removido para nao executivos": "B-SKL retiré pour les non-executives",
+            },
+            "excluded_empty_message": "Aucune zone n'était hors du périmètre des zones.",
+        },
+        "it": {
+            "filter_title": "Regole usate e aree non analizzate",
+            "filter_note": "Pagina dedicata al perimetro di calcolo e alla lista completa delle aree fuori dall'analisi.",
+            "filter_open_button": "Apri pagina",
+            "rules_overlay_close": "Chiudi",
+            "rules_page_back": "Torna alla presentazione",
+            "rules_page_rules_title": "Regole usate",
+            "rules_page_rules_note": "Perimetro e criteri usati per calcolare i collaboratori nel criterio di mancato rispetto del target.",
+            "filter_h_filter": "Filtro",
+            "filter_h_rule": "Regola usata",
+            "filter_h_impact": "Impatto",
+            "excluded_title": "Aree non analizzate",
+            "excluded_note": "Lista completa delle aree fuori dal perimetro analizzato.",
+            "excluded_h_area": "Area",
+            "excluded_h_dept": "Reparto",
+            "excluded_h_heritage": "Eredità",
+            "excluded_h_reason": "Motivo",
+            "excluded_h_people": "Persone fuori",
+            "excluded_h_exec": "Executives mantenuti",
+            "rules_page_filter_rows": make_rules_page_rows(
+                {
+                    "source": "Fonte",
+                    "source_impact": "DW ufficiale usato come origine del perimetro.",
+                    "period": "Periodo",
+                    "period_impact": "Le settimane di ferie collettive sono escluse dal calcolo.",
+                    "status": "Stato",
+                    "status_rule": "Cessato = No",
+                    "status_impact": "Le persone cessate non entrano nel calcolo.",
+                    "role": "Ruolo",
+                    "role_rule": "Ruolo M o E",
+                    "role_impact": "Perimetro manageriale ed executive.",
+                    "areas": "Aree",
+                    "areas_rule": "Area che inizia con B-, esclusi B-V, B-SNP e B-SKL; gli executives B-SKL restano inclusi.",
+                    "areas_impact": "{people} collaboratori in {areas} area/e sono stati esclusi dal filtro area.",
+                    "regular_week": "Settimana normale",
+                    "regular_rule": "Target di {days:.1f} giorni in presenza.",
+                    "regular_impact": "Base per calcolare l'aderenza settimanale fuori dalle settimane festive.",
+                    "holiday_week": "Settimana festiva",
+                    "holiday_rule": "Critica solo con 0 o 1 giorno in presenza; target di {days:.1f} giorni.",
+                    "holiday_impact": "Aiuta a valutare un possibile ponte festivo con home office.",
+                    "list_criterion": "Criterio lista",
+                    "list_rule": "Collaboratori sotto il 10% del target stabilito.",
+                    "list_impact": "Stessa regola numerica precedente, letta come mancato rispetto del target.",
+                }
+            ),
+            "excluded_reason_map": {
+                "Area fora do prefixo B-": "Area fuori dal prefisso B-",
+                "Area/Heranca B-V ou B-SNP": "Area/eredità B-V o B-SNP",
+                "B-SKL removido para nao executivos": "B-SKL rimosso per non executives",
+            },
+            "excluded_empty_message": "Nessuna area era fuori dal perimetro delle aree.",
+        },
+        "pl": {
+            "filter_title": "Użyte reguły i obszary poza analizą",
+            "filter_note": "Dedykowana strona z zakresem kalkulacji i pełną listą obszarów poza analizą.",
+            "filter_open_button": "Otwórz stronę",
+            "rules_overlay_close": "Zamknij",
+            "rules_page_back": "Wróć do prezentacji",
+            "rules_page_rules_title": "Użyte reguły",
+            "rules_page_rules_note": "Zakres i kryteria użyte do wyliczenia osób w kryterium niespełnienia ustalonego celu.",
+            "filter_h_filter": "Filtr",
+            "filter_h_rule": "Użyta reguła",
+            "filter_h_impact": "Wpływ",
+            "excluded_title": "Obszary poza analizą",
+            "excluded_note": "Pełna lista obszarów poza zakresem analizy.",
+            "excluded_h_area": "Obszar",
+            "excluded_h_dept": "Dział",
+            "excluded_h_heritage": "Dziedziczenie",
+            "excluded_h_reason": "Powód",
+            "excluded_h_people": "Osoby poza",
+            "excluded_h_exec": "Zachowani executives",
+            "rules_page_filter_rows": make_rules_page_rows(
+                {
+                    "source": "Źródło",
+                    "source_impact": "Oficjalny DW użyty jako źródło zakresu.",
+                    "period": "Okres",
+                    "period_impact": "Tygodnie urlopu zbiorowego są wyłączone z kalkulacji.",
+                    "status": "Status",
+                    "status_rule": "Zwolniony = Nie",
+                    "status_impact": "Osoby zwolnione nie wchodzą do kalkulacji.",
+                    "role": "Rola",
+                    "role_rule": "Rola M lub E",
+                    "role_impact": "Zakres managerski i executive.",
+                    "areas": "Obszary",
+                    "areas_rule": "Obszar zaczyna się od B-, bez B-V, B-SNP i B-SKL; executives B-SKL pozostają.",
+                    "areas_impact": "{people} osób w {areas} obszarze/obszarach wyłączono filtrem obszaru.",
+                    "regular_week": "Tydzień normalny",
+                    "regular_rule": "Cel {days:.1f} dni obecności.",
+                    "regular_impact": "Baza do liczenia tygodniowej zgodności poza tygodniami świątecznymi.",
+                    "holiday_week": "Tydzień świąteczny",
+                    "holiday_rule": "Krytyczne tylko przy 0 lub 1 dniu obecności; cel {days:.1f} dni.",
+                    "holiday_impact": "Pomaga ocenić możliwe przedłużenie święta przez home office.",
+                    "list_criterion": "Kryterium listy",
+                    "list_rule": "Osoby poniżej 10% ustalonego celu.",
+                    "list_impact": "Ta sama reguła liczbowa co wcześniej, pokazana jako niespełnienie celu.",
+                }
+            ),
+            "excluded_reason_map": {
+                "Area fora do prefixo B-": "Obszar poza prefiksem B-",
+                "Area/Heranca B-V ou B-SNP": "Obszar/dziedziczenie B-V lub B-SNP",
+                "B-SKL removido para nao executivos": "B-SKL usunięte dla osób niebędących executives",
+            },
+            "excluded_empty_message": "Żaden obszar nie był poza zakresem obszarów.",
+        },
+        "sk": {
+            "filter_title": "Použité pravidlá a neanalyzované oblasti",
+            "filter_note": "Samostatná stránka s rozsahom výpočtu a úplným zoznamom oblastí mimo analýzy.",
+            "filter_open_button": "Otvoriť stránku",
+            "rules_overlay_close": "Zavrieť",
+            "rules_page_back": "Späť na prezentáciu",
+            "rules_page_rules_title": "Použité pravidlá",
+            "rules_page_rules_note": "Rozsah a kritériá použité na výpočet zamestnancov v kritériu nesplnenia stanoveného cieľa.",
+            "filter_h_filter": "Filter",
+            "filter_h_rule": "Použité pravidlo",
+            "filter_h_impact": "Dopad",
+            "excluded_title": "Neanalyzované oblasti",
+            "excluded_note": "Úplný zoznam oblastí mimo analyzovaného rozsahu.",
+            "excluded_h_area": "Oblasť",
+            "excluded_h_dept": "Oddelenie",
+            "excluded_h_heritage": "Zaradenie",
+            "excluded_h_reason": "Dôvod",
+            "excluded_h_people": "Osoby mimo",
+            "excluded_h_exec": "Ponechaní executives",
+            "rules_page_filter_rows": make_rules_page_rows(
+                {
+                    "source": "Zdroj",
+                    "source_impact": "Oficiálny DW použitý ako zdroj rozsahu.",
+                    "period": "Obdobie",
+                    "period_impact": "Týždne celozávodnej dovolenky sú mimo výpočtu.",
+                    "status": "Status",
+                    "status_rule": "Ukončený = Nie",
+                    "status_impact": "Ukončení zamestnanci nevstupujú do výpočtu.",
+                    "role": "Rola",
+                    "role_rule": "Rola M alebo E",
+                    "role_impact": "Manažérsky a executive rozsah.",
+                    "areas": "Oblasti",
+                    "areas_rule": "Oblasť začína B-, bez B-V, B-SNP a B-SKL; executives B-SKL zostávajú.",
+                    "areas_impact": "{people} zamestnancov v {areas} oblasti/oblastiach bolo vyradených filtrom oblasti.",
+                    "regular_week": "Bežný týždeň",
+                    "regular_rule": "Cieľ {days:.1f} dní prítomnosti.",
+                    "regular_impact": "Základ na výpočet týždennej adherencie mimo sviatočných týždňov.",
+                    "holiday_week": "Sviatočný týždeň",
+                    "holiday_rule": "Kritické iba pri 0 alebo 1 dni prítomnosti; cieľ {days:.1f} dní.",
+                    "holiday_impact": "Pomáha vyhodnotiť možné predĺženie sviatku cez home office.",
+                    "list_criterion": "Kritérium zoznamu",
+                    "list_rule": "Zamestnanci pod 10% stanoveného cieľa.",
+                    "list_impact": "Rovnaké numerické pravidlo ako predtým, vyjadrené ako nesplnenie cieľa.",
+                }
+            ),
+            "excluded_reason_map": {
+                "Area fora do prefixo B-": "Oblasť mimo prefixu B-",
+                "Area/Heranca B-V ou B-SNP": "Oblasť/zaradenie B-V alebo B-SNP",
+                "B-SKL removido para nao executivos": "B-SKL odstránené pre non-executives",
+            },
+            "excluded_empty_message": "Žiadna oblasť nebola mimo rozsahu oblastí.",
+        },
+        "zh": {
+            "filter_title": "使用的规则和未分析区域",
+            "filter_note": "专页展示计算范围以及分析之外区域的完整清单。",
+            "filter_open_button": "打开页面",
+            "rules_overlay_close": "关闭",
+            "rules_page_back": "返回演示",
+            "rules_page_rules_title": "使用的规则",
+            "rules_page_rules_note": "用于计算进入既定目标未达标标准人员的范围和规则。",
+            "filter_h_filter": "筛选",
+            "filter_h_rule": "使用规则",
+            "filter_h_impact": "影响",
+            "excluded_title": "未分析区域",
+            "excluded_note": "分析范围之外区域的完整清单。",
+            "excluded_h_area": "区域",
+            "excluded_h_dept": "部门",
+            "excluded_h_heritage": "归属",
+            "excluded_h_reason": "原因",
+            "excluded_h_people": "排除人数",
+            "excluded_h_exec": "保留高管",
+            "rules_page_filter_rows": make_rules_page_rows(
+                {
+                    "source": "来源",
+                    "source_impact": "官方 DW 作为范围来源。",
+                    "period": "期间",
+                    "period_impact": "集体休假周不纳入计算。",
+                    "status": "状态",
+                    "status_rule": "离职 = 否",
+                    "status_impact": "离职人员不纳入计算。",
+                    "role": "岗位",
+                    "role_rule": "岗位为 M 或 E",
+                    "role_impact": "管理层和高管范围。",
+                    "areas": "区域",
+                    "areas_rule": "区域以 B- 开头，排除 B-V、B-SNP 和 B-SKL；保留 B-SKL 高管。",
+                    "areas_impact": "{people} 名员工、{areas} 个区域因区域筛选被排除。",
+                    "regular_week": "常规周",
+                    "regular_rule": "目标为 {days:.1f} 天现场出勤。",
+                    "regular_impact": "用于计算非节假日周的周度达标情况。",
+                    "holiday_week": "节假日周",
+                    "holiday_rule": "仅现场 0 或 1 天时视为关键；目标 {days:.1f} 天。",
+                    "holiday_impact": "用于评估是否存在节假日与 home office 的延长现象。",
+                    "list_criterion": "入表标准",
+                    "list_rule": "低于既定目标 10% 的员工。",
+                    "list_impact": "与之前相同的数值规则，以目标未达标方式呈现。",
+                }
+            ),
+            "excluded_reason_map": {
+                "Area fora do prefixo B-": "区域不属于 B- 前缀",
+                "Area/Heranca B-V ou B-SNP": "区域/归属为 B-V 或 B-SNP",
+                "B-SKL removido para nao executivos": "B-SKL 非高管已移除",
+            },
+            "excluded_empty_message": "没有区域超出区域范围。",
+        },
+        "hi": {
+            "filter_title": "उपयोग किए गए नियम और विश्लेषण से बाहर क्षेत्र",
+            "filter_note": "गणना के दायरे और विश्लेषण से बाहर क्षेत्रों की पूरी सूची के लिए समर्पित पृष्ठ।",
+            "filter_open_button": "पृष्ठ खोलें",
+            "rules_overlay_close": "बंद करें",
+            "rules_page_back": "प्रस्तुति पर वापस जाएँ",
+            "rules_page_rules_title": "गणना में लागू नियम",
+            "rules_page_rules_note": "स्थापित लक्ष्य के अनुपालन-भंग मानदंड में आने वाले कर्मचारियों की गणना के लिए उपयोग किया गया दायरा और नियम।",
+            "filter_h_filter": "फ़िल्टर",
+            "filter_h_rule": "उपयोग किया गया नियम",
+            "filter_h_impact": "प्रभाव",
+            "excluded_title": "विश्लेषण से बाहर क्षेत्र",
+            "excluded_note": "विश्लेषण के दायरे से बाहर क्षेत्रों की पूरी सूची।",
+            "excluded_h_area": "क्षेत्र",
+            "excluded_h_dept": "विभाग",
+            "excluded_h_heritage": "हेरिटेज",
+            "excluded_h_reason": "कारण",
+            "excluded_h_people": "बाहर लोग",
+            "excluded_h_exec": "रखे गए executives",
+            "rules_page_filter_rows": make_rules_page_rows(
+                {
+                    "source": "स्रोत",
+                    "source_impact": "आधिकारिक DW को दायरे के स्रोत के रूप में उपयोग किया गया।",
+                    "period": "अवधि",
+                    "period_impact": "सामूहिक अवकाश वाले सप्ताह गणना से बाहर हैं।",
+                    "status": "स्थिति",
+                    "status_rule": "सेवा समाप्त = नहीं",
+                    "status_impact": "सेवा समाप्त कर्मचारी गणना में शामिल नहीं हैं।",
+                    "role": "भूमिका",
+                    "role_rule": "भूमिका M या E",
+                    "role_impact": "प्रबंधकीय और executive दायरा।",
+                    "areas": "क्षेत्र",
+                    "areas_rule": "क्षेत्र B- से शुरू, B-V, B-SNP और B-SKL को छोड़कर; B-SKL executives बने रहते हैं।",
+                    "areas_impact": "{people} कर्मचारी {areas} क्षेत्र(ों) में क्षेत्र फ़िल्टर से बाहर रहे।",
+                    "regular_week": "सामान्य सप्ताह",
+                    "regular_rule": "{days:.1f} ऑन-साइट दिनों का लक्ष्य।",
+                    "regular_impact": "छुट्टी वाले सप्ताहों के बाहर साप्ताहिक अनुपालन की गणना का आधार।",
+                    "holiday_week": "छुट्टी वाला सप्ताह",
+                    "holiday_rule": "केवल 0 या 1 ऑन-साइट दिन होने पर गंभीर; {days:.1f} दिनों का लक्ष्य।",
+                    "holiday_impact": "home office के साथ संभावित छुट्टी-bridge का मूल्यांकन करने में मदद करता है।",
+                    "list_criterion": "सूची मानदंड",
+                    "list_rule": "स्थापित लक्ष्य के 10% से नीचे कर्मचारी।",
+                    "list_impact": "पहले जैसा ही संख्यात्मक नियम, अब लक्ष्य अनुपालन-भंग के रूप में पढ़ा गया।",
+                }
+            ),
+            "excluded_reason_map": {
+                "Area fora do prefixo B-": "B- prefix के बाहर क्षेत्र",
+                "Area/Heranca B-V ou B-SNP": "B-V या B-SNP क्षेत्र/हेरिटेज",
+                "B-SKL removido para nao executivos": "non-executives के लिए B-SKL हटाया गया",
+            },
+            "excluded_empty_message": "कोई भी क्षेत्र क्षेत्र-दायरे से बाहर नहीं था।",
+        },
+    }
+    excluded_reason_map_pt = {
+        "Area fora do prefixo B-": "Área fora do prefixo B-",
+        "Area/Heranca B-V ou B-SNP": "Área/Herança B-V ou B-SNP",
+        "B-SKL removido para nao executivos": "B-SKL removido para não executivos",
+    }
+    excluded_reason_map_en = {
+        "Area fora do prefixo B-": "Area outside the B- prefix",
+        "Area/Heranca B-V ou B-SNP": "Area/heritage B-V or B-SNP",
+        "B-SKL removido para nao executivos": "B-SKL removed for non-executives",
+    }
 
     rules_table_html = f"""
         <table class="rule-table">
@@ -1376,8 +2538,8 @@ def build_html_report(
             <tr><td id="rules-normal-label">Semana normal</td><td id="rules-normal-value">Meta de {summary_map['Meta presencial por semana']}</td></tr>
             <tr><td id="rules-holiday-label">Semana com feriado</td><td id="rules-holiday-value">Crítica apenas se houver 0 ou 1 dia presencial, equivalente à meta de {summary_map['Meta em semana com feriado']}</td></tr>
             <tr><td id="rules-vac-label">Férias coletivas</td><td id="rules-vac-value">{summary_map['Semanas de ferias coletivas removidas']} semanas removidas do cálculo</td></tr>
-            <tr><td id="rules-scope-label">Pessoas consideradas</td><td id="rules-scope-value">Pessoas ativas, cargos M/E, áreas B-, sem B-V e B-SNP</td></tr>
-            <tr><td id="rules-limit-label">Entra na lista</td><td id="rules-limit-value">Menos de {metadata['adherence_threshold_pct']:.0f}% da meta</td></tr>
+            <tr><td id="rules-scope-label">Pessoas consideradas</td><td id="rules-scope-value">Pessoas ativas, cargos M/E, áreas B-, sem B-V, B-SNP e B-SKL; executivos B-SKL permanecem</td></tr>
+            <tr><td id="rules-limit-label">Entra na lista</td><td id="rules-limit-value">{NON_COMPLIANCE_LIST_LABEL}</td></tr>
           </tbody>
         </table>
     """.strip()
@@ -1386,35 +2548,69 @@ def build_html_report(
         "pt": {
             "lang_label": "Idioma",
             "hero_title": "Home office: presença na fábrica",
-            "hero_subtitle": "Resposta direta ao pedido: pessoas abaixo de 90% da meta e abertura por média de dias presenciais.",
-            "meta_ref": f"Data de referência: {reference_date_pt}",
+            "hero_subtitle": "Colaboradores que descumpriram abaixo de 10% da meta estabelecida, com abertura por média e mediana de dias presenciais.",
+            "meta_ref": f"Data da Emissão: {reference_date_pt}",
             "meta_last": f"Última semana usada: {last_week_pt}",
             "meta_period": f"Período: {analysis_period_pt}",
             "meta_holiday": "Semana com feriado: crítica apenas com 0 ou 1 dia presencial",
-            "meta_vac": "Férias coletivas fora da conta",
+            "meta_vac": "Férias coletivas excluídas",
             "kpi1_label": "Pessoas consideradas",
             "kpi1_note": "Pessoas que entraram no cálculo.",
-            "kpi2_label": "Abaixo de 90%",
-            "kpi2_note": f"{summary_map['Percentual nao aderente']} das pessoas consideradas ficou abaixo de 90%.",
-            "kpi3_label": "Média semanal abaixo de 90%",
+            "kpi2_label": "Descumprimento <10%",
+            "kpi2_note": f"{summary_map['Percentual nao aderente']} das pessoas consideradas entrou no critério de descumprimento.",
+            "kpi3_label": "Média semanal em descumprimento",
             "kpi3_note": f"A mediana foi de {median_bad_pt} por semana.",
-            "kpi4_label": "Faixa crítica principal",
-            "kpi4_note": "Maior concentração do desvio, ainda perto da meta.",
-            "brief_title": "Resposta ao pedido",
-            "brief_note": "Percentuais dentro do grupo abaixo de 90%.",
+            "kpi4_label": "Faixa principal",
+            "kpi4_note": "Maior concentração do desvio.",
+            "brief_title": "Distribuição das Supostas Irregularidades",
+            "brief_note": "Percentuais dentro do grupo em descumprimento da meta.",
             "brief_h_faixa": "Faixa",
             "brief_h_people": "Pessoas",
-            "brief_h_pct": "% das pessoas abaixo de 90%",
+            "brief_h_pct": "% dos colaboradores em descumprimento",
             "trend_title": "Tendência semanal da presença média",
-            "trend_note": "Mostra a presença média semanal frente à meta esperada. Os pontos vermelhos indicam semanas com feriado.",
-            "trend_callout": f"Pior semana do período em <strong>{weekly_low_pt}</strong> com <strong>{float(weekly_low['media_presenca']):.2f}</strong> dia(s) de presença média para meta de <strong>{float(weekly_low['media_meta']):.2f}</strong> dia(s). Na última semana o indicador ficou em <strong>{float(weekly_last['media_presenca']):.2f}</strong> dia(s) para meta de <strong>{float(weekly_last['media_meta']):.2f}</strong> dia(s), com média recente de <strong>{weekly_recent:.2f}</strong> dia(s) nas últimas 4 semanas.",
+            "trend_note": "Mostra a presença média e mediana semanal frente à meta esperada. Os pontos vermelhos indicam semanas com feriado.",
+            "trend_callout": f"Pior semana do período em <strong>{weekly_low_pt}</strong> com <strong>{float(weekly_low['media_presenca']):.2f}</strong> dia(s) de presença média e mediana de <strong>{float(weekly_low['mediana_presenca']):.2f}</strong> dia(s). Nas semanas com feriado, a mediana ficou em <strong>{holiday_median_days:.2f}</strong> dia(s), contra <strong>{normal_median_days:.2f}</strong> em semanas normais.",
             "heat_title": "Heatmap de departamentos/subáreas",
             "heat_note": "Cada célula mostra o % abaixo da regra e, abaixo, os dias médios presenciais. 100% significa todos abaixo da regra, não ausência total; cinza indica semana sem registro no DW.",
             "heat_callout": f"Destaques recentes: {escape(focus_text_pt)}.",
+            "filter_title": "Regras usadas e áreas não analisadas",
+            "filter_note": "Página dedicada ao recorte usado no cálculo e à lista completa das áreas fora da análise, considerando colaboradores ativos M/E. Em B-SKL, executivos foram mantidos.",
+            "filter_open_button": "Abrir página",
+            "rules_overlay_close": "Fechar",
+            "filter_h_filter": "Filtro",
+            "filter_h_rule": "Regra usada",
+            "filter_h_impact": "Impacto",
+            "excluded_title": "Áreas não analisadas",
+            "excluded_note": "Lista completa das áreas fora do recorte analisado.",
+            "excluded_h_area": "Área",
+            "excluded_h_dept": "Departamento",
+            "excluded_h_heritage": "Herança",
+            "excluded_h_reason": "Motivo",
+            "excluded_h_people": "Pessoas fora",
+            "excluded_h_exec": "Executivos mantidos",
+            "median_title": "Possível emenda: feriado + home office",
+            "median_note": "Leitura exploratória para validar se a queda de presença acontece apenas na semana do feriado ou se aparece também na semana anterior/posterior, indicando possível extensão com home office. O sinal é coletivo e não conclui motivo individual.",
+            "median_h_type": "Tipo",
+            "median_h_weeks": "Semanas",
+            "median_h_median": "Mediana dias",
+            "median_h_mean": "Média dias",
+            "median_h_min": "Menor mediana",
+            "median_h_zero_one": "% 0 ou 1 dia",
+            "holiday_median_title": "Janela antes, durante e depois do feriado",
+            "holiday_median_note": f"Como ler: compare as três colunas da janela. Células mais fortes indicam maior sinal de possível emenda; quando o sinal aparece antes ou depois, há indício de extensão do feriado. Neste recorte, feriados têm mediana de {holiday_median_days:.2f} dia(s) contra {normal_median_days:.2f} em semanas normais ({median_gap_phrase_pt}), e o percentual com 0 ou 1 dia foi {holiday_zero_one_pct:.1f}% contra {normal_zero_one_pct:.1f}% ({zero_one_gap_phrase_pt}).",
+            "holiday_step_before": "Anterior: possível antecipação",
+            "holiday_step_during": "Feriado: queda concentrada",
+            "holiday_step_after": "Posterior: possível extensão",
+            "holiday_h_week": "Feriado",
+            "holiday_h_median": "Semana anterior",
+            "holiday_h_gap": "Semana do feriado",
+            "holiday_h_zero_one": "Semana posterior",
+            "holiday_h_zero_one_gap": "Sinal geral",
+            "holiday_h_signal": "Leitura",
             "focus_volume_title": "Onde agir primeiro",
-            "focus_volume_note": "Top áreas por quantidade de pessoas abaixo de 90%.",
+            "focus_volume_note": "Top áreas por maior quantidade de colaboradores",
             "focus_rate_title": "Onde o problema pesa mais",
-            "focus_rate_note": "Top áreas por % abaixo de 90%. Só áreas com 10 pessoas ou mais.",
+            "focus_rate_note": "Top áreas com maior gravidade percentual de descumprimento da meta",
             "focus_h_area": "Área",
             "focus_h_dept": "Departamento",
             "focus_h_people": "Pessoas",
@@ -1426,12 +2622,18 @@ def build_html_report(
             "prepared_title": "Preparado por",
             "prepared_note": "Material estruturado para alinhamento interno antes da apresentação conjunta da estatística.",
             "sig_name": "Nome",
-            "sig_role": "Função",
+            "sig_role": "Área",
             "sig_company": "Empresa",
             "sig_generated": "Gerado em",
             "sig_generated_value": generated_at_pt,
             "rules_title": "Regras usadas",
             "rules_note": f"Férias coletivas conferidas no histórico: {vacation_periods_validated}. Neste período, saíram da conta as semanas {vacation_weeks_removed}.",
+            "rules_page_back": "Voltar para a apresentação",
+            "rules_page_rules_title": "Regras usadas",
+            "rules_page_rules_note": "Recorte e critérios usados para calcular os colaboradores em descumprimento da meta estabelecida.",
+            "rules_page_filter_rows": filter_rows_pt,
+            "excluded_reason_map": excluded_reason_map_pt,
+            "excluded_empty_message": "Nenhuma área ficou fora do recorte de áreas.",
             "rules_h_item": "Item",
             "rules_h_rule": "Regra usada",
             "rules_base_label": "Base",
@@ -1444,14 +2646,14 @@ def build_html_report(
             "rules_vac_label": "Férias coletivas",
             "rules_vac_value": f"{summary_map['Semanas de ferias coletivas removidas']} semanas removidas do cálculo",
             "rules_scope_label": "Pessoas consideradas",
-            "rules_scope_value": "Pessoas ativas, cargos M/E, áreas B-, sem B-V e B-SNP",
+            "rules_scope_value": "Pessoas ativas, cargos M/E, áreas B-, sem B-V, B-SNP e B-SKL; executivos B-SKL permanecem",
             "rules_limit_label": "Entra na lista",
-            "rules_limit_value": f"Menos de {metadata['adherence_threshold_pct']:.0f}% da meta",
+            "rules_limit_value": NON_COMPLIANCE_LIST_LABEL,
         },
         "en": {
             "lang_label": "Language",
             "hero_title": "Weak on-site attendance at the plant",
-            "hero_subtitle": "Analysis prepared for the Seitz presentation on people below 90% on-site adherence. This version focuses on plant-management reading: trend, indicator behavior and department heatmap.",
+            "hero_subtitle": "Executive analysis of employees in the target non-compliance criterion, focused on plant-management reading: trend, indicator behavior and department heatmap.",
             "meta_ref": f"Reference date: {reference_date_en}",
             "meta_last": f"Last week used: {last_week_en}",
             "meta_period": f"Period: {analysis_period_en}",
@@ -1460,7 +2662,7 @@ def build_html_report(
             "kpi1_label": "Analyzed population",
             "kpi1_note": "Eligible base after the calculation filters.",
             "kpi2_label": "Non-adherent",
-            "kpi2_note": f"{summary_map['Percentual nao aderente']} of the population stayed below 90%.",
+            "kpi2_note": f"{summary_map['Percentual nao aderente']} of the population entered the non-compliance criterion.",
             "kpi3_label": "Weekly average of the non-adherent group",
             "kpi3_note": f"The median was {median_bad_en} per week.",
             "kpi4_label": "Main critical band",
@@ -1500,14 +2702,14 @@ def build_html_report(
             "rules_vac_label": "Collective vacation",
             "rules_vac_value": f"{summary_map['Semanas de ferias coletivas removidas']} weeks removed from the calculation",
             "rules_scope_label": "People scope",
-            "rules_scope_value": "Active employees, M/E roles, B- areas, excluding B-V and B-SNP",
+            "rules_scope_value": "Active employees, M/E roles, B- areas, excluding B-V, B-SNP and B-SKL; B-SKL executives remain",
             "rules_limit_label": "Alert threshold",
-            "rules_limit_value": f"Below {metadata['adherence_threshold_pct']:.0f}% adherence",
+            "rules_limit_value": "Employees in the target non-compliance criterion",
         },
         "es": {
             "lang_label": "Idioma",
             "hero_title": "Presencial débil en la planta",
-            "hero_subtitle": "Análisis preparado para la presentación a Seitz sobre personas por debajo del 90% de adherencia presencial. Esta versión prioriza una lectura gerencial: tendencia del indicador, comportamiento y heatmap de departamentos.",
+            "hero_subtitle": "Análisis ejecutivo de colaboradores en el criterio de incumplimiento de la meta. Esta versión prioriza una lectura gerencial: tendencia del indicador, comportamiento y heatmap de departamentos.",
             "meta_ref": f"Fecha de referencia: {reference_date_es}",
             "meta_last": f"Última semana usada: {last_week_es}",
             "meta_period": f"Período: {analysis_period_es}",
@@ -1516,7 +2718,7 @@ def build_html_report(
             "kpi1_label": "Universo analizado",
             "kpi1_note": "Base elegible después de los filtros del cálculo.",
             "kpi2_label": "No adherentes",
-            "kpi2_note": f"{summary_map['Percentual nao aderente']} del universo quedó por debajo del 90%.",
+            "kpi2_note": f"{summary_map['Percentual nao aderente']} del universo entró en el criterio de incumplimiento.",
             "kpi3_label": "Promedio semanal de los no adherentes",
             "kpi3_note": f"La mediana fue de {median_bad_es} por semana.",
             "kpi4_label": "Franja crítica principal",
@@ -1556,14 +2758,14 @@ def build_html_report(
             "rules_vac_label": "Vacaciones colectivas",
             "rules_vac_value": f"{summary_map['Semanas de ferias coletivas removidas']} semanas removidas del cálculo",
             "rules_scope_label": "Recorte de personas",
-            "rules_scope_value": "Colaboradores activos, cargos M/E, áreas B-, excluyendo B-V y B-SNP",
+            "rules_scope_value": "Colaboradores activos, cargos M/E, áreas B-, excluyendo B-V, B-SNP y B-SKL; ejecutivos B-SKL permanecen",
             "rules_limit_label": "Límite de alerta",
-            "rules_limit_value": f"Por debajo de {metadata['adherence_threshold_pct']:.0f}% de adherencia",
+            "rules_limit_value": "Colaboradores en el criterio de incumplimiento de la meta",
         },
         "fr": {
             "lang_label": "Langue",
             "hero_title": "Présence faible à l'usine",
-            "hero_subtitle": "Analyse préparée pour la présentation à Seitz sur les personnes en dessous de 90% d'adhérence au présentiel. Cette version privilégie une lecture managériale: tendance de l'indicateur, comportement et heatmap des départements.",
+            "hero_subtitle": "Analyse exécutive des collaborateurs dans le critère de non-respect de l'objectif. Cette version privilégie une lecture managériale: tendance de l'indicateur, comportement et heatmap des départements.",
             "meta_ref": f"Date de référence: {reference_date_fr}",
             "meta_last": f"Dernière semaine utilisée: {last_week_fr}",
             "meta_period": f"Période: {analysis_period_fr}",
@@ -1572,7 +2774,7 @@ def build_html_report(
             "kpi1_label": "Population analysée",
             "kpi1_note": "Base éligible après les filtres du calcul.",
             "kpi2_label": "Non adhérents",
-            "kpi2_note": f"{summary_map['Percentual nao aderente']} de la population est restée sous 90%.",
+            "kpi2_note": f"{summary_map['Percentual nao aderente']} de la population est entrée dans le critère de non-respect.",
             "kpi3_label": "Moyenne hebdomadaire des non-adhérents",
             "kpi3_note": f"La médiane a été de {median_bad_fr} par semaine.",
             "kpi4_label": "Bande critique principale",
@@ -1612,14 +2814,14 @@ def build_html_report(
             "rules_vac_label": "Vacances collectives",
             "rules_vac_value": f"{summary_map['Semanas de ferias coletivas removidas']} semaines retirées du calcul",
             "rules_scope_label": "Périmètre des personnes",
-            "rules_scope_value": "Collaborateurs actifs, rôles M/E, zones B-, hors B-V et B-SNP",
+            "rules_scope_value": "Collaborateurs actifs, rôles M/E, zones B-, hors B-V, B-SNP et B-SKL; les exécutifs B-SKL restent",
             "rules_limit_label": "Seuil d'alerte",
-            "rules_limit_value": f"En dessous de {metadata['adherence_threshold_pct']:.0f}% d'adhérence",
+            "rules_limit_value": "Collaborateurs dans le critère de non-respect de l'objectif",
         },
         "it": {
             "lang_label": "Lingua",
             "hero_title": "Presenza debole in stabilimento",
-            "hero_subtitle": "Analisi preparata per la presentazione a Seitz sulle persone sotto il 90% di aderenza alla presenza. Questa versione privilegia una lettura manageriale: trend dell'indicatore, comportamento e heatmap dei dipartimenti.",
+            "hero_subtitle": "Analisi esecutiva sui collaboratori nel criterio di mancato rispetto del target. Questa versione privilegia una lettura manageriale: trend dell'indicatore, comportamento e heatmap dei dipartimenti.",
             "meta_ref": f"Data di riferimento: {reference_date_it}",
             "meta_last": f"Ultima settimana usata: {last_week_it}",
             "meta_period": f"Periodo: {analysis_period_it}",
@@ -1628,7 +2830,7 @@ def build_html_report(
             "kpi1_label": "Universo analizzato",
             "kpi1_note": "Base eleggibile dopo i filtri di calcolo.",
             "kpi2_label": "Non aderenti",
-            "kpi2_note": f"{summary_map['Percentual nao aderente']} dell'universo è rimasto sotto il 90%.",
+            "kpi2_note": f"{summary_map['Percentual nao aderente']} dell'universo è entrato nel criterio di mancato rispetto.",
             "kpi3_label": "Media settimanale dei non aderenti",
             "kpi3_note": f"La mediana è stata di {median_bad_it} per settimana.",
             "kpi4_label": "Fascia critica principale",
@@ -1668,14 +2870,14 @@ def build_html_report(
             "rules_vac_label": "Ferie collettive",
             "rules_vac_value": f"{summary_map['Semanas de ferias coletivas removidas']} settimane rimosse dal calcolo",
             "rules_scope_label": "Perimetro delle persone",
-            "rules_scope_value": "Collaboratori attivi, ruoli M/E, aree B-, escluse B-V e B-SNP",
+            "rules_scope_value": "Collaboratori attivi, ruoli M/E, aree B-, escluse B-V, B-SNP e B-SKL; gli executive B-SKL restano",
             "rules_limit_label": "Soglia di allerta",
-            "rules_limit_value": f"Sotto il {metadata['adherence_threshold_pct']:.0f}% di aderenza",
+            "rules_limit_value": "Collaboratori nel criterio di mancato rispetto del target",
         },
         "de": {
             "lang_label": "Sprache",
             "hero_title": "Schwache Anwesenheit im Werk",
-            "hero_subtitle": "Analyse für die Seitz-Präsentation zu Personen unter 90% Anwesenheitsquote. Diese Version fokussiert sich auf die Sicht des Werkmanagements: Trend, Indikatorverlauf und Heatmap der Abteilungen.",
+            "hero_subtitle": "Executive Analyse zu Mitarbeitenden im Zielverfehlungskriterium. Diese Version fokussiert sich auf die Sicht des Werkmanagements: Trend, Indikatorverlauf und Heatmap der Abteilungen.",
             "meta_ref": f"Stichtag: {reference_date_de}",
             "meta_last": f"Letzte berücksichtigte Woche: {last_week_de}",
             "meta_period": f"Zeitraum: {analysis_period_de}",
@@ -1684,7 +2886,7 @@ def build_html_report(
             "kpi1_label": "Analysierte Belegschaft",
             "kpi1_note": "Geeignete Basis nach den Berechnungsfiltern.",
             "kpi2_label": "Nicht adherent",
-            "kpi2_note": f"{summary_map['Percentual nao aderente']} der Belegschaft lagen unter 90%.",
+            "kpi2_note": f"{summary_map['Percentual nao aderente']} der Belegschaft fielen in das Zielverfehlungskriterium.",
             "kpi3_label": "Wochendurchschnitt der nicht adherenten Gruppe",
             "kpi3_note": f"Der Median lag bei {median_bad_de} pro Woche.",
             "kpi4_label": "Wichtigste kritische Bandbreite",
@@ -1724,9 +2926,9 @@ def build_html_report(
             "rules_vac_label": "Betriebsferien",
             "rules_vac_value": f"{summary_map['Semanas de ferias coletivas removidas']} Wochen aus der Berechnung entfernt",
             "rules_scope_label": "Personenumfang",
-            "rules_scope_value": "Aktive Mitarbeitende, M/E-Funktionen, B-Bereiche, ohne B-V und B-SNP",
+            "rules_scope_value": "Aktive Mitarbeitende, M/E-Funktionen, B-Bereiche, ohne B-V, B-SNP und B-SKL; B-SKL Executives bleiben",
             "rules_limit_label": "Warnschwelle",
-            "rules_limit_value": f"Unter {metadata['adherence_threshold_pct']:.0f}% Anwesenheitsquote",
+            "rules_limit_value": "Mitarbeitende im Zielverfehlungskriterium",
         },
     }
 
@@ -1739,7 +2941,7 @@ def build_html_report(
         "en",
         lang_label="Język",
         hero_title="Niska obecność w zakładzie",
-        hero_subtitle="Analiza przygotowana do prezentacji dla Seitza dotyczącej osób poniżej 90% zgodności z pracą stacjonarną. Ta wersja koncentruje się na perspektywie zarządzania zakładem: trendzie wskaźnika i mapie cieplnej działów/podobszarów.",
+        hero_subtitle="Analiza wykonawcza dotycząca osób w kryterium niezgodności z celem pracy stacjonarnej. Ta wersja koncentruje się na perspektywie zarządzania zakładem: trendzie wskaźnika i mapie cieplnej działów/podobszarów.",
         meta_ref=f"Data odniesienia: {reference_date_pl}",
         meta_last=f"Ostatni użyty tydzień: {last_week_pl}",
         meta_period=f"Okres: {analysis_period_pl}",
@@ -1748,7 +2950,7 @@ def build_html_report(
         kpi1_label="Analizowana populacja",
         kpi1_note="Kwalifikująca się baza po filtrach obliczeń.",
         kpi2_label="Niezgodni",
-        kpi2_note=f"{summary_map['Percentual nao aderente']} populacji spadło poniżej 90%.",
+        kpi2_note=f"{summary_map['Percentual nao aderente']} populacji weszło w kryterium niezgodności.",
         kpi3_label="Tygodniowa średnia grupy niezgodnej",
         kpi3_note="Mediana tygodniowa została zachowana zgodnie z obliczeniami raportu.",
         kpi4_label="Główna strefa krytyczna",
@@ -1788,16 +2990,16 @@ def build_html_report(
         rules_vac_label="Urlop zbiorowy",
         rules_vac_value=f"{summary_map['Semanas de ferias coletivas removidas']} tygodnie wyłączone z obliczeń",
         rules_scope_label="Zakres osób",
-        rules_scope_value="Aktywni pracownicy, role M/E, obszary B-, z wyłączeniem B-V i B-SNP",
+        rules_scope_value="Aktywni pracownicy, role M/E, obszary B-, z wyłączeniem B-V, B-SNP i B-SKL; kadra executive B-SKL pozostaje",
         rules_limit_label="Próg alertu",
-        rules_limit_value=f"Poniżej {metadata['adherence_threshold_pct']:.0f}% zgodności",
+        rules_limit_value="Osoby w kryterium niezgodności z celem",
     )
 
     translations["sk"] = translation_clone(
         "en",
         lang_label="Jazyk",
         hero_title="Slabšia prítomnosť v závode",
-        hero_subtitle="Analýza pripravená na prezentáciu pre Seitz o osobách pod 90% dochádzkovej adherencie. Táto verzia sa zameriava na pohľad riadenia závodu: trend ukazovateľa a tepelnú mapu oddelení/podoblastí.",
+        hero_subtitle="Exekutívna analýza osôb v kritériu nesplnenia cieľa dochádzky. Táto verzia sa zameriava na pohľad riadenia závodu: trend ukazovateľa a tepelnú mapu oddelení/podoblastí.",
         meta_ref=f"Referenčný dátum: {reference_date_sk}",
         meta_last=f"Posledný použitý týždeň: {last_week_sk}",
         meta_period=f"Obdobie: {analysis_period_sk}",
@@ -1806,7 +3008,7 @@ def build_html_report(
         kpi1_label="Analyzovaná populácia",
         kpi1_note="Oprávnená báza po filtroch výpočtu.",
         kpi2_label="Nevyhovujúci",
-        kpi2_note=f"{summary_map['Percentual nao aderente']} populácie zostalo pod 90%.",
+        kpi2_note=f"{summary_map['Percentual nao aderente']} populácie vstúpilo do kritéria nesplnenia cieľa.",
         kpi3_label="Týždenný priemer nevyhovujúcej skupiny",
         kpi3_note="Týždený medián bol zachovaný podľa výpočtu reportu.",
         kpi4_label="Hlavné kritické pásmo",
@@ -1846,16 +3048,16 @@ def build_html_report(
         rules_vac_label="Celozávodná dovolenka",
         rules_vac_value=f"{summary_map['Semanas de ferias coletivas removidas']} týždne vyradené z výpočtu",
         rules_scope_label="Rozsah osôb",
-        rules_scope_value="Aktívni zamestnanci, roly M/E, oblasti B-, s výnimkou B-V a B-SNP",
+        rules_scope_value="Aktívni zamestnanci, roly M/E, oblasti B-, s výnimkou B-V, B-SNP a B-SKL; B-SKL executives zostávajú",
         rules_limit_label="Prahová hodnota",
-        rules_limit_value=f"Pod {metadata['adherence_threshold_pct']:.0f}% adherencie",
+        rules_limit_value="Osoby v kritériu nesplnenia cieľa",
     )
 
     translations["zh"] = translation_clone(
         "en",
         lang_label="语言",
         hero_title="工厂到岗偏弱",
-        hero_subtitle="本分析为向 Seitz 汇报而准备，聚焦现场出勤遵守率低于 90% 的人员。本版本侧重工厂管理视角：指标趋势以及部门/子区域热力图。",
+        hero_subtitle="本执行分析聚焦进入目标未达标标准的人员。本版本侧重工厂管理视角：指标趋势以及部门/子区域热力图。",
         meta_ref=f"参考日期：{reference_date_zh}",
         meta_last=f"使用的最后一周：{last_week_zh}",
         meta_period=f"期间：{analysis_period_zh}",
@@ -1864,7 +3066,7 @@ def build_html_report(
         kpi1_label="分析范围",
         kpi1_note="应用计算筛选后的有效基础人群。",
         kpi2_label="未达标人员",
-        kpi2_note=f"有 {summary_map['Percentual nao aderente']} 低于 90%。",
+        kpi2_note=f"有 {summary_map['Percentual nao aderente']} 进入目标未达标标准。",
         kpi3_label="未达标人群周均到岗",
         kpi3_note="周度中位数已按报告计算保留。",
         kpi4_label="主要关键区间",
@@ -1904,16 +3106,16 @@ def build_html_report(
         rules_vac_label="集体休假",
         rules_vac_value=f"已从计算中移除 {summary_map['Semanas de ferias coletivas removidas']} 周",
         rules_scope_label="人员范围",
-        rules_scope_value="在职员工，M/E 岗位，B- 区域，排除 B-V 和 B-SNP",
+        rules_scope_value="在职员工，M/E 岗位，B- 区域，排除 B-V、B-SNP 和 B-SKL；保留 B-SKL 高管",
         rules_limit_label="预警阈值",
-        rules_limit_value=f"低于 {metadata['adherence_threshold_pct']:.0f}%",
+        rules_limit_value="进入目标未达标标准的人员",
     )
 
     translations["hi"] = translation_clone(
         "en",
         lang_label="भाषा",
         hero_title="प्लांट में कम ऑन-साइट उपस्थिति",
-        hero_subtitle="यह विश्लेषण Seitz को प्रस्तुति देने के लिए तैयार किया गया है और 90% से कम ऑन-साइट अनुपालन वाले लोगों पर केंद्रित है। यह संस्करण प्लांट प्रबंधन के दृष्टिकोण पर आधारित है: ट्रेंड, संकेतक का व्यवहार और विभाग/उप-क्षेत्र हीटमैप।",
+        hero_subtitle="यह कार्यकारी विश्लेषण लक्ष्य-अनुपालन मानदंड में आने वाले लोगों पर केंद्रित है। यह संस्करण प्लांट प्रबंधन के दृष्टिकोण पर आधारित है: ट्रेंड, संकेतक का व्यवहार और विभाग/उप-क्षेत्र हीटमैप।",
         meta_ref=f"संदर्भ तिथि: {reference_date_hi}",
         meta_last=f"उपयोग किया गया अंतिम सप्ताह: {last_week_hi}",
         meta_period=f"अवधि: {analysis_period_hi}",
@@ -1922,7 +3124,7 @@ def build_html_report(
         kpi1_label="विश्लेषित जनसंख्या",
         kpi1_note="गणना फ़िल्टर के बाद पात्र आधार।",
         kpi2_label="अधूरा अनुपालन",
-        kpi2_note=f"{summary_map['Percentual nao aderente']} जनसंख्या 90% से नीचे रही।",
+        kpi2_note=f"{summary_map['Percentual nao aderente']} जनसंख्या लक्ष्य-अनुपालन मानदंड में आई।",
         kpi3_label="अधूरे अनुपालन समूह का साप्ताहिक औसत",
         kpi3_note="साप्ताहिक माध्यिका रिपोर्ट गणना के अनुसार रखी गई है।",
         kpi4_label="मुख्य गंभीर श्रेणी",
@@ -1962,28 +3164,271 @@ def build_html_report(
         rules_vac_label="सामूहिक अवकाश",
         rules_vac_value=f"{summary_map['Semanas de ferias coletivas removidas']} सप्ताह गणना से हटाए गए",
         rules_scope_label="लोगों का दायरा",
-        rules_scope_value="सक्रिय कर्मचारी, M/E भूमिकाएँ, B- क्षेत्र, B-V और B-SNP को छोड़कर",
+        rules_scope_value="सक्रिय कर्मचारी, M/E भूमिकाएँ, B- क्षेत्र; B-V, B-SNP और B-SKL को छोड़कर; B-SKL executives बने रहते हैं",
         rules_limit_label="अलर्ट सीमा",
-        rules_limit_value=f"{metadata['adherence_threshold_pct']:.0f}% से नीचे",
+        rules_limit_value="लक्ष्य-अनुपालन मानदंड में आने वाले लोग",
     )
+
+    reading_strong_surrounding = "Sinal forte no entorno do feriado; vale olhar se houve emenda antes/depois."
+    reading_moderate_surrounding = "Há sinal moderado no entorno; possível uso de home office colado ao feriado."
+    reading_strong_holiday = "Sinal concentrado na própria semana do feriado."
+    reading_moderate_holiday = "Queda aparece principalmente na semana do feriado."
+    reading_low = "Sem indício relevante de emenda no entorno."
+    main_content_overrides = {
+        "pt": {
+            "week_type_map": {"Normal": "Normal", "Feriado": "Feriado"},
+            "bridge_empty": "Sem dados",
+            "bridge_median_word": "mediana",
+            "bridge_zero_one_prefix": "com",
+            "signal_map": {"Baixo": "Baixo", "Moderado": "Moderado", "Alto": "Alto", "Sem dados": "Sem dados"},
+            "holiday_reading_map": {
+                reading_strong_surrounding: reading_strong_surrounding,
+                reading_moderate_surrounding: reading_moderate_surrounding,
+                reading_strong_holiday: reading_strong_holiday,
+                reading_moderate_holiday: reading_moderate_holiday,
+                reading_low: reading_low,
+            },
+            "holiday_empty_message": "Nenhuma semana com feriado no período analisado.",
+        },
+        "en": {
+            "week_type_map": {"Normal": "Regular", "Feriado": "Holiday"},
+            "bridge_empty": "No data",
+            "bridge_median_word": "median",
+            "bridge_zero_one_prefix": "with",
+            "signal_map": {"Baixo": "Low", "Moderado": "Moderate", "Alto": "High", "Sem dados": "No data"},
+            "holiday_reading_map": {
+                reading_strong_surrounding: "Strong signal around the holiday; check whether there was a bridge before/after.",
+                reading_moderate_surrounding: "Moderate signal around the holiday; possible home office adjacent to the holiday.",
+                reading_strong_holiday: "Signal concentrated in the holiday week itself.",
+                reading_moderate_holiday: "Drop appears mainly in the holiday week.",
+                reading_low: "No relevant bridge signal around the holiday.",
+            },
+            "holiday_empty_message": "No holiday week in the analyzed period.",
+        },
+        "de": {
+            "week_type_map": {"Normal": "Normal", "Feriado": "Feiertag"},
+            "bridge_empty": "Keine Daten",
+            "bridge_median_word": "Median",
+            "bridge_zero_one_prefix": "mit",
+            "signal_map": {"Baixo": "Niedrig", "Moderado": "Mittel", "Alto": "Hoch", "Sem dados": "Keine Daten"},
+            "holiday_reading_map": {
+                reading_strong_surrounding: "Starkes Signal rund um den Feiertag; prüfen, ob es eine Brücke davor/danach gab.",
+                reading_moderate_surrounding: "Mittleres Signal im Umfeld; möglicher Homeoffice-Einsatz direkt am Feiertag.",
+                reading_strong_holiday: "Signal konzentriert sich auf die Feiertagswoche.",
+                reading_moderate_holiday: "Der Rückgang erscheint hauptsächlich in der Feiertagswoche.",
+                reading_low: "Kein relevantes Brückensignal im Umfeld.",
+            },
+            "holiday_empty_message": "Keine Feiertagswoche im analysierten Zeitraum.",
+        },
+        "es": {
+            "week_type_map": {"Normal": "Normal", "Feriado": "Festivo"},
+            "bridge_empty": "Sin datos",
+            "bridge_median_word": "mediana",
+            "bridge_zero_one_prefix": "con",
+            "signal_map": {"Baixo": "Bajo", "Moderado": "Moderado", "Alto": "Alto", "Sem dados": "Sin datos"},
+            "holiday_reading_map": {
+                reading_strong_surrounding: "Señal fuerte alrededor del festivo; conviene revisar si hubo puente antes/después.",
+                reading_moderate_surrounding: "Señal moderada alrededor; posible home office pegado al festivo.",
+                reading_strong_holiday: "Señal concentrada en la propia semana del festivo.",
+                reading_moderate_holiday: "La caída aparece principalmente en la semana del festivo.",
+                reading_low: "Sin indicio relevante de puente alrededor.",
+            },
+            "holiday_empty_message": "Ninguna semana con festivo en el período analizado.",
+        },
+        "fr": {
+            "week_type_map": {"Normal": "Normale", "Feriado": "Fériée"},
+            "bridge_empty": "Sans données",
+            "bridge_median_word": "médiane",
+            "bridge_zero_one_prefix": "avec",
+            "signal_map": {"Baixo": "Faible", "Moderado": "Modéré", "Alto": "Fort", "Sem dados": "Sans données"},
+            "holiday_reading_map": {
+                reading_strong_surrounding: "Signal fort autour du jour férié; vérifier un possible pont avant/après.",
+                reading_moderate_surrounding: "Signal modéré autour du jour férié; possible home office adjacent.",
+                reading_strong_holiday: "Signal concentré sur la semaine du jour férié.",
+                reading_moderate_holiday: "La baisse apparaît surtout pendant la semaine du jour férié.",
+                reading_low: "Aucun indice pertinent de pont autour du jour férié.",
+            },
+            "holiday_empty_message": "Aucune semaine avec jour férié dans la période analysée.",
+        },
+        "it": {
+            "week_type_map": {"Normal": "Normale", "Feriado": "Festiva"},
+            "bridge_empty": "Senza dati",
+            "bridge_median_word": "mediana",
+            "bridge_zero_one_prefix": "con",
+            "signal_map": {"Baixo": "Basso", "Moderado": "Moderato", "Alto": "Alto", "Sem dados": "Senza dati"},
+            "holiday_reading_map": {
+                reading_strong_surrounding: "Segnale forte intorno alla festività; verificare un possibile ponte prima/dopo.",
+                reading_moderate_surrounding: "Segnale moderato intorno; possibile home office vicino alla festività.",
+                reading_strong_holiday: "Segnale concentrato nella settimana della festività.",
+                reading_moderate_holiday: "Il calo appare soprattutto nella settimana della festività.",
+                reading_low: "Nessun indizio rilevante di ponte intorno alla festività.",
+            },
+            "holiday_empty_message": "Nessuna settimana festiva nel periodo analizzato.",
+        },
+        "pl": {
+            "week_type_map": {"Normal": "Normalny", "Feriado": "Świąteczny"},
+            "bridge_empty": "Brak danych",
+            "bridge_median_word": "mediana",
+            "bridge_zero_one_prefix": "z",
+            "signal_map": {"Baixo": "Niski", "Moderado": "Umiarkowany", "Alto": "Wysoki", "Sem dados": "Brak danych"},
+            "holiday_reading_map": {
+                reading_strong_surrounding: "Silny sygnał wokół święta; warto sprawdzić mostek przed/po.",
+                reading_moderate_surrounding: "Umiarkowany sygnał wokół święta; możliwy home office przy święcie.",
+                reading_strong_holiday: "Sygnał skoncentrowany w tygodniu świątecznym.",
+                reading_moderate_holiday: "Spadek pojawia się głównie w tygodniu świątecznym.",
+                reading_low: "Brak istotnego sygnału mostka wokół święta.",
+            },
+            "holiday_empty_message": "Brak tygodnia świątecznego w analizowanym okresie.",
+        },
+        "sk": {
+            "week_type_map": {"Normal": "Bežný", "Feriado": "Sviatočný"},
+            "bridge_empty": "Bez údajov",
+            "bridge_median_word": "medián",
+            "bridge_zero_one_prefix": "s",
+            "signal_map": {"Baixo": "Nízky", "Moderado": "Stredný", "Alto": "Vysoký", "Sem dados": "Bez údajov"},
+            "holiday_reading_map": {
+                reading_strong_surrounding: "Silný signál okolo sviatku; oplatí sa preveriť mostík pred/po.",
+                reading_moderate_surrounding: "Stredný signál v okolí; možný home office pri sviatku.",
+                reading_strong_holiday: "Signál sústredený v samotnom sviatočnom týždni.",
+                reading_moderate_holiday: "Pokles sa objavuje hlavne v sviatočnom týždni.",
+                reading_low: "Bez relevantného signálu mostíka v okolí sviatku.",
+            },
+            "holiday_empty_message": "V analyzovanom období nie je sviatočný týždeň.",
+        },
+        "zh": {
+            "week_type_map": {"Normal": "常规", "Feriado": "节假日"},
+            "bridge_empty": "无数据",
+            "bridge_median_word": "中位数",
+            "bridge_zero_one_prefix": "含",
+            "signal_map": {"Baixo": "低", "Moderado": "中", "Alto": "高", "Sem dados": "无数据"},
+            "holiday_reading_map": {
+                reading_strong_surrounding: "节假日前后信号较强；建议检查是否存在前后延长。",
+                reading_moderate_surrounding: "节假日前后有中等信号；可能存在贴近节假日的 home office。",
+                reading_strong_holiday: "信号集中在节假日周本身。",
+                reading_moderate_holiday: "下降主要出现在节假日周。",
+                reading_low: "节假日前后没有明显延长信号。",
+            },
+            "holiday_empty_message": "分析期间没有节假日周。",
+        },
+        "hi": {
+            "median_title": "संभावित bridge: छुट्टी + home office",
+            "median_note": "यह पढ़ाई जांचती है कि उपस्थिति में गिरावट केवल छुट्टी वाले सप्ताह में है या उसके पहले/बाद के सप्ताहों में भी दिखती है। संकेत सामूहिक है और व्यक्तिगत कारण तय नहीं करता।",
+            "median_h_type": "प्रकार",
+            "median_h_weeks": "सप्ताह",
+            "median_h_median": "माध्यिका दिन",
+            "median_h_mean": "औसत दिन",
+            "median_h_min": "सबसे कम माध्यिका",
+            "median_h_zero_one": "% 0 या 1 दिन",
+            "holiday_median_title": "छुट्टी से पहले, दौरान और बाद की विंडो",
+            "holiday_median_note": f"कैसे पढ़ें: विंडो की तीन कॉलमों की तुलना करें। मजबूत सेल संभावित bridge का अधिक संकेत दिखाती हैं; जब संकेत पहले या बाद में आता है, तो छुट्टी के विस्तार का संकेत हो सकता है। इस दायरे में, छुट्टी वाले सप्ताहों की माध्यिका {holiday_median_days:.2f} दिन है और सामान्य सप्ताहों में {normal_median_days:.2f} दिन है।",
+            "holiday_step_before": "पहले: संभावित अग्रिम",
+            "holiday_step_during": "छुट्टी: केंद्रित गिरावट",
+            "holiday_step_after": "बाद में: संभावित विस्तार",
+            "holiday_h_week": "छुट्टी",
+            "holiday_h_median": "पहले का सप्ताह",
+            "holiday_h_gap": "छुट्टी वाला सप्ताह",
+            "holiday_h_zero_one": "बाद का सप्ताह",
+            "holiday_h_zero_one_gap": "कुल संकेत",
+            "holiday_h_signal": "पढ़ाई",
+            "focus_volume_title": "पहले कहाँ कार्रवाई करें",
+            "focus_volume_note": "अनुपालन-भंग मानदंड में कर्मचारियों की संख्या के आधार पर शीर्ष क्षेत्र।",
+            "focus_rate_title": "समस्या कहाँ अधिक भारी है",
+            "focus_rate_note": "क्षेत्र के भीतर अनुपालन-भंग प्रतिशत के आधार पर शीर्ष क्षेत्र। न्यूनतम आधार: 10 लोग।",
+            "focus_h_area": "क्षेत्र",
+            "focus_h_dept": "विभाग",
+            "focus_h_people": "लोग",
+            "focus_h_pct": "क्षेत्र का %",
+            "focus_h_avg": "औसत दिन",
+            "week_type_map": {"Normal": "सामान्य", "Feriado": "छुट्टी"},
+            "bridge_empty": "डेटा नहीं",
+            "bridge_median_word": "माध्यिका",
+            "bridge_zero_one_prefix": "साथ",
+            "signal_map": {"Baixo": "कम", "Moderado": "मध्यम", "Alto": "उच्च", "Sem dados": "डेटा नहीं"},
+            "holiday_reading_map": {
+                reading_strong_surrounding: "छुट्टी के आसपास मजबूत संकेत; पहले/बाद में bridge हुआ या नहीं, देखना उचित है।",
+                reading_moderate_surrounding: "छुट्टी के आसपास मध्यम संकेत; छुट्टी से जुड़े home office का संभावित उपयोग।",
+                reading_strong_holiday: "संकेत मुख्य रूप से छुट्टी वाले सप्ताह में केंद्रित है।",
+                reading_moderate_holiday: "गिरावट मुख्य रूप से छुट्टी वाले सप्ताह में दिखती है।",
+                reading_low: "छुट्टी के आसपास bridge का कोई प्रासंगिक संकेत नहीं।",
+            },
+            "holiday_empty_message": "विश्लेषित अवधि में कोई छुट्टी वाला सप्ताह नहीं है।",
+        },
+    }
 
     for values in translations.values():
         values.setdefault("focus_volume_title", "Where to act first")
-        values.setdefault("focus_volume_note", "Top areas by number of people below 90%.")
+        values.setdefault("focus_volume_note", "Top areas by number of employees in the non-compliance criterion.")
         values.setdefault("focus_rate_title", "Where the issue weighs more")
-        values.setdefault("focus_rate_note", "Top areas by % below 90% within the area. Minimum base: 10 people.")
+        values.setdefault("focus_rate_note", "Top areas by non-compliance percentage within the area. Minimum base: 10 people.")
         values.setdefault("focus_h_area", "Area")
         values.setdefault("focus_h_dept", "Department")
         values.setdefault("focus_h_people", "People")
         values.setdefault("focus_h_pct", "% of area")
         values.setdefault("focus_h_avg", "Avg days")
+        values.setdefault("filter_title", "Rules used and areas not analyzed")
+        values.setdefault(
+            "filter_note",
+            "Dedicated page with the calculation scope and the complete list of areas outside the analysis.",
+        )
+        values.setdefault("filter_open_button", "Open page")
+        values.setdefault("rules_overlay_close", "Close")
+        values.setdefault("filter_h_filter", "Filter")
+        values.setdefault("filter_h_rule", "Rule used")
+        values.setdefault("filter_h_impact", "Impact")
+        values.setdefault("excluded_title", "Areas not analyzed")
+        values.setdefault("excluded_note", "Complete list of areas outside the analysis scope.")
+        values.setdefault("excluded_h_area", "Area")
+        values.setdefault("excluded_h_dept", "Department")
+        values.setdefault("excluded_h_heritage", "Heritage")
+        values.setdefault("excluded_h_reason", "Reason")
+        values.setdefault("excluded_h_people", "People out")
+        values.setdefault("excluded_h_exec", "Executives kept")
+        values.setdefault("median_title", "Possible bridge: holiday + home office")
+        values.setdefault(
+            "median_note",
+            "Exploratory reading to check whether lower attendance is concentrated in the holiday week or also appears in the week before/after it. The signal is collective and does not infer individual motive.",
+        )
+        values.setdefault("median_h_type", "Type")
+        values.setdefault("median_h_weeks", "Weeks")
+        values.setdefault("median_h_median", "Median days")
+        values.setdefault("median_h_mean", "Mean days")
+        values.setdefault("median_h_min", "Lowest median")
+        values.setdefault("median_h_zero_one", "% 0 or 1 day")
+        values.setdefault("holiday_median_title", "Window before, during and after the holiday")
+        values.setdefault(
+            "holiday_median_note",
+            f"How to read: compare the three window columns. Stronger cells indicate a stronger possible bridge signal; when the signal appears before or after, it may indicate extension around the holiday. In this scope, holidays have a median of {holiday_median_days:.2f} day(s) versus {normal_median_days:.2f} in regular weeks ({median_gap_phrase_en}).",
+        )
+        values.setdefault("holiday_step_before", "Before: possible anticipation")
+        values.setdefault("holiday_step_during", "Holiday: concentrated drop")
+        values.setdefault("holiday_step_after", "After: possible extension")
+        values.setdefault("holiday_h_week", "Holiday")
+        values.setdefault("holiday_h_median", "Week before")
+        values.setdefault("holiday_h_gap", "Holiday week")
+        values.setdefault("holiday_h_zero_one", "Week after")
+        values.setdefault("holiday_h_zero_one_gap", "Overall signal")
+        values.setdefault("holiday_h_signal", "Reading")
+        values.setdefault("rules_page_back", "Back to presentation")
+        values.setdefault("rules_page_rules_title", values.get("rules_title", "Rules used"))
+        values.setdefault(
+            "rules_page_rules_note",
+            "Scope and criteria used to calculate employees in the established target non-compliance criterion.",
+        )
+        values.setdefault("rules_page_filter_rows", filter_rows_en)
+        values.setdefault("excluded_reason_map", excluded_reason_map_en)
+        values.setdefault("excluded_empty_message", "No area was outside the area scope.")
+
+    for lang, values in main_content_overrides.items():
+        translations.setdefault(lang, {}).update(values)
+    for lang, values in rules_page_overrides.items():
+        translations.setdefault(lang, {}).update(values)
 
     html = f"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Apresentação Seitz - Presencial Fraco</title>
+  <title>Painel Executivo de Presença Presencial</title>
 {favicon_html.rstrip()}
   <style>
     :root {{
@@ -2017,7 +3462,8 @@ def build_html_report(
     }}
     .hero {{
       position: relative;
-      overflow: hidden;
+      overflow: visible;
+      z-index: 20;
       padding: 44px 46px 34px;
       background:
         radial-gradient(circle at 18% 18%, rgba(255, 255, 255, 0.10), transparent 20%),
@@ -2030,9 +3476,9 @@ def build_html_report(
     .hero::before {{
       content: "";
       position: absolute;
-      inset: auto -120px -120px auto;
-      width: 360px;
-      height: 360px;
+      inset: auto 0 0 auto;
+      width: 260px;
+      height: 260px;
       border-radius: 50%;
       background: radial-gradient(circle, rgba(255,255,255,0.15), rgba(255,255,255,0.02) 62%, transparent 70%);
       pointer-events: none;
@@ -2057,13 +3503,13 @@ def build_html_report(
       flex: 1 1 auto;
       min-width: 0;
     }}
-    .hero-side {{
+    .hero-tools {{
       display: grid;
       gap: 18px;
       justify-items: end;
-      flex: 0 0 auto;
+      min-width: 220px;
       position: relative;
-      z-index: 2;
+      z-index: 40;
     }}
     .lang-wrap {{
       display: grid;
@@ -2074,11 +3520,12 @@ def build_html_report(
       z-index: 6;
     }}
     .flag-switcher {{
+      --menu-base-height: 56px;
       position: relative;
       width: 132px;
       min-width: 132px;
-      height: 56px;
-      min-height: 56px;
+      height: var(--menu-base-height);
+      min-height: var(--menu-base-height);
       overflow: visible;
       isolation: isolate;
     }}
@@ -2101,11 +3548,19 @@ def build_html_report(
       z-index: -1;
     }}
     .flag-switcher.open {{
-      z-index: 30;
+      z-index: 1000;
+      height: var(--menu-base-height);
     }}
     .flag-switcher.open::before {{
       opacity: 1;
       transform: translateY(0);
+      position: fixed;
+      top: var(--menu-panel-top, 0px);
+      left: var(--menu-panel-left, 0px);
+      right: auto;
+      width: var(--menu-panel-width, 152px);
+      height: var(--menu-panel-height, calc(var(--menu-height, 56px) + 20px));
+      z-index: 2147483000;
     }}
     .lang-flag {{
       position: absolute;
@@ -2127,6 +3582,7 @@ def build_html_report(
       font-weight: 800;
       letter-spacing: 0.05em;
       cursor: pointer;
+      touch-action: manipulation;
       opacity: 0;
       pointer-events: none;
       transform: translateY(var(--menu-y, 0px));
@@ -2139,6 +3595,12 @@ def build_html_report(
       pointer-events: auto;
     }}
     .flag-switcher.open .lang-flag {{
+      position: fixed;
+      top: var(--menu-fixed-top, 0px);
+      left: var(--menu-fixed-left, 0px);
+      right: auto;
+      transform: none;
+      z-index: 2147483001;
       opacity: 1;
       pointer-events: auto;
     }}
@@ -2156,6 +3618,9 @@ def build_html_report(
     .lang-flag:hover {{
       transform: translateY(calc(var(--menu-y, 0px) - 1px));
       background: rgba(255,255,255,0.16);
+    }}
+    .flag-switcher.open .lang-flag:hover {{
+      transform: translateY(-1px);
     }}
     .lang-flag.active {{
       background: rgba(255,255,255,0.24);
@@ -2336,6 +3801,9 @@ def build_html_report(
       font-size: 19px;
       line-height: 1.55;
     }}
+    #holiday-median-note {{
+      margin-bottom: 26px;
+    }}
     img.chart {{
       width: 100%;
       border-radius: 20px;
@@ -2352,10 +3820,19 @@ def build_html_report(
       overflow-x: auto;
       -webkit-overflow-scrolling: touch;
     }}
+    .chart-scroll + .table-scroll {{
+      margin-top: 18px;
+    }}
     table {{
       width: 100%;
       border-collapse: collapse;
       font-size: 20px;
+    }}
+    .focus-table th:first-child,
+    .focus-table td:first-child {{
+      min-width: 118px;
+      white-space: nowrap;
+      word-break: keep-all;
     }}
     th, td {{
       padding: 13px 14px;
@@ -2381,9 +3858,165 @@ def build_html_report(
       line-height: 1.58;
       box-shadow: 0 12px 28px rgba(13, 40, 68, 0.05);
     }}
+    .reading-steps {{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin: 10px 0 34px;
+    }}
+    .reading-step {{
+      display: flex;
+      align-items: center;
+      min-height: 54px;
+      padding: 11px 12px;
+      border-radius: 16px;
+      border: 1px solid #cad8e5;
+      background: linear-gradient(180deg, #f8fbff 0%, #eef5fb 100%);
+      color: #21364e;
+      font-size: 15px;
+      font-weight: 800;
+      line-height: 1.25;
+    }}
+    .signal-badge {{
+      display: inline-flex;
+      margin-top: 6px;
+      padding: 4px 9px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 800;
+      line-height: 1.1;
+    }}
+    .signal-low {{
+      color: #17603c;
+      background: #dcefe5;
+    }}
+    .signal-medium {{
+      color: #7a5600;
+      background: #f7e7ad;
+    }}
+    .signal-high {{
+      color: #8d1f35;
+      background: #f3c1cb;
+    }}
+    .signal-none,
+    .muted-cell {{
+      color: #6b7280;
+      background: #edf1f5;
+    }}
+    .filter-page {{
+      page-break-before: always;
+    }}
+    .page-link-card {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 22px;
+    }}
+    .page-link-card h2 {{
+      margin-bottom: 8px;
+    }}
+    .open-page-button {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 56px;
+      padding: 14px 22px;
+      border-radius: 14px;
+      background: var(--accent);
+      color: #ffffff;
+      text-decoration: none;
+      font-size: 18px;
+      font-weight: 800;
+      white-space: nowrap;
+      box-shadow: 0 14px 28px rgba(11, 47, 89, 0.22);
+      transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
+    }}
+    .open-page-button:hover {{
+      background: #164677;
+      transform: translateY(-1px);
+      box-shadow: 0 18px 34px rgba(11, 47, 89, 0.26);
+    }}
+    body.overlay-open {{
+      overflow: hidden;
+    }}
+    .rules-overlay {{
+      position: fixed;
+      inset: 0;
+      display: none;
+      z-index: 5000;
+      padding: 22px;
+    }}
+    .rules-overlay.open {{
+      display: grid;
+      grid-template-rows: minmax(0, 1fr);
+    }}
+    .rules-overlay-backdrop {{
+      position: absolute;
+      inset: 0;
+      border: 0;
+      background: rgba(8, 24, 43, 0.58);
+      backdrop-filter: blur(8px);
+      cursor: pointer;
+    }}
+    .rules-overlay-panel {{
+      position: relative;
+      z-index: 1;
+      width: min(1540px, calc(100vw - 28px));
+      height: min(92vh, 980px);
+      margin: auto;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      overflow: hidden;
+      border-radius: 24px;
+      background: #f8fbfd;
+      box-shadow: 0 36px 90px rgba(4, 18, 34, 0.34);
+      border: 1px solid rgba(255,255,255,0.78);
+    }}
+    .rules-overlay-bar {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 14px 16px 14px 22px;
+      background: #0b2f59;
+      color: #ffffff;
+    }}
+    .rules-overlay-title {{
+      margin: 0;
+      font-size: 18px;
+      font-weight: 900;
+      letter-spacing: 0;
+    }}
+    .rules-overlay-close {{
+      min-height: 42px;
+      padding: 10px 16px;
+      border: 1px solid rgba(255,255,255,0.28);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.12);
+      color: #ffffff;
+      font: inherit;
+      font-size: 15px;
+      font-weight: 900;
+      cursor: pointer;
+    }}
+    .rules-overlay-close:hover {{
+      background: rgba(255,255,255,0.20);
+    }}
+    .rules-overlay-frame {{
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: #f8fbfd;
+    }}
+    .subsection-title {{
+      margin-top: 30px;
+    }}
+    .excluded-scroll table {{
+      min-width: 1120px;
+    }}
     .footer-panels {{
       display: grid;
-      grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.75fr);
+      grid-template-columns: 1fr;
       gap: 28px;
     }}
     .footer-panel {{
@@ -2459,15 +4092,15 @@ def build_html_report(
       .hero-top {{
         align-items: flex-start;
       }}
-      .hero-side {{
-        justify-items: start;
+      .hero-tools {{
+        justify-items: end;
       }}
       .lang-wrap {{
-        text-align: left;
-        justify-items: start;
+        text-align: right;
+        justify-items: end;
       }}
       .flag-switcher {{
-        justify-self: start;
+        justify-self: end;
       }}
       .hero-logo {{
         width: 170px;
@@ -2492,17 +4125,21 @@ def build_html_report(
         align-items: stretch;
         gap: 16px;
       }}
-      .hero-side {{
+      .hero-tools {{
         width: 100%;
         gap: 12px;
-        justify-items: stretch;
+        justify-items: start;
+        min-width: 0;
+      }}
+      .lang-wrap {{
+        text-align: left;
+        justify-items: start;
       }}
       .flag-switcher {{
+        --menu-base-height: 48px;
         width: 124px;
         min-width: 124px;
-        height: 48px;
-        min-height: 48px;
-        justify-self: end;
+        justify-self: start;
       }}
       .lang-flag {{
         width: 124px;
@@ -2609,6 +4246,38 @@ def build_html_report(
         padding: 14px;
         line-height: 1.45;
       }}
+      .reading-steps {{
+        grid-template-columns: 1fr;
+      }}
+      .reading-step {{
+        min-height: auto;
+      }}
+      .page-link-card {{
+        align-items: stretch;
+        flex-direction: column;
+      }}
+      .open-page-button {{
+        width: 100%;
+      }}
+      .rules-overlay {{
+        padding: 8px;
+      }}
+      .rules-overlay-panel {{
+        width: calc(100vw - 16px);
+        height: calc(100vh - 16px);
+        border-radius: 18px;
+      }}
+      .rules-overlay-bar {{
+        padding: 10px 10px 10px 14px;
+      }}
+      .rules-overlay-title {{
+        font-size: 15px;
+      }}
+      .rules-overlay-close {{
+        min-height: 38px;
+        padding: 8px 12px;
+        font-size: 14px;
+      }}
       .site-footer {{
         padding: 18px 16px;
         border-radius: 20px;
@@ -2654,7 +4323,7 @@ def build_html_report(
           <p id="hero-subtitle">{translations['pt']['hero_subtitle']}</p>
           <div class="hero-statement" id="hero-statement">{translations['pt']['kpi2_note']} {translations['pt']['dist_callout']}</div>
         </div>
-        <div class="hero-side">
+        <div class="hero-tools">
           <div class="lang-wrap">
             <div class="flag-switcher" id="lang-picker" role="group" aria-label="Selecionar idioma" aria-expanded="false">
               <button class="lang-flag active" type="button" data-lang="pt" aria-label="Brazil" aria-pressed="true" title="Brazil">
@@ -2847,7 +4516,7 @@ def build_html_report(
       <h2 id="dist-title">{translations['pt']['dist_title']}</h2>
       <p class="section-note" id="dist-note">{translations['pt']['dist_note']}</p>
       <div class="chart-scroll">
-        <img class="chart" src="{chart_distribution_rel}" alt="Gráfico de pessoas abaixo de 90% por média semanal">
+        <img class="chart" src="{chart_distribution_rel}" alt="Gráfico de colaboradores em descumprimento por média semanal">
       </div>
       <div class="callout" id="dist-callout">{translations['pt']['dist_callout']}</div>
     </section>
@@ -2857,7 +4526,7 @@ def build_html_report(
         <h2 id="focus-volume-title">{translations['pt']['focus_volume_title']}</h2>
         <p class="section-note" id="focus-volume-note">{translations['pt']['focus_volume_note']}</p>
         <div class="table-scroll">
-          <table>
+          <table class="focus-table">
             <thead>
               <tr>
                 <th id="focus-volume-h-area">{translations['pt']['focus_h_area']}</th>
@@ -2877,7 +4546,7 @@ def build_html_report(
         <h2 id="focus-rate-title">{translations['pt']['focus_rate_title']}</h2>
         <p class="section-note" id="focus-rate-note">{translations['pt']['focus_rate_note']}</p>
         <div class="table-scroll">
-          <table>
+          <table class="focus-table">
             <thead>
               <tr>
                 <th id="focus-rate-h-area">{translations['pt']['focus_h_area']}</th>
@@ -2895,13 +4564,69 @@ def build_html_report(
       </article>
     </section>
 
+    <section class="grid-2">
+      <article class="card feature-card">
+        <h2 id="median-title">{translations['pt']['median_title']}</h2>
+        <p class="section-note" id="median-note">{translations['pt']['median_note']}</p>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th id="median-h-type">{translations['pt']['median_h_type']}</th>
+                <th id="median-h-weeks">{translations['pt']['median_h_weeks']}</th>
+                <th id="median-h-median">{translations['pt']['median_h_median']}</th>
+                <th id="median-h-mean">{translations['pt']['median_h_mean']}</th>
+                <th id="median-h-min">{translations['pt']['median_h_min']}</th>
+                <th id="median-h-zero-one">{translations['pt']['median_h_zero_one']}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {week_type_median_html}
+            </tbody>
+          </table>
+        </div>
+      </article>
+      <article class="card feature-card">
+        <h2 id="holiday-median-title">{translations['pt']['holiday_median_title']}</h2>
+        <p class="section-note" id="holiday-median-note">{translations['pt']['holiday_median_note']}</p>
+        <div class="reading-steps">
+          <span class="reading-step" id="holiday-step-before">{translations['pt']['holiday_step_before']}</span>
+          <span class="reading-step" id="holiday-step-during">{translations['pt']['holiday_step_during']}</span>
+          <span class="reading-step" id="holiday-step-after">{translations['pt']['holiday_step_after']}</span>
+        </div>
+        <div class="chart-scroll">
+          <img class="chart" src="{chart_holiday_bridge_rel}" alt="Mapa visual da janela antes, durante e depois do feriado">
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th id="holiday-h-week">{translations['pt']['holiday_h_week']}</th>
+                <th id="holiday-h-median">{translations['pt']['holiday_h_median']}</th>
+                <th id="holiday-h-gap">{translations['pt']['holiday_h_gap']}</th>
+                <th id="holiday-h-zero-one">{translations['pt']['holiday_h_zero_one']}</th>
+                <th id="holiday-h-zero-one-gap">{translations['pt']['holiday_h_zero_one_gap']}</th>
+                <th id="holiday-h-signal">{translations['pt']['holiday_h_signal']}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {holiday_week_median_html}
+            </tbody>
+          </table>
+        </div>
+      </article>
+    </section>
+
+    <section class="card feature-card page-link-card">
+      <div>
+        <h2 id="filter-title">{translations['pt']['filter_title']}</h2>
+        <p class="section-note" id="filter-note">{translations['pt']['filter_note']}</p>
+      </div>
+      <a class="open-page-button" id="filter-open-button" href="{rules_page_rel}" data-rules-overlay-open>{translations['pt']['filter_open_button']}</a>
+    </section>
+
     <footer class="site-footer">
       <div class="footer-panels">
-        <div class="footer-panel">
-          <h2 id="rules-title">{translations['pt']['rules_title']}</h2>
-          <p class="section-note" id="rules-note">{translations['pt']['rules_note']}</p>
-          {rules_table_html}
-        </div>
         <div class="footer-panel">
           <h2 id="prepared-title">{translations['pt']['prepared_title']}</h2>
           <p class="section-note" id="prepared-note">{translations['pt']['prepared_note']}</p>
@@ -2911,22 +4636,32 @@ def build_html_report(
               <div>{PRESENTATION_AUTHOR_NAME}</div>
             </div>
             <div class="signature-item">
-              <strong id="sig-role">{translations['pt']['sig_role']}</strong>
-              <div>{PRESENTATION_AUTHOR_ROLE}</div>
+              <strong id="sig-generated">{translations['pt']['sig_generated']}</strong>
+              <div id="sig-generated-value">{generated_at_pt}</div>
             </div>
             <div class="signature-item">
               <strong id="sig-company">{translations['pt']['sig_company']}</strong>
               <div>{PRESENTATION_AUTHOR_TEAM}</div>
             </div>
             <div class="signature-item">
-              <strong id="sig-generated">{translations['pt']['sig_generated']}</strong>
-              <div id="sig-generated-value">{generated_at_pt}</div>
+              <strong id="sig-role">{translations['pt']['sig_role']}</strong>
+              <div>{PRESENTATION_AUTHOR_ROLE}</div>
             </div>
           </div>
         </div>
       </div>
     </footer>
   </main>
+  <div class="rules-overlay" id="rules-overlay" aria-hidden="true">
+    <button class="rules-overlay-backdrop" id="rules-overlay-backdrop" type="button" aria-label="Fechar"></button>
+    <section class="rules-overlay-panel" role="dialog" aria-modal="true" aria-labelledby="rules-overlay-title">
+      <div class="rules-overlay-bar">
+        <h2 class="rules-overlay-title" id="rules-overlay-title">{translations['pt']['filter_title']}</h2>
+        <button class="rules-overlay-close" id="rules-overlay-close" type="button">{translations['pt']['rules_overlay_close']}</button>
+      </div>
+      <iframe class="rules-overlay-frame" id="rules-overlay-frame" title="{translations['pt']['filter_title']}"></iframe>
+    </section>
+  </div>
   <script>
     const translations = {json.dumps(translations, ensure_ascii=False)};
     const preferredLangOrder = ['pt', 'en', 'de', 'es', 'pl', 'sk', 'zh', 'hi'];
@@ -2938,6 +4673,7 @@ def build_html_report(
     }}
     function applyLanguage(lang) {{
       const t = translations[lang] || translations.pt;
+      const fallback = translations.en || translations.pt;
       const langMap = {{
         pt: 'pt-BR',
         de: 'de',
@@ -2951,19 +4687,22 @@ def build_html_report(
         it: 'it',
       }};
       const titleMap = {{
-        pt: 'Apresentação Seitz - Presencial Fraco',
-        de: 'Seitz-Präsentation - Schwache Anwesenheit',
-        en: 'Seitz Presentation - Weak On-Site Attendance',
-        es: 'Presentación Seitz - Presencial Débil',
-        pl: 'Prezentacja Seitz - Słaba Obecność Stacjonarna',
-        sk: 'Prezentácia Seitz - Slabšia Prítomnosť Na Mieste',
-        zh: 'Seitz 汇报 - 现场出勤偏弱',
-        hi: 'Seitz प्रस्तुति - कम ऑन-साइट उपस्थिति',
-        fr: 'Présentation Seitz - Présence Faible',
-        it: 'Presentazione Seitz - Presenza Debole',
+        pt: 'Painel Executivo de Presença Presencial',
+        de: 'Executive Review - Schwache Anwesenheit',
+        en: 'Executive On-Site Attendance Review',
+        es: 'Panel Ejecutivo de Presencia Presencial',
+        pl: 'Panel Wykonawczy Obecności Stacjonarnej',
+        sk: 'Exekutívny Panel Prítomnosti Na Pracovisku',
+        zh: '现场出勤执行面板',
+        hi: 'ऑन-साइट उपस्थिति कार्यकारी पैनल',
+        fr: 'Revue Exécutive de Présence Sur Site',
+        it: 'Revisione Esecutiva della Presenza in Sede',
       }};
       document.documentElement.lang = langMap[lang] || 'pt-BR';
       document.title = titleMap[lang] || titleMap.pt;
+      try {{
+        localStorage.setItem('attendanceLang', lang);
+      }} catch (error) {{}}
       langButtons.forEach((button) => {{
         const active = button.dataset.lang === lang;
         button.classList.toggle('active', active);
@@ -2998,6 +4737,69 @@ def build_html_report(
       setText('heat-title', t.heat_title);
       setText('heat-note', t.heat_note);
       setText('heat-callout', t.heat_callout, true);
+      setText('filter-title', t.filter_title);
+      setText('filter-note', t.filter_note);
+      setText('filter-open-button', t.filter_open_button);
+      setText('rules-overlay-title', t.filter_title);
+      setText('rules-overlay-close', t.rules_overlay_close);
+      const rulesCloseLabel = t.rules_overlay_close || translations.pt.rules_overlay_close;
+      const rulesBackdropButton = document.getElementById('rules-overlay-backdrop');
+      if (rulesBackdropButton) rulesBackdropButton.setAttribute('aria-label', rulesCloseLabel);
+      setText('filter-h-filter', t.filter_h_filter);
+      setText('filter-h-rule', t.filter_h_rule);
+      setText('filter-h-impact', t.filter_h_impact);
+      setText('excluded-title', t.excluded_title);
+      setText('excluded-note', t.excluded_note);
+      setText('excluded-h-area', t.excluded_h_area);
+      setText('excluded-h-dept', t.excluded_h_dept);
+      setText('excluded-h-heritage', t.excluded_h_heritage);
+      setText('excluded-h-reason', t.excluded_h_reason);
+      setText('excluded-h-people', t.excluded_h_people);
+      setText('excluded-h-exec', t.excluded_h_exec);
+      setText('median-title', t.median_title);
+      setText('median-note', t.median_note);
+      setText('median-h-type', t.median_h_type);
+      setText('median-h-weeks', t.median_h_weeks);
+      setText('median-h-median', t.median_h_median);
+      setText('median-h-mean', t.median_h_mean);
+      setText('median-h-min', t.median_h_min);
+      setText('median-h-zero-one', t.median_h_zero_one);
+      setText('holiday-median-title', t.holiday_median_title);
+      setText('holiday-median-note', t.holiday_median_note);
+      setText('holiday-step-before', t.holiday_step_before);
+      setText('holiday-step-during', t.holiday_step_during);
+      setText('holiday-step-after', t.holiday_step_after);
+      setText('holiday-h-week', t.holiday_h_week);
+      setText('holiday-h-median', t.holiday_h_median);
+      setText('holiday-h-gap', t.holiday_h_gap);
+      setText('holiday-h-zero-one', t.holiday_h_zero_one);
+      setText('holiday-h-zero-one-gap', t.holiday_h_zero_one_gap);
+      setText('holiday-h-signal', t.holiday_h_signal);
+      const weekTypeMap = t.week_type_map || fallback.week_type_map || {{}};
+      document.querySelectorAll('[data-week-type]').forEach((cell) => {{
+        const key = cell.dataset.weekType;
+        cell.textContent = weekTypeMap[key] || key;
+      }});
+      const signalMap = t.signal_map || fallback.signal_map || {{}};
+      document.querySelectorAll('[data-signal-label]').forEach((cell) => {{
+        const key = cell.dataset.signalLabel;
+        cell.textContent = signalMap[key] || key;
+      }});
+      document.querySelectorAll('[data-bridge-empty]').forEach((cell) => {{
+        cell.textContent = t.bridge_empty || fallback.bridge_empty || 'No data';
+      }});
+      document.querySelectorAll('[data-bridge-median-word]').forEach((cell) => {{
+        cell.textContent = t.bridge_median_word || fallback.bridge_median_word || 'median';
+      }});
+      document.querySelectorAll('[data-bridge-zero-one-prefix]').forEach((cell) => {{
+        cell.textContent = t.bridge_zero_one_prefix || fallback.bridge_zero_one_prefix || 'with';
+      }});
+      const readingMap = t.holiday_reading_map || fallback.holiday_reading_map || {{}};
+      document.querySelectorAll('[data-reading-key]').forEach((cell) => {{
+        const key = cell.dataset.readingKey;
+        cell.textContent = readingMap[key] || key;
+      }});
+      setText('holiday-empty-message', t.holiday_empty_message || fallback.holiday_empty_message);
       setText('focus-volume-title', t.focus_volume_title);
       setText('focus-volume-note', t.focus_volume_note);
       setText('focus-rate-title', t.focus_rate_title);
@@ -3045,12 +4847,30 @@ def build_html_report(
       const menuBaseHeight = window.matchMedia('(max-width: 760px)').matches ? 48 : 56;
       const available = langButtons.map((button) => button.dataset.lang);
       const ordered = [activeLang, ...preferredLangOrder.filter((lang) => lang !== activeLang && available.includes(lang))];
+      const menuHeight = Math.max(menuBaseHeight, menuBaseHeight + (ordered.length - 1) * menuStep);
+      const rect = langPicker.getBoundingClientRect();
+      const viewportGap = 12;
+      const panelPad = 10;
+      const menuWidth = rect.width || (window.matchMedia('(max-width: 760px)').matches ? 124 : 132);
+      const openUp = rect.top + menuHeight + panelPad > window.innerHeight - viewportGap && rect.bottom - menuHeight - panelPad > viewportGap;
+      const preferredTop = openUp ? rect.bottom - menuHeight : rect.top;
+      const maxTop = Math.max(viewportGap + panelPad, window.innerHeight - menuHeight - panelPad);
+      const menuTop = Math.min(Math.max(viewportGap + panelPad, preferredTop), maxTop);
+      const maxLeft = Math.max(viewportGap + panelPad, window.innerWidth - menuWidth - panelPad);
+      const menuLeft = Math.min(Math.max(viewportGap + panelPad, rect.right - menuWidth), maxLeft);
       langButtons.forEach((button) => {{
         const slot = Math.max(0, ordered.indexOf(button.dataset.lang));
+        const visualSlot = openUp ? ordered.length - 1 - slot : slot;
         button.style.setProperty('--menu-y', `${{slot * menuStep}}px`);
+        button.style.setProperty('--menu-fixed-top', `${{menuTop + visualSlot * menuStep}}px`);
+        button.style.setProperty('--menu-fixed-left', `${{menuLeft}}px`);
       }});
-      const menuHeight = Math.max(menuBaseHeight, menuBaseHeight + (ordered.length - 1) * menuStep);
+      langPicker.style.setProperty('--menu-base-height', `${{menuBaseHeight}}px`);
       langPicker.style.setProperty('--menu-height', `${{menuHeight}}px`);
+      langPicker.style.setProperty('--menu-panel-top', `${{menuTop - panelPad}}px`);
+      langPicker.style.setProperty('--menu-panel-left', `${{menuLeft - panelPad}}px`);
+      langPicker.style.setProperty('--menu-panel-width', `${{menuWidth + panelPad * 2}}px`);
+      langPicker.style.setProperty('--menu-panel-height', `${{menuHeight + panelPad * 2}}px`);
     }}
     function closeLanguageMenu() {{
       if (!langPicker) return;
@@ -3060,8 +4880,17 @@ def build_html_report(
     function toggleLanguageMenu() {{
       if (!langPicker) return;
       const shouldOpen = !langPicker.classList.contains('open');
+      if (shouldOpen) {{
+        const activeButton = langButtons.find((button) => button.classList.contains('active'));
+        syncLanguageMenu(activeButton ? activeButton.dataset.lang : 'pt');
+      }}
       langPicker.classList.toggle('open', shouldOpen);
       langPicker.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+    }}
+    function refreshOpenLanguageMenu() {{
+      if (!langPicker || !langPicker.classList.contains('open')) return;
+      const activeButton = langButtons.find((button) => button.classList.contains('active'));
+      syncLanguageMenu(activeButton ? activeButton.dataset.lang : 'pt');
     }}
     langButtons.forEach((button) => {{
       button.addEventListener('click', (event) => {{
@@ -3074,24 +4903,766 @@ def build_html_report(
         closeLanguageMenu();
       }});
     }});
+    const rulesOpenButton = document.getElementById('filter-open-button');
+    const rulesOverlay = document.getElementById('rules-overlay');
+    const rulesFrame = document.getElementById('rules-overlay-frame');
+    const rulesCloseButton = document.getElementById('rules-overlay-close');
+    const rulesBackdrop = document.getElementById('rules-overlay-backdrop');
+    function openRulesOverlay(event) {{
+      if (event) event.preventDefault();
+      closeLanguageMenu();
+      if (!rulesOverlay || !rulesFrame || !rulesOpenButton) {{
+        if (rulesOpenButton) window.open(rulesOpenButton.href, '_blank', 'noopener');
+        return;
+      }}
+      const baseUrl = rulesOpenButton.getAttribute('href') || rulesOpenButton.href;
+      rulesFrame.src = baseUrl + '?overlay=1&v=' + Date.now();
+      rulesOverlay.classList.add('open');
+      rulesOverlay.setAttribute('aria-hidden', 'false');
+      document.body.classList.add('overlay-open');
+      if (rulesCloseButton) rulesCloseButton.focus();
+    }}
+    function closeRulesOverlay() {{
+      if (!rulesOverlay) return;
+      rulesOverlay.classList.remove('open');
+      rulesOverlay.setAttribute('aria-hidden', 'true');
+      document.body.classList.remove('overlay-open');
+      if (rulesFrame) rulesFrame.src = 'about:blank';
+      if (rulesOpenButton) rulesOpenButton.focus();
+    }}
+    if (rulesOpenButton) rulesOpenButton.addEventListener('click', openRulesOverlay);
+    if (rulesCloseButton) rulesCloseButton.addEventListener('click', closeRulesOverlay);
+    if (rulesBackdrop) rulesBackdrop.addEventListener('click', closeRulesOverlay);
+    window.addEventListener('message', (event) => {{
+      const data = event.data || {{}};
+      if (data.type !== 'attendance-language-change' || !translations[data.lang]) return;
+      applyLanguage(data.lang);
+    }});
     document.addEventListener('click', (event) => {{
       if (langPicker && !langPicker.contains(event.target)) closeLanguageMenu();
     }});
+    window.addEventListener('resize', refreshOpenLanguageMenu);
+    window.addEventListener('scroll', refreshOpenLanguageMenu, {{ passive: true }});
+    document.addEventListener('keydown', (event) => {{
+      if (event.key !== 'Escape') return;
+      if (rulesOverlay && rulesOverlay.classList.contains('open')) {{
+        closeRulesOverlay();
+        return;
+      }}
+      closeLanguageMenu();
+    }});
+    const savedLang = (() => {{
+      try {{
+        return localStorage.getItem('attendanceLang') || 'pt';
+      }} catch (error) {{
+        return 'pt';
+      }}
+    }})();
+    applyLanguage(translations[savedLang] ? savedLang : 'pt');
+    closeLanguageMenu();
+  </script>
+</body>
+</html>
+"""
+    rules_page_html = f"""<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Regras usadas e áreas não analisadas</title>
+{favicon_html.rstrip()}
+  <style>
+    :root {{
+      --bg: #ecf3f9;
+      --ink: #102743;
+      --muted: #5d7188;
+      --card: rgba(255, 255, 255, 0.96);
+      --line: #d4e0ec;
+      --accent: #0b2f59;
+      --shadow: 0 24px 54px rgba(11, 34, 61, 0.09);
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      font-family: Aptos, "Segoe UI Variable", "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: linear-gradient(180deg, #f8fbfd 0%, var(--bg) 100%);
+    }}
+    .page {{
+      width: min(1480px, calc(100vw - 28px));
+      margin: 20px auto 44px;
+      display: grid;
+      gap: 22px;
+    }}
+    .hero {{
+      position: relative;
+      overflow: visible;
+      z-index: 20;
+      padding: 34px 38px;
+      border-radius: 28px;
+      color: white;
+      background: linear-gradient(135deg, #08284c 0%, #0d3b66 62%, #1b5787 100%);
+      box-shadow: var(--shadow);
+    }}
+    .hero-top {{
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 24px;
+    }}
+    .hero h1 {{
+      margin: 0 0 12px;
+      font-size: clamp(38px, 5vw, 66px);
+      line-height: 1.02;
+      letter-spacing: 0;
+    }}
+    .hero p {{
+      margin: 0;
+      max-width: 1120px;
+      color: rgba(255,255,255,0.86);
+      font-size: 22px;
+      line-height: 1.5;
+    }}
+    .hero-logo {{
+      width: 190px;
+      max-width: 22vw;
+      object-fit: contain;
+    }}
+    .hero-tools {{
+      display: grid;
+      justify-items: end;
+      gap: 18px;
+      min-width: 220px;
+      position: relative;
+      z-index: 40;
+    }}
+    .lang-wrap {{
+      display: grid;
+      gap: 0;
+      text-align: right;
+      justify-items: end;
+      position: relative;
+      z-index: 6;
+    }}
+    .flag-switcher {{
+      --menu-base-height: 56px;
+      position: relative;
+      width: 132px;
+      min-width: 132px;
+      height: var(--menu-base-height);
+      min-height: var(--menu-base-height);
+      overflow: visible;
+      isolation: isolate;
+    }}
+    .flag-switcher::before {{
+      content: "";
+      position: absolute;
+      top: -10px;
+      right: -10px;
+      width: calc(100% + 20px);
+      height: calc(var(--menu-height, 56px) + 20px);
+      border-radius: 24px;
+      background: rgba(23, 55, 96, 0.46);
+      border: 1px solid rgba(255,255,255,0.12);
+      box-shadow: 0 18px 40px rgba(9, 23, 43, 0.24);
+      backdrop-filter: blur(14px);
+      opacity: 0;
+      transform: translateY(-4px);
+      transition: opacity 160ms ease, transform 160ms ease;
+      pointer-events: none;
+      z-index: -1;
+    }}
+    .flag-switcher.open {{
+      z-index: 1000;
+      height: var(--menu-base-height);
+    }}
+    .flag-switcher.open::before {{
+      opacity: 1;
+      transform: translateY(0);
+      position: fixed;
+      top: var(--menu-panel-top, 0px);
+      left: var(--menu-panel-left, 0px);
+      right: auto;
+      width: var(--menu-panel-width, 152px);
+      height: var(--menu-panel-height, calc(var(--menu-height, 56px) + 20px));
+      z-index: 2147483000;
+    }}
+    .lang-flag {{
+      position: absolute;
+      top: 0;
+      right: 0;
+      display: flex;
+      width: 132px;
+      min-width: 112px;
+      height: 56px;
+      padding: 7px 16px 7px 7px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(255,255,255,0.10);
+      color: white;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 12px;
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      touch-action: manipulation;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(var(--menu-y, 0px));
+      transition: transform 160ms ease, background 160ms ease, border-color 160ms ease, box-shadow 160ms ease, opacity 120ms ease;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.10);
+      backdrop-filter: blur(8px);
+      font-family: inherit;
+    }}
+    .lang-flag.active {{
+      opacity: 1;
+      pointer-events: auto;
+    }}
+    .flag-switcher.open .lang-flag {{
+      position: fixed;
+      top: var(--menu-fixed-top, 0px);
+      left: var(--menu-fixed-left, 0px);
+      right: auto;
+      transform: none;
+      z-index: 2147483001;
+      opacity: 1;
+      pointer-events: auto;
+    }}
+    .lang-flag.active::after {{
+      content: "▾";
+      margin-left: auto;
+      font-size: 15px;
+      line-height: 1;
+      color: rgba(255,255,255,0.92);
+      letter-spacing: 0;
+    }}
+    .flag-switcher.open .lang-flag.active::after {{
+      content: "▴";
+    }}
+    .lang-flag:hover {{
+      transform: translateY(calc(var(--menu-y, 0px) - 1px));
+      background: rgba(255,255,255,0.16);
+    }}
+    .flag-switcher.open .lang-flag:hover {{
+      transform: translateY(-1px);
+    }}
+    .lang-flag.active {{
+      background: rgba(255,255,255,0.24);
+      border-color: rgba(255,255,255,0.48);
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
+    }}
+    .lang-flag[data-lang="pt"] {{ background: rgba(179, 229, 196, 0.24); }}
+    .lang-flag[data-lang="de"] {{ background: rgba(223, 227, 234, 0.22); }}
+    .lang-flag[data-lang="en"] {{ background: rgba(194, 220, 245, 0.24); }}
+    .lang-flag[data-lang="es"] {{ background: rgba(248, 228, 170, 0.25); }}
+    .lang-flag[data-lang="pl"] {{ background: rgba(247, 214, 221, 0.24); }}
+    .lang-flag[data-lang="sk"] {{ background: rgba(210, 225, 247, 0.24); }}
+    .lang-flag[data-lang="zh"] {{ background: rgba(248, 210, 198, 0.24); }}
+    .lang-flag[data-lang="hi"] {{ background: rgba(232, 232, 232, 0.24); }}
+    .lang-flag:focus-visible {{
+      outline: 3px solid rgba(255,255,255,0.48);
+      outline-offset: 2px;
+    }}
+    .flag-disc {{
+      width: 40px;
+      height: 40px;
+      border-radius: 999px;
+      overflow: hidden;
+      flex: 0 0 40px;
+      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.16);
+      border: 2px solid rgba(255,255,255,0.78);
+      background: white;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }}
+    .flag-disc svg {{
+      display: block;
+      width: 100%;
+      height: 100%;
+    }}
+    .flag-label {{
+      display: inline-block;
+      min-width: 34px;
+      text-align: left;
+    }}
+    .back-button {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      justify-self: start;
+      min-height: 52px;
+      padding: 13px 20px;
+      border-radius: 14px;
+      background: var(--accent);
+      color: #ffffff;
+      text-decoration: none;
+      font-size: 17px;
+      font-weight: 800;
+      box-shadow: 0 14px 28px rgba(11, 47, 89, 0.18);
+    }}
+    body.overlay-mode .back-button {{
+      display: none;
+    }}
+    .card {{
+      padding: 28px;
+      border-radius: 24px;
+      background: var(--card);
+      border: 1px solid rgba(255, 255, 255, 0.8);
+      box-shadow: var(--shadow);
+    }}
+    h2 {{
+      margin: 0 0 12px;
+      font-size: 34px;
+      letter-spacing: 0;
+    }}
+    p.section-note {{
+      margin: 0 0 18px;
+      color: var(--muted);
+      font-size: 19px;
+      line-height: 1.52;
+    }}
+    .subsection-title {{
+      margin-top: 32px;
+    }}
+    .table-scroll {{
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }}
+    table {{
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 18px;
+    }}
+    th, td {{
+      padding: 13px 14px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }}
+    th {{
+      color: var(--muted);
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }}
+    code {{
+      color: var(--ink);
+      background: #e1e8ee;
+      border-radius: 6px;
+      padding: 2px 5px;
+      overflow-wrap: anywhere;
+    }}
+    .excluded-scroll table {{
+      min-width: 1120px;
+    }}
+    @media (max-width: 760px) {{
+      .page {{
+        width: calc(100vw - 12px);
+        margin: 6px auto 22px;
+        gap: 14px;
+      }}
+      .hero {{
+        padding: 22px 18px;
+        border-radius: 22px;
+      }}
+      .hero-top {{
+        flex-direction: column;
+      }}
+      .hero-tools {{
+        justify-items: start;
+        min-width: 0;
+      }}
+      .lang-wrap {{
+        text-align: left;
+        justify-items: start;
+      }}
+      .flag-switcher {{
+        justify-self: start;
+      }}
+      .hero h1 {{
+        font-size: clamp(30px, 10vw, 42px);
+      }}
+      .hero p, p.section-note {{
+        font-size: 16px;
+      }}
+      .hero-logo {{
+        width: 144px;
+        max-width: 44vw;
+      }}
+      .card {{
+        padding: 20px 16px;
+        border-radius: 20px;
+      }}
+      h2 {{
+        font-size: 28px;
+      }}
+      table {{
+        font-size: 15px;
+      }}
+      .table-scroll table {{
+        min-width: 720px;
+      }}
+    }}
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <div class="hero-top">
+        <div>
+          <h1 id="filter-title">{translations['pt']['filter_title']}</h1>
+          <p id="filter-note">{translations['pt']['filter_note']}</p>
+        </div>
+        <div class="hero-tools">
+          <div class="lang-wrap">
+            <div class="flag-switcher" id="lang-picker" role="group" aria-label="Selecionar idioma" aria-expanded="false">
+              <button class="lang-flag active" type="button" data-lang="pt" aria-label="Brazil" aria-pressed="true" title="Brazil">
+                <span class="flag-disc" aria-hidden="true">
+                  <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+                    <defs><clipPath id="rules-flag-br"><circle cx="32" cy="32" r="32"/></clipPath></defs>
+                    <g clip-path="url(#rules-flag-br)">
+                      <rect width="64" height="64" fill="#009b3a"/>
+                      <polygon points="32,9 55,32 32,55 9,32" fill="#ffdf00"/>
+                      <circle cx="32" cy="32" r="12" fill="#002776"/>
+                      <path d="M19 31c8-5 18-5 26 0" fill="none" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round"/>
+                    </g>
+                  </svg>
+                </span>
+                <span class="flag-label">BR</span>
+              </button>
+              <button class="lang-flag" type="button" data-lang="en" aria-label="United States" aria-pressed="false" title="United States">
+                <span class="flag-disc" aria-hidden="true">
+                  <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+                    <defs><clipPath id="rules-flag-us"><circle cx="32" cy="32" r="32"/></clipPath></defs>
+                    <g clip-path="url(#rules-flag-us)">
+                      <rect width="64" height="64" fill="#ffffff"/>
+                      <rect width="64" height="5" y="0" fill="#b22234"/>
+                      <rect width="64" height="5" y="10" fill="#b22234"/>
+                      <rect width="64" height="5" y="20" fill="#b22234"/>
+                      <rect width="64" height="5" y="30" fill="#b22234"/>
+                      <rect width="64" height="5" y="40" fill="#b22234"/>
+                      <rect width="64" height="5" y="50" fill="#b22234"/>
+                      <rect width="64" height="4" y="60" fill="#b22234"/>
+                      <rect width="30" height="28" x="0" y="0" fill="#3c3b6e"/>
+                      <g fill="#ffffff">
+                        <circle cx="5" cy="5" r="1.2"/><circle cx="12" cy="5" r="1.2"/><circle cx="19" cy="5" r="1.2"/><circle cx="26" cy="5" r="1.2"/>
+                        <circle cx="8.5" cy="10" r="1.2"/><circle cx="15.5" cy="10" r="1.2"/><circle cx="22.5" cy="10" r="1.2"/>
+                        <circle cx="5" cy="15" r="1.2"/><circle cx="12" cy="15" r="1.2"/><circle cx="19" cy="15" r="1.2"/><circle cx="26" cy="15" r="1.2"/>
+                        <circle cx="8.5" cy="20" r="1.2"/><circle cx="15.5" cy="20" r="1.2"/><circle cx="22.5" cy="20" r="1.2"/>
+                        <circle cx="5" cy="25" r="1.2"/><circle cx="12" cy="25" r="1.2"/><circle cx="19" cy="25" r="1.2"/><circle cx="26" cy="25" r="1.2"/>
+                      </g>
+                    </g>
+                  </svg>
+                </span>
+                <span class="flag-label">US</span>
+              </button>
+              <button class="lang-flag" type="button" data-lang="de" aria-label="Germany" aria-pressed="false" title="Germany">
+                <span class="flag-disc" aria-hidden="true">
+                  <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+                    <defs><clipPath id="rules-flag-de"><circle cx="32" cy="32" r="32"/></clipPath></defs>
+                    <g clip-path="url(#rules-flag-de)">
+                      <rect width="64" height="21.34" y="0" fill="#000000"/>
+                      <rect width="64" height="21.33" y="21.34" fill="#dd0000"/>
+                      <rect width="64" height="21.33" y="42.67" fill="#ffce00"/>
+                    </g>
+                  </svg>
+                </span>
+                <span class="flag-label">DE</span>
+              </button>
+              <button class="lang-flag" type="button" data-lang="es" aria-label="Spain" aria-pressed="false" title="Spain">
+                <span class="flag-disc" aria-hidden="true">
+                  <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+                    <defs><clipPath id="rules-flag-es"><circle cx="32" cy="32" r="32"/></clipPath></defs>
+                    <g clip-path="url(#rules-flag-es)">
+                      <rect width="64" height="64" fill="#f1bf00"/>
+                      <rect width="64" height="16" y="0" fill="#aa151b"/>
+                      <rect width="64" height="16" y="48" fill="#aa151b"/>
+                    </g>
+                  </svg>
+                </span>
+                <span class="flag-label">ES</span>
+              </button>
+              <button class="lang-flag" type="button" data-lang="pl" aria-label="Poland" aria-pressed="false" title="Poland">
+                <span class="flag-disc" aria-hidden="true">
+                  <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+                    <defs><clipPath id="rules-flag-pl"><circle cx="32" cy="32" r="32"/></clipPath></defs>
+                    <g clip-path="url(#rules-flag-pl)">
+                      <rect width="64" height="64" fill="#ffffff"/>
+                      <rect width="64" height="32" y="32" fill="#dc143c"/>
+                    </g>
+                  </svg>
+                </span>
+                <span class="flag-label">PL</span>
+              </button>
+              <button class="lang-flag" type="button" data-lang="sk" aria-label="Slovakia" aria-pressed="false" title="Slovakia">
+                <span class="flag-disc" aria-hidden="true">
+                  <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+                    <defs><clipPath id="rules-flag-sk"><circle cx="32" cy="32" r="32"/></clipPath></defs>
+                    <g clip-path="url(#rules-flag-sk)">
+                      <rect width="64" height="64" fill="#ee1c25"/>
+                      <rect width="64" height="42.67" y="0" fill="#0b4ea2"/>
+                      <rect width="64" height="21.33" y="0" fill="#ffffff"/>
+                    </g>
+                  </svg>
+                </span>
+                <span class="flag-label">SK</span>
+              </button>
+              <button class="lang-flag" type="button" data-lang="zh" aria-label="China" aria-pressed="false" title="China">
+                <span class="flag-disc" aria-hidden="true">
+                  <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+                    <defs><clipPath id="rules-flag-zh"><circle cx="32" cy="32" r="32"/></clipPath></defs>
+                    <g clip-path="url(#rules-flag-zh)">
+                      <rect width="64" height="64" fill="#de2910"/>
+                      <polygon points="14,10 16.8,18 25.2,18 18.4,22.8 21,31 14,25.9 7,31 9.6,22.8 2.8,18 11.2,18" fill="#ffde00"/>
+                      <circle cx="28" cy="12" r="2.3" fill="#ffde00"/>
+                      <circle cx="32" cy="19" r="2.3" fill="#ffde00"/>
+                      <circle cx="31" cy="28" r="2.3" fill="#ffde00"/>
+                      <circle cx="24" cy="33" r="2.3" fill="#ffde00"/>
+                    </g>
+                  </svg>
+                </span>
+                <span class="flag-label">CN</span>
+              </button>
+              <button class="lang-flag" type="button" data-lang="hi" aria-label="India" aria-pressed="false" title="India">
+                <span class="flag-disc" aria-hidden="true">
+                  <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+                    <defs><clipPath id="rules-flag-hi"><circle cx="32" cy="32" r="32"/></clipPath></defs>
+                    <g clip-path="url(#rules-flag-hi)">
+                      <rect width="64" height="64" fill="#138808"/>
+                      <rect width="64" height="42.67" y="0" fill="#ffffff"/>
+                      <rect width="64" height="21.33" y="0" fill="#ff9933"/>
+                      <circle cx="32" cy="32" r="7.5" fill="none" stroke="#1a4ba0" stroke-width="2.4"/>
+                    </g>
+                  </svg>
+                </span>
+                <span class="flag-label">IN</span>
+              </button>
+            </div>
+          </div>
+          {f'<img class="hero-logo" src="{logo_rel}" alt="Logo Volkswagen">' if logo_rel else ''}
+        </div>
+      </div>
+    </section>
+    <a class="back-button" id="rules-page-back" href="{html_path.name}">{translations['pt']['rules_page_back']}</a>
+    <section class="card">
+      <h2 id="rules-page-rules-title">{translations['pt']['rules_page_rules_title']}</h2>
+      <p class="section-note" id="rules-page-rules-note">{translations['pt']['rules_page_rules_note']}</p>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th id="filter-h-filter">{translations['pt']['filter_h_filter']}</th>
+              <th id="filter-h-rule">{translations['pt']['filter_h_rule']}</th>
+              <th id="filter-h-impact">{translations['pt']['filter_h_impact']}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filter_criteria_html}
+          </tbody>
+        </table>
+      </div>
+      <h2 class="subsection-title" id="excluded-title">{translations['pt']['excluded_title']}</h2>
+      <p class="section-note" id="excluded-note">{translations['pt']['excluded_note']}</p>
+      <div class="table-scroll excluded-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th id="excluded-h-area">{translations['pt']['excluded_h_area']}</th>
+              <th id="excluded-h-dept">{translations['pt']['excluded_h_dept']}</th>
+              <th id="excluded-h-heritage">{translations['pt']['excluded_h_heritage']}</th>
+              <th id="excluded-h-reason">{translations['pt']['excluded_h_reason']}</th>
+              <th id="excluded-h-people">{translations['pt']['excluded_h_people']}</th>
+              <th id="excluded-h-exec">{translations['pt']['excluded_h_exec']}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {excluded_areas_html}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <script>
+    if (new URLSearchParams(window.location.search).has('overlay')) {{
+      document.body.classList.add('overlay-mode');
+    }}
+    const translations = {json.dumps(translations, ensure_ascii=False)};
+    const langMap = {{
+      pt: 'pt-BR',
+      de: 'de',
+      en: 'en',
+      es: 'es',
+      pl: 'pl',
+      sk: 'sk',
+      zh: 'zh-CN',
+      hi: 'hi-IN',
+      fr: 'fr',
+      it: 'it',
+    }};
+    const titleMap = {{
+      pt: 'Regras usadas e áreas não analisadas',
+      de: 'Verwendete Regeln und nicht analysierte Bereiche',
+      en: 'Rules Used and Areas Not Analyzed',
+      es: 'Reglas usadas y áreas no analizadas',
+      pl: 'Zastosowane reguły i nieanalizowane obszary',
+      sk: 'Použité pravidlá a neanalyzované oblasti',
+      zh: '使用的规则和未分析区域',
+      hi: 'उपयोग किए गए नियम और विश्लेषण से बाहर क्षेत्र',
+      fr: 'Règles utilisées et zones non analysées',
+      it: 'Regole usate e aree non analizzate',
+    }};
+    const preferredLangOrder = ['pt', 'en', 'de', 'es', 'pl', 'sk', 'zh', 'hi'];
+    function setText(id, value) {{
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = value;
+    }}
+    function applyRulesLanguage(lang) {{
+      const t = translations[lang] || translations.pt;
+      document.documentElement.lang = langMap[lang] || 'pt-BR';
+      document.title = titleMap[lang] || titleMap.pt;
+      langButtons.forEach((button) => {{
+        const active = button.dataset.lang === lang;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-pressed', active ? 'true' : 'false');
+      }});
+      syncLanguageMenu(lang);
+      setText('filter-title', t.filter_title);
+      setText('filter-note', t.filter_note);
+      setText('rules-page-back', t.rules_page_back);
+      setText('rules-page-rules-title', t.rules_page_rules_title);
+      setText('rules-page-rules-note', t.rules_page_rules_note);
+      setText('filter-h-filter', t.filter_h_filter);
+      setText('filter-h-rule', t.filter_h_rule);
+      setText('filter-h-impact', t.filter_h_impact);
+      setText('excluded-title', t.excluded_title);
+      setText('excluded-note', t.excluded_note);
+      setText('excluded-h-area', t.excluded_h_area);
+      setText('excluded-h-dept', t.excluded_h_dept);
+      setText('excluded-h-heritage', t.excluded_h_heritage);
+      setText('excluded-h-reason', t.excluded_h_reason);
+      setText('excluded-h-people', t.excluded_h_people);
+      setText('excluded-h-exec', t.excluded_h_exec);
+      const fallback = translations.en || translations.pt;
+      const filterRows = t.rules_page_filter_rows || fallback.rules_page_filter_rows || [];
+      document.querySelectorAll('[data-filter-row]').forEach((row) => {{
+        const translated = filterRows[Number(row.dataset.filterRow)];
+        if (!translated) return;
+        ['filter', 'rule', 'impact'].forEach((field) => {{
+          const cell = row.querySelector(`[data-filter-field="${{field}}"]`);
+          if (cell) cell.textContent = translated[field] || '';
+        }});
+      }});
+      const reasonMap = t.excluded_reason_map || fallback.excluded_reason_map || {{}};
+      document.querySelectorAll('[data-area-reason]').forEach((cell) => {{
+        const key = cell.dataset.areaReason;
+        cell.textContent = reasonMap[key] || key;
+      }});
+      setText('excluded-empty-message', t.excluded_empty_message || fallback.excluded_empty_message);
+      try {{
+        localStorage.setItem('attendanceLang', lang);
+      }} catch (error) {{}}
+      if (window.parent && window.parent !== window) {{
+        window.parent.postMessage({{ type: 'attendance-language-change', lang }}, '*');
+      }}
+    }}
+    const langPicker = document.getElementById('lang-picker');
+    const langButtons = Array.from(document.querySelectorAll('.lang-flag'));
+    function syncLanguageMenu(activeLang) {{
+      if (!langPicker) return;
+      const menuStep = window.matchMedia('(max-width: 760px)').matches ? 56 : 64;
+      const menuBaseHeight = window.matchMedia('(max-width: 760px)').matches ? 48 : 56;
+      const available = langButtons.map((button) => button.dataset.lang);
+      const ordered = [activeLang, ...preferredLangOrder.filter((lang) => lang !== activeLang && available.includes(lang))];
+      const menuHeight = Math.max(menuBaseHeight, menuBaseHeight + (ordered.length - 1) * menuStep);
+      const rect = langPicker.getBoundingClientRect();
+      const viewportGap = 12;
+      const panelPad = 10;
+      const menuWidth = rect.width || (window.matchMedia('(max-width: 760px)').matches ? 124 : 132);
+      const openUp = rect.top + menuHeight + panelPad > window.innerHeight - viewportGap && rect.bottom - menuHeight - panelPad > viewportGap;
+      const preferredTop = openUp ? rect.bottom - menuHeight : rect.top;
+      const maxTop = Math.max(viewportGap + panelPad, window.innerHeight - menuHeight - panelPad);
+      const menuTop = Math.min(Math.max(viewportGap + panelPad, preferredTop), maxTop);
+      const maxLeft = Math.max(viewportGap + panelPad, window.innerWidth - menuWidth - panelPad);
+      const menuLeft = Math.min(Math.max(viewportGap + panelPad, rect.right - menuWidth), maxLeft);
+      langButtons.forEach((button) => {{
+        const slot = Math.max(0, ordered.indexOf(button.dataset.lang));
+        const visualSlot = openUp ? ordered.length - 1 - slot : slot;
+        button.style.setProperty('--menu-y', `${{slot * menuStep}}px`);
+        button.style.setProperty('--menu-fixed-top', `${{menuTop + visualSlot * menuStep}}px`);
+        button.style.setProperty('--menu-fixed-left', `${{menuLeft}}px`);
+      }});
+      langPicker.style.setProperty('--menu-base-height', `${{menuBaseHeight}}px`);
+      langPicker.style.setProperty('--menu-height', `${{menuHeight}}px`);
+      langPicker.style.setProperty('--menu-panel-top', `${{menuTop - panelPad}}px`);
+      langPicker.style.setProperty('--menu-panel-left', `${{menuLeft - panelPad}}px`);
+      langPicker.style.setProperty('--menu-panel-width', `${{menuWidth + panelPad * 2}}px`);
+      langPicker.style.setProperty('--menu-panel-height', `${{menuHeight + panelPad * 2}}px`);
+    }}
+    function closeLanguageMenu() {{
+      if (!langPicker) return;
+      langPicker.classList.remove('open');
+      langPicker.setAttribute('aria-expanded', 'false');
+    }}
+    function toggleLanguageMenu() {{
+      if (!langPicker) return;
+      const shouldOpen = !langPicker.classList.contains('open');
+      if (shouldOpen) {{
+        const activeButton = langButtons.find((button) => button.classList.contains('active'));
+        syncLanguageMenu(activeButton ? activeButton.dataset.lang : 'pt');
+      }}
+      langPicker.classList.toggle('open', shouldOpen);
+      langPicker.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+    }}
+    function refreshOpenLanguageMenu() {{
+      if (!langPicker || !langPicker.classList.contains('open')) return;
+      const activeButton = langButtons.find((button) => button.classList.contains('active'));
+      syncLanguageMenu(activeButton ? activeButton.dataset.lang : 'pt');
+    }}
+    langButtons.forEach((button) => {{
+      button.addEventListener('click', (event) => {{
+        event.stopPropagation();
+        if (button.classList.contains('active')) {{
+          toggleLanguageMenu();
+          return;
+        }}
+        applyRulesLanguage(button.dataset.lang);
+        closeLanguageMenu();
+      }});
+    }});
+    document.addEventListener('click', (event) => {{
+      if (langPicker && !langPicker.contains(event.target)) closeLanguageMenu();
+    }});
+    window.addEventListener('resize', refreshOpenLanguageMenu);
+    window.addEventListener('scroll', refreshOpenLanguageMenu, {{ passive: true }});
     document.addEventListener('keydown', (event) => {{
       if (event.key === 'Escape') closeLanguageMenu();
     }});
-    applyLanguage('pt');
+    const savedRulesLang = (() => {{
+      try {{
+        return localStorage.getItem('attendanceLang') || 'pt';
+      }} catch (error) {{
+        return 'pt';
+      }}
+    }})();
+    applyRulesLanguage(translations[savedRulesLang] ? savedRulesLang : 'pt');
     closeLanguageMenu();
   </script>
 </body>
 </html>
 """
     html_path.write_text(html, encoding="utf-8")
+    rules_page_path.write_text(rules_page_html, encoding="utf-8")
 
 
 def write_text_summary(
     output_dir: Path,
     exec_summary: pd.DataFrame,
+    filter_criteria_df: pd.DataFrame,
+    excluded_areas_df: pd.DataFrame,
     cumulative_df: pd.DataFrame,
     distribution_df: pd.DataFrame,
     cargo_df: pd.DataFrame,
@@ -3104,6 +5675,9 @@ def write_text_summary(
     summary_map = dict(exec_summary.values.tolist())
     weekly_low = weekly_manager_df.loc[weekly_manager_df["media_presenca"].idxmin()]
     weekly_last = weekly_manager_df.iloc[-1]
+    week_type_median_df = build_week_type_median_summary(weekly_manager_df)
+    holiday_bridge_window_df = build_holiday_bridge_window(weekly_manager_df)
+    holiday_bridge_window_summary_df = build_holiday_bridge_window_summary(holiday_bridge_window_df)
     focus_departments = ", ".join(
         f"{row['Area']} | {row['Departamento']} ({float(row['criticidade_media_recente']):.1f}%)"
         for row in department_recent_df.head(5).to_dict(orient="records")
@@ -3122,7 +5696,7 @@ def write_text_summary(
         for row in cumulative_df.itertuples(index=False)
     )
     lines = [
-        "# Apresentação Seitz - Resumo Executivo",
+        "# Painel Executivo de Presença Presencial",
         "",
         "## Resposta curta",
         f"- {summary_map['Resposta curta']}",
@@ -3132,13 +5706,36 @@ def write_text_summary(
         f"- Referência: {summary_map['Data de referencia']} | Última semana: {summary_map['Ultima semana completa usada']}",
         f"- Período analisado: {summary_map['Periodo analisado']}",
         f"- Pessoas consideradas: {summary_map['Universo considerado']} | Desligados: {summary_map['Status dos desligados']}",
-        f"- Média de quem ficou abaixo de 90%: {summary_map['Media semanal dos nao aderentes']} | Mediana: {summary_map['Mediana semanal dos nao aderentes']}",
+        f"- Média de quem entrou no critério de descumprimento: {summary_map['Media semanal dos nao aderentes']} | Mediana: {summary_map['Mediana semanal dos nao aderentes']}",
         f"- Feriados: {summary_map['Semanas de feriado consideradas']} semanas | Férias removidas: {summary_map['Semanas de ferias coletivas removidas']} semanas",
         "",
         "## Especificações do pedido",
     ]
     for row in specs_df.to_dict(orient="records"):
         lines.append(f"- {row['Especificacao']}")
+    lines.extend(
+        [
+            "",
+            "## Filtros utilizados",
+        ]
+    )
+    for row in filter_criteria_df.to_dict(orient="records"):
+        lines.append(f"- {row['Filtro']}: {row['Regra usada']} ({row['Impacto']})")
+    lines.extend(
+        [
+            "",
+            "## Areas nao analisadas",
+        ]
+    )
+    if excluded_areas_df.empty:
+        lines.append("- Nenhuma area ficou fora do recorte de areas.")
+    else:
+        for row in excluded_areas_df.to_dict(orient="records"):
+            lines.append(
+                f"- {row['Area']} | {row['Departamento']}: {row['Motivo']} | "
+                f"{int(row['Pessoas Fora'])} pessoa(s) fora | "
+                f"{int(row['Executivos B-SKL Mantidos'])} executivo(s) B-SKL mantido(s)"
+            )
     lines.extend(
         [
             "",
@@ -3155,11 +5752,34 @@ def write_text_summary(
             "",
             "## Leituras para gestor de planta",
             f"- Menor presença média semanal: {float(weekly_low['media_presenca']):.2f} dia(s) na semana de {pd.Timestamp(weekly_low['Data']).strftime('%Y-%m-%d')}, contra meta média de {float(weekly_low['media_meta']):.2f} dia(s).",
-            f"- Última semana monitorada: {float(weekly_last['media_presenca']):.2f} dia(s) de presença média para meta de {float(weekly_last['media_meta']):.2f} dia(s).",
+            f"- Menor presença mediana semanal: {float(weekly_low['mediana_presenca']):.2f} dia(s) na semana de {pd.Timestamp(weekly_low['Data']).strftime('%Y-%m-%d')}.",
+            f"- Última semana monitorada: {float(weekly_last['media_presenca']):.2f} dia(s) de presença média e {float(weekly_last['mediana_presenca']):.2f} dia(s) de mediana para meta de {float(weekly_last['media_meta']):.2f} dia(s).",
             f"- Onde agir primeiro, por volume: {top_volume_text}.",
             f"- Onde o problema pesa mais, por percentual: {top_rate_text}.",
             "",
-            "## Faixas dentro do grupo abaixo de 90%",
+            "## Investigação leve: feriado + home office",
+        ]
+    )
+    for row in week_type_median_df.to_dict(orient="records"):
+        lines.append(
+            f"- {row['Tipo Semana']}: {int(row['Semanas'])} semana(s), mediana {float(row['Mediana Dias']):.2f} dia(s), "
+            f"media {float(row['Media Dias']):.2f} dia(s), menor mediana {float(row['Menor Mediana']):.2f} dia(s), "
+            f"{float(row['Percentual 0 ou 1 Dia']):.1f}% com 0 ou 1 dia."
+        )
+    lines.append("")
+    lines.append("## Janela do feriado: antes, durante e depois")
+    if holiday_bridge_window_summary_df.empty:
+        lines.append("- Nenhuma semana com feriado no periodo analisado.")
+    else:
+        for row in holiday_bridge_window_summary_df.to_dict(orient="records"):
+            lines.append(
+                f"- Feriado {pd.Timestamp(row['Feriado']).strftime('%Y-%m-%d')}: sinal geral {row['Sinal Geral']}. "
+                f"{row['Leitura']}"
+            )
+    lines.extend(
+        [
+            "",
+            "## Faixas dentro do grupo em descumprimento",
         ]
     )
     for row in cumulative_df.itertuples(index=False):
@@ -3180,7 +5800,7 @@ def write_text_summary(
     )
     for row in cargo_df.to_dict(orient="records"):
         lines.append(
-            f"- Cargo {row['Cargo']}: {int(row['Nao Aderentes'])} pessoas abaixo de 90% "
+            f"- Cargo {row['Cargo']}: {int(row['Nao Aderentes'])} pessoas no criterio de descumprimento "
             f"de {int(row['Total Pessoas'])} pessoas ({float(row['Percentual Nao Aderentes']):.1f}%)"
         )
     lines.extend(
@@ -3227,7 +5847,7 @@ def write_text_summary(
             "- Pessoas desligadas não entram no cálculo.",
             "- Considerados apenas cargos M e E.",
             "- Consideradas apenas áreas iniciando em B-.",
-            "- Excluídas áreas B-V e B-SNP.",
+            "- Excluídas áreas B-V, B-SNP e B-SKL, mantendo executivos B-SKL.",
             "- Em semanas com feriado, a meta considerada foi de 2 dias.",
             "- Em semanas normais, a meta considerada foi de 3 dias.",
             "- Semanas de férias coletivas foram removidas do cálculo.",
@@ -3247,7 +5867,9 @@ def build_metadata(config: AnalysisConfig, last_week: pd.Timestamp, week_rules_d
         "required_days": config.required_days,
         "holiday_required_days": REQ_PRESENTIAL_DAYS_HOLIDAY_WEEK,
         "adherence_threshold_pct": config.adherence_threshold_pct,
-        "factory_area_rule": "Area com prefixo B-, excluindo B-V e B-SNP.",
+        "non_compliance_gap_pct": NON_COMPLIANCE_GAP_PCT,
+        "non_compliance_rule_label": NON_COMPLIANCE_LIST_LABEL,
+        "factory_area_rule": "Area com prefixo B-, excluindo B-V, B-SNP e B-SKL, mantendo executivos B-SKL.",
         "collective_vacation_periods": [
             {"inicio": inicio.strftime("%Y-%m-%d"), "fim": fim.strftime("%Y-%m-%d")}
             for inicio, fim in COLLECTIVE_VACATION_PERIODS
@@ -3276,6 +5898,8 @@ def main() -> None:
         raw_df, last_week = fetch_weekly_data(conn, config)
 
     week_rules_df = build_week_rules(raw_df, config)
+    excluded_areas_df = build_excluded_area_summary(raw_df)
+    filter_criteria_df = build_filter_criteria_table(config, week_rules_df, excluded_areas_df)
     filtered_df = apply_factory_filters(raw_df)
     filtered_df = apply_week_rules(filtered_df, week_rules_df)
     all_people, bad = build_people_summary(filtered_df, config)
@@ -3299,16 +5923,19 @@ def main() -> None:
     excel_path = output_dir / "apresentacao_seitz_presencial_fraco.xlsx"
     chart_cumulative = charts_dir / "faixas_cumulativas.png"
     chart_weekly = charts_dir / "tendencia_semanal_criticidade.png"
+    chart_holiday_bridge = charts_dir / "janela_feriados_emenda.png"
     chart_department_heatmap = charts_dir / "heatmap_departamentos.png"
     chart_distribution = charts_dir / "distribuicao_faixas.png"
     html_path = output_dir / "apresentacao_seitz_presencial_fraco.html"
     json_path = output_dir / "resumo_execucao.json"
-    csv_bad_path = output_dir / "pessoas_abaixo_90.csv"
+    csv_bad_path = output_dir / "colaboradores_descumprimento_10.csv"
     csv_universe_path = output_dir / "pessoas_consideradas.csv"
 
     save_excel(
         excel_path,
         exec_summary=exec_summary,
+        filter_criteria_df=filter_criteria_df,
+        excluded_areas_df=excluded_areas_df,
         cumulative_df=cumulative_df,
         distribution_df=distribution_df,
         cargo_df=cargo_df,
@@ -3325,12 +5952,15 @@ def main() -> None:
     all_people.to_csv(csv_universe_path, index=False, encoding="utf-8-sig")
     plot_cumulative_thresholds(cumulative_df, chart_cumulative)
     plot_weekly_criticality(weekly_manager_df, chart_weekly)
+    plot_holiday_bridge_window(build_holiday_bridge_window(weekly_manager_df), chart_holiday_bridge)
     plot_department_heatmap(department_heatmap_df, chart_department_heatmap)
     plot_distribution(distribution_df, chart_distribution)
     build_html_report(
         html_path=html_path,
         metadata=metadata,
         exec_summary=exec_summary,
+        filter_criteria_df=filter_criteria_df,
+        excluded_areas_df=excluded_areas_df,
         cumulative_df=cumulative_df,
         distribution_df=distribution_df,
         area_df=area_df,
@@ -3338,6 +5968,7 @@ def main() -> None:
         department_recent_df=department_recent_df,
         chart_cumulative=chart_cumulative,
         chart_weekly=chart_weekly,
+        chart_holiday_bridge=chart_holiday_bridge,
         chart_department_heatmap=chart_department_heatmap,
         chart_distribution=chart_distribution,
         logo_path=logo_path,
@@ -3345,6 +5976,8 @@ def main() -> None:
     write_text_summary(
         output_dir=output_dir,
         exec_summary=exec_summary,
+        filter_criteria_df=filter_criteria_df,
+        excluded_areas_df=excluded_areas_df,
         cumulative_df=cumulative_df,
         distribution_df=distribution_df,
         cargo_df=cargo_df,
@@ -3363,6 +5996,8 @@ def main() -> None:
             {
                 **metadata,
                 "specifications": specs_df.to_dict(orient="records"),
+                "filter_criteria": filter_criteria_df.to_dict(orient="records"),
+                "excluded_areas": excluded_areas_df.to_dict(orient="records"),
                 "summary": exec_summary.to_dict(orient="records"),
                 "cumulative_buckets": cumulative_df.to_dict(orient="records"),
                 "distribution_buckets": distribution_df.to_dict(orient="records"),
@@ -3370,6 +6005,14 @@ def main() -> None:
                 "focus_rate": focus_rate_df.to_dict(orient="records"),
                 "weekly_manager_summary": weekly_manager_df.assign(
                     Data=weekly_manager_df["Data"].dt.strftime("%Y-%m-%d")
+                ).to_dict(orient="records"),
+                "week_type_medians": build_week_type_median_summary(weekly_manager_df).to_dict(orient="records"),
+                "holiday_bridge_investigation": build_holiday_bridge_investigation(weekly_manager_df).assign(
+                    Semana=lambda df: pd.to_datetime(df["Semana"], errors="coerce").dt.strftime("%Y-%m-%d")
+                ).to_dict(orient="records"),
+                "holiday_bridge_window": build_holiday_bridge_window(weekly_manager_df).assign(
+                    Feriado=lambda df: pd.to_datetime(df["Feriado"], errors="coerce").dt.strftime("%Y-%m-%d"),
+                    Semana=lambda df: pd.to_datetime(df["Semana"], errors="coerce").dt.strftime("%Y-%m-%d"),
                 ).to_dict(orient="records"),
                 "department_recent_summary": department_recent_df.to_dict(orient="records"),
                 "weekly_rules": week_rules_json.to_dict(orient="records"),
@@ -3382,8 +6025,9 @@ def main() -> None:
 
     print(f"Arquivos gerados em: {output_dir}")
     print(f"- HTML: {html_path.name}")
+    print(f"- Página de regras/áreas: {html_path.with_name('regras_areas_nao_analisadas.html').name}")
     print(f"- Excel: {excel_path.name}")
-    print(f"- CSV pessoas abaixo de 90%: {csv_bad_path.name}")
+    print(f"- CSV colaboradores em descumprimento: {csv_bad_path.name}")
     print(f"- CSV pessoas consideradas: {csv_universe_path.name}")
 
 

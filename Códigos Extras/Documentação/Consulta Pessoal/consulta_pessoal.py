@@ -21,15 +21,30 @@ from typing import Any
 # Evita dependencia de Tcl/Tk ao gerar PDF no runtime embutido.
 os.environ["MPLBACKEND"] = "Agg"
 
-try:
-    import matplotlib
-    matplotlib.use("Agg", force=True)
-    import matplotlib.pyplot as plt
-    plt.switch_backend("Agg")
-    from matplotlib.backends.backend_pdf import PdfPages
-except Exception:  # pragma: no cover
-    plt = None
-    PdfPages = None
+plt = None
+PdfPages = None
+_MATPLOTLIB_IMPORT_ERROR: Exception | None = None
+
+
+def _ensure_matplotlib() -> bool:
+    global plt, PdfPages, _MATPLOTLIB_IMPORT_ERROR
+    if (plt is not None) and (PdfPages is not None):
+        return True
+    try:
+        import matplotlib
+        matplotlib.use("Agg", force=True)
+        import matplotlib.pyplot as plt_mod
+        plt_mod.switch_backend("Agg")
+        from matplotlib.backends.backend_pdf import PdfPages as PdfPages_mod
+        plt = plt_mod
+        PdfPages = PdfPages_mod
+        _MATPLOTLIB_IMPORT_ERROR = None
+        return True
+    except Exception as exc:  # pragma: no cover
+        _MATPLOTLIB_IMPORT_ERROR = exc
+        plt = None
+        PdfPages = None
+        return False
 
 
 DEFAULT_BASE_URL = "https://vwbransvprve1.sa.vwg/recursos.humanos.consultapessoal/default.htm"
@@ -48,7 +63,43 @@ TIPOS_BUSCA_VALIDOS = {TIPO_BUSCA_AUTO, TIPO_BUSCA_CHAPA, TIPO_BUSCA_NOME, TIPO_
 MENSAGEM_NOME_NAO_ENCONTRADO = "Não foi encontrado ninguém com esse nome"
 ENV_CHAVE_BUSCA = "CONSULTA_PESSOAL_CHAVE_BUSCA"
 ENV_CHAVE_BUSCA_LEGADA = "CONSULTA_PESSOAL_SOLICITADA"
+ENV_OUT_DIR = "CONSULTA_PESSOAL_OUT_DIR"
+ENV_CAMPOS_RELATORIO = "CONSULTA_PESSOAL_CAMPOS_RELATORIO"
 WEB_ERROR_LOG = "consulta_pessoal_web_error.log"
+CAMPOS_RELATORIO_PADRAO = [
+    "Número Pessoal",
+    "Nome",
+    "Unidade Organizacional",
+    "CPI",
+    "Ramal",
+    "Area de RH",
+    "Centro de Custo",
+    "C.Pto.",
+    "Ocupação",
+    "Sub Grupo Empregado",
+    "Admissão",
+    "Demissão",
+    "Nick Name",
+    "Empresa",
+    "Função",
+    "Endereço",
+    "Bairro",
+    "CEP",
+    "Cidade",
+    "UF",
+    "DDD",
+    "Fone",
+    "Sexo",
+    "Estado Civil",
+    "Data Nascimento",
+    "Nome do Pai",
+    "Nome da Mãe",
+    "RG",
+    "CNPF",
+    "PIS",
+    "Nº Prof",
+    "Série Prof.",
+]
 
 
 def _data_hoje() -> date:
@@ -440,12 +491,140 @@ def _normalize_ascii_upper(txt: str) -> str:
     return t.upper()
 
 
+def _campo_token(campo: str) -> str:
+    txt = _normalize_ascii_upper(str(campo or ""))
+    txt = txt.replace("º", "O").replace("°", "O")
+    txt = re.sub(r"[^A-Z0-9]+", " ", txt)
+    txt = re.sub(r"\s+", " ", txt).strip()
+    aliases = {
+        "NO PESSOAL": "NUMERO PESSOAL",
+        "N PESSOAL": "NUMERO PESSOAL",
+        "NUM PESSOAL": "NUMERO PESSOAL",
+        "AREA RH": "AREA DE RH",
+        "AREA DE RH": "AREA DE RH",
+        "CPTO": "C PTO",
+        "C PTO": "C PTO",
+        "SUBGRUPO EMPREGADO": "SUB GRUPO EMPREGADO",
+        "SUB GRUPO EMPREG": "SUB GRUPO EMPREGADO",
+        "DATA DE NASCIMENTO": "DATA NASCIMENTO",
+        "N PROF": "NO PROF",
+        "NUMERO PROF": "NO PROF",
+        "SERIE PROF": "SERIE PROF",
+        "SERIE PROFISSIONAL": "SERIE PROF",
+        "CPF": "CNPF",
+    }
+    return aliases.get(txt, txt)
+
+
+def _campos_relatorio_por_token() -> dict[str, str]:
+    return {_campo_token(campo): campo for campo in CAMPOS_RELATORIO_PADRAO}
+
+
+def _split_campos_text(raw: str) -> list[str]:
+    txt = str(raw or "").replace("\r", "\n")
+    return [p.strip() for p in re.split(r"\s*(?:\||;|\n)\s*", txt) if p and p.strip()]
+
+
+def _normalizar_campos_relatorio(values: list[str] | str | None, *, default_all: bool = True) -> list[str]:
+    if values is None:
+        vals: list[str] = []
+    elif isinstance(values, str):
+        vals = _split_campos_text(values)
+    else:
+        vals = []
+        for item in values:
+            vals.extend(_split_campos_text(str(item or "")))
+
+    allowed = _campos_relatorio_por_token()
+    out: list[str] = []
+    seen: set[str] = set()
+    for val in vals:
+        token = _campo_token(val)
+        if token not in allowed or token in seen:
+            continue
+        out.append(allowed[token])
+        seen.add(token)
+    if not out and default_all:
+        return list(CAMPOS_RELATORIO_PADRAO)
+    return out
+
+
+def _filtrar_rows_por_campos(rows: list[list[str]], campos: list[str] | str | None) -> list[list[str]]:
+    selected = set(
+        _campo_token(c)
+        for c in _normalizar_campos_relatorio(campos, default_all=True)
+    )
+    out: list[list[str]] = []
+    for row in list(rows or []):
+        if (not isinstance(row, (list, tuple))) or len(row) < 2:
+            continue
+        if _campo_token(str(row[0] or "")) in selected:
+            out.append([str(row[0] or ""), str(row[1] or "")])
+    return out
+
+
+def _default_saida_dir(script_dir: Path) -> Path:
+    return _pasta_base_consulta(script_dir) / PASTA_SAIDA_CONSULTA
+
+
+def _saida_dir_from_text(raw: str, script_dir: Path) -> Path:
+    txt = str(raw or "").strip().strip('"').strip("'")
+    if not txt:
+        return _default_saida_dir(script_dir)
+    txt = os.path.expandvars(os.path.expanduser(txt))
+    p = Path(txt)
+    if not p.is_absolute():
+        p = _pasta_base_consulta(script_dir) / p
+    return p
+
+
 def _formatar_numero_pessoal(val: str) -> str:
     v = str(val or "").strip()
     dig = "".join(ch for ch in v if ch.isdigit())
     if dig.startswith("00") and (len(dig) > 2):
         dig = dig[2:]
     return dig or v
+
+
+def _normalizar_cpf(val: object) -> str:
+    dig = "".join(ch for ch in str(val or "") if ch.isdigit())
+    return dig if len(dig) == 11 else ""
+
+
+def _valor_cpf_vazio_ou_zero(val: object) -> bool:
+    txt = str(val or "").strip()
+    dig = "".join(ch for ch in txt if ch.isdigit())
+    if not txt:
+        return True
+    if dig and set(dig) <= {"0"}:
+        return True
+    txt_u = _normalize_ascii_upper(txt).replace(" ", "")
+    return txt_u in {"*", "**", "***", "NA", "N/A", "SEMINFO", "SEMDADO"}
+
+
+def _garantir_cpf_rows(rows: list[list[str]], cpf: str) -> list[list[str]]:
+    cpf_norm = _normalizar_cpf(cpf)
+    if not cpf_norm:
+        return rows
+
+    out: list[list[str]] = []
+    found = False
+    for row in list(rows or []):
+        if not row:
+            continue
+        campo = str(row[0] if len(row) > 0 else "")
+        valor = str(row[1] if len(row) > 1 else "")
+        token = _campo_token(campo)
+        if token == "CNPF":
+            found = True
+            campo = "CNPF"
+            if _valor_cpf_vazio_ou_zero(valor):
+                valor = cpf_norm
+        out.append([campo, valor])
+
+    if not found:
+        out.append(["CNPF", cpf_norm])
+    return out
 
 
 def _rows_from_sources(fichas: list[dict[str, Any]], linhas: list[str] | None = None) -> list[list[str]]:
@@ -663,6 +842,11 @@ def _profiles_from_result(info: dict[str, Any]) -> list[dict[str, Any]]:
     ok = bool(info.get("ok"))
     nome_solicitado = str(info.get("nome_solicitado") or "").strip()
     cadastro_base = _formatar_numero_pessoal(str(info.get("cadastro") or "").strip())
+    cpf_consultado = _normalizar_cpf(
+        info.get("cpf_consultado")
+        or info.get("cpf")
+        or str(info.get("cadastro") or "")
+    )
 
     print_path = str(info.get("print_path") or "").strip()
     foto_path = str(info.get("foto_path") or "").strip()
@@ -675,7 +859,7 @@ def _profiles_from_result(info: dict[str, Any]) -> list[dict[str, Any]]:
         vv = str(v or "").strip()
         if kk and vv:
             fotos_map[kk] = vv
-    fallback_img = _first_existing_path([print_path, foto_path, *list(fotos_map.values())])
+    fallback_img = _first_existing_path([foto_path, *list(fotos_map.values()), print_path])
 
     foto_por_nome: dict[str, str] = {}
     for ficha in fichas:
@@ -703,7 +887,7 @@ def _profiles_from_result(info: dict[str, Any]) -> list[dict[str, Any]]:
             foto_por_nome[nome_key] = img_ficha
 
     if not fichas:
-        rows = _rows_from_sources([], linhas)
+        rows = _garantir_cpf_rows(_rows_from_sources([], linhas), cpf_consultado)
         cad = cadastro_base or _formatar_numero_pessoal(_extract_row_first(rows, {"NUMERO PESSOAL", "NO PESSOAL"}))
         nome = nome_solicitado or _extract_row_first(rows, {"NOME"})
         return [
@@ -738,7 +922,7 @@ def _profiles_from_result(info: dict[str, Any]) -> list[dict[str, Any]]:
     profiles: list[dict[str, Any]] = []
     for gk in order_keys:
         gf = groups[gk]
-        rows = _rows_from_sources(gf, [])
+        rows = _garantir_cpf_rows(_rows_from_sources(gf, []), cpf_consultado)
         cad_row = _formatar_numero_pessoal(_extract_row_first(rows, {"NUMERO PESSOAL", "NO PESSOAL"}))
         nome_row = _extract_row_first(rows, {"NOME"})
         cad = cad_row or ("" if gk.startswith("SEM_CHAPA_") else gk) or cadastro_base
@@ -764,7 +948,7 @@ def _profiles_from_result(info: dict[str, Any]) -> list[dict[str, Any]]:
         )
 
     if (len(profiles) == 1) and (not profiles[0]["rows"]):
-        profiles[0]["rows"] = _rows_from_sources([], linhas)
+        profiles[0]["rows"] = _garantir_cpf_rows(_rows_from_sources([], linhas), cpf_consultado)
         if not profiles[0]["cadastro"]:
             profiles[0]["cadastro"] = cadastro_base
         if (not profiles[0]["nome"]) and nome_solicitado:
@@ -1030,14 +1214,21 @@ def _gerar_pdf_unico(
     out_pdf: Path,
     data_referencia: date,
     solicitante: str,
+    campos_relatorio: list[str] | str | None = None,
 ) -> str:
-    if (plt is None) or (PdfPages is None):
+    if not _ensure_matplotlib():
         return ""
     if not resultados:
         return ""
     pages: list[dict[str, Any]] = []
     for info in resultados:
-        pages.extend(_profiles_from_result(info))
+        for profile in _profiles_from_result(info):
+            profile = dict(profile)
+            profile["rows"] = _filtrar_rows_por_campos(
+                list(profile.get("rows") or []),
+                campos_relatorio,
+            )
+            pages.append(profile)
     if not pages:
         return ""
     out_pdf.parent.mkdir(parents=True, exist_ok=True)
@@ -1341,12 +1532,19 @@ def _gerar_word_unico(
     out_word: Path,
     data_referencia: date,
     solicitante: str,
+    campos_relatorio: list[str] | str | None = None,
 ) -> str:
     if not resultados:
         return ""
     pages: list[dict[str, Any]] = []
     for info in resultados:
-        pages.extend(_profiles_from_result(info))
+        for profile in _profiles_from_result(info):
+            profile = dict(profile)
+            profile["rows"] = _filtrar_rows_por_campos(
+                list(profile.get("rows") or []),
+                campos_relatorio,
+            )
+            pages.append(profile)
     if not pages:
         return ""
     out_word.parent.mkdir(parents=True, exist_ok=True)
@@ -1596,6 +1794,7 @@ def _consultar_item_por_tipo(
         consultar_cpf = getattr(client, "consultar_por_cpf", None)
         if callable(consultar_cpf):
             info_cpf = consultar_cpf(termo)
+            info_cpf["cpf_consultado"] = _normalizar_cpf(digits or termo)
             if bool(info_cpf.get("ok")):
                 if not str(info_cpf.get("cadastro") or "").strip():
                     info_cpf["cadastro"] = digits or termo
@@ -1631,6 +1830,7 @@ def _consultar_item_por_tipo(
             consultar_cpf = getattr(client, "consultar_por_cpf", None)
             if callable(consultar_cpf):
                 info_cpf = consultar_cpf(termo_cad)
+                info_cpf["cpf_consultado"] = _normalizar_cpf(termo_cad)
                 if bool(info_cpf.get("ok")):
                     msg_old = str(info_cpf.get("mensagem") or "").strip()
                     info_cpf["mensagem"] = (
@@ -1700,6 +1900,23 @@ def _build_web_page(
     def _sel(val: str) -> str:
         return " selected" if mode == val else ""
 
+    campos_selecionados = _normalizar_campos_relatorio(
+        form_values.get("campos_relatorio", ""),
+        default_all=(str(form_values.get("campos_personalizados", "")).strip() != "1"),
+    )
+    campos_tokens = {_campo_token(c) for c in campos_selecionados}
+    campos_checks = []
+    for campo in CAMPOS_RELATORIO_PADRAO:
+        checked = " checked" if _campo_token(campo) in campos_tokens else ""
+        campo_safe = html_escape(campo)
+        campos_checks.append(
+            "<label class='field-check'>"
+            f"<input type='checkbox' name='campos_relatorio' value='{campo_safe}'{checked} />"
+            f"<span>{campo_safe}</span>"
+            "</label>"
+        )
+    campos_html = "".join(campos_checks)
+
     status_toasts_json = json.dumps(
         [
             {"ok": bool(ok), "msg": str(msg or "").strip()}
@@ -1719,7 +1936,7 @@ def _build_web_page(
         cards = []
         for idx, row in enumerate(result_rows, start=1):
             rows = list(row.get("rows") or [])
-            if not rows:
+            if (not rows) and campos_selecionados:
                 rows = [
                     ["Alvo informado", str(row.get("alvo") or "")],
                     ["Status", str(row.get("status") or "")],
@@ -1753,7 +1970,9 @@ def _build_web_page(
             status_txt = str(row.get("status") or "").strip() or ("OK" if bool(row.get("ok")) else "FALHA")
             msg_txt = str(row.get("mensagem") or "").strip() or "Sem mensagem."
 
-            img_src = _image_data_uri(str(row.get("img_path") or ""))
+            img_src = str(row.get("img_src") or "").strip()
+            if not img_src:
+                img_src = _image_data_uri(str(row.get("img_path") or ""))
             if img_src:
                 img_html = f"<img class='item-image' src='{img_src}' alt='Imagem Consulta Pessoal' />"
             else:
@@ -1821,6 +2040,7 @@ def _build_web_page(
     data_ref_val = html_escape(form_values.get("data_referencia", ""))
     lista_val = html_escape(form_values.get("lista_alvos", ""))
     base_url_val = html_escape(form_values.get("base_url", DEFAULT_BASE_URL))
+    saida_dir_val = html_escape(form_values.get("saida_dir", ""))
 
     return f"""<!doctype html>
 <html lang="pt-BR">
@@ -1904,6 +2124,37 @@ def _build_web_page(
       margin-top: 14px;
       flex-wrap: wrap;
     }}
+    .field-toolbar {{
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      justify-content: flex-start;
+      flex-wrap: wrap;
+      margin: 4px 0 8px 0;
+    }}
+    .field-grid {{
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 7px 10px;
+      border: 1px solid #d9e3f2;
+      border-radius: 8px;
+      background: #fbfdff;
+      padding: 10px;
+    }}
+    .field-check {{
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+      margin: 0;
+      font-size: calc(11.5px * var(--font-scale));
+      font-weight: 500;
+      color: #24364f;
+    }}
+    .field-check input {{
+      width: auto;
+      margin-top: 4px;
+      flex: 0 0 auto;
+    }}
     button {{
       border: 0;
       background: var(--blue);
@@ -1916,6 +2167,13 @@ def _build_web_page(
     }}
     button.secondary {{
       background: #3f5f96;
+    }}
+    button.mini {{
+      background: #eef3fc;
+      color: #173459;
+      border: 1px solid #bfd0ea;
+      padding: 7px 10px;
+      font-size: calc(12px * var(--font-scale));
     }}
     .msg {{
       border-radius: 8px;
@@ -2123,6 +2381,9 @@ def _build_web_page(
       .grid, .grid3 {{
         grid-template-columns: 1fr;
       }}
+      .field-grid {{
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }}
       .item-grid {{
         grid-template-columns: 1fr;
       }}
@@ -2165,6 +2426,11 @@ def _build_web_page(
             <input type="text" name="solicitante" value="{solicitante_val}" />
           </div>
         </div>
+        <div class="row">
+          <label>Pasta de saída do PDF/Word</label>
+          <input type="text" name="saida_dir" value="{saida_dir_val}" />
+          <div class="hint">Informe uma pasta local ou de rede. Se ficar em branco, usa a pasta padrão de saídas.</div>
+        </div>
         <input type="hidden" name="base_url" value="{base_url_val}" />
         <div class="row">
           <label>Lista de Alvos (Ctrl+V)</label>
@@ -2172,6 +2438,15 @@ def _build_web_page(
         </div>
         <div class="row">
           <textarea name="lista_alvos" placeholder="Cole aqui sua lista">{lista_val}</textarea>
+        </div>
+        <div class="row">
+          <label>Campos para carregar no relatório</label>
+          <div class="field-toolbar">
+            <button type="button" class="mini" data-field-action="all">Selecionar todos</button>
+            <button type="button" class="mini" data-field-action="none">Limpar seleção</button>
+          </div>
+          <input type="hidden" name="campos_personalizados" value="1" />
+          <div class="field-grid">{campos_html}</div>
         </div>
         <div class="actions">
           <button type="submit" name="acao" value="validar" class="secondary">Validar Login no Site</button>
@@ -2187,6 +2462,17 @@ def _build_web_page(
   </div>
   <div id="web-toast-stack" class="web-toast-stack"></div>
   <script>
+    (function () {{
+      document.querySelectorAll("[data-field-action]").forEach(function (btn) {{
+        btn.addEventListener("click", function () {{
+          const checked = btn.getAttribute("data-field-action") === "all";
+          document.querySelectorAll("input[name='campos_relatorio']").forEach(function (input) {{
+            input.checked = checked;
+          }});
+        }});
+      }});
+    }})();
+
     (function () {{
       const items = {status_toasts_json};
       if (!Array.isArray(items) || !items.length) return;
@@ -2246,6 +2532,11 @@ def _run_web_front(args: argparse.Namespace, script_dir: Path, repo_root: Path) 
         default_mode = TIPO_BUSCA_CHAPA
         data_ref_default = _data_hoje().strftime("%d-%m-%Y")
         default_targets = _nomes_solicitados_from_env()
+        default_saida_dir = str(os.getenv(ENV_OUT_DIR, "")).strip() or str(_default_saida_dir(script_dir))
+        default_campos = _normalizar_campos_relatorio(
+            os.getenv(ENV_CAMPOS_RELATORIO, ""),
+            default_all=True,
+        )
         form_values: dict[str, str] = {
             "user": "",
             "password": "",
@@ -2253,6 +2544,9 @@ def _run_web_front(args: argparse.Namespace, script_dir: Path, repo_root: Path) 
             "data_referencia": data_ref_default,
             "solicitante": _solicitante_from_env(),
             "lista_alvos": "\n".join(default_targets),
+            "saida_dir": default_saida_dir,
+            "campos_relatorio": "|".join(default_campos),
+            "campos_personalizados": "",
             "base_url": str(args.base_url or DEFAULT_BASE_URL).strip(),
             "capturar_print": "1" if bool(args.capturar_print) else "",
             "debug_passos": "1" if bool(args.debug_passos) else "",
@@ -2265,6 +2559,10 @@ def _run_web_front(args: argparse.Namespace, script_dir: Path, repo_root: Path) 
         word_path = ""
         try:
             if request.method == "POST":
+                campos_post = _normalizar_campos_relatorio(
+                    list(request.form.getlist("campos_relatorio")),
+                    default_all=True,
+                )
                 form_values = {
                     "user": str(request.form.get("user", "")).strip(),
                     "password": str(request.form.get("password", "")).strip(),
@@ -2272,6 +2570,9 @@ def _run_web_front(args: argparse.Namespace, script_dir: Path, repo_root: Path) 
                     "data_referencia": str(request.form.get("data_referencia", "")).strip() or data_ref_default,
                     "solicitante": str(request.form.get("solicitante", "")).strip(),
                     "lista_alvos": str(request.form.get("lista_alvos", "")).strip(),
+                    "saida_dir": str(request.form.get("saida_dir", "")).strip() or default_saida_dir,
+                    "campos_relatorio": "|".join(campos_post),
+                    "campos_personalizados": "1",
                     "base_url": str(request.form.get("base_url", "")).strip() or DEFAULT_BASE_URL,
                     "capturar_print": "1" if str(request.form.get("capturar_print", "")).strip() == "1" else "",
                     "debug_passos": "1" if str(request.form.get("debug_passos", "")).strip() == "1" else "",
@@ -2283,6 +2584,8 @@ def _run_web_front(args: argparse.Namespace, script_dir: Path, repo_root: Path) 
                 env_updates = {
                     ENV_CHAVE_BUSCA: _targets_to_env_value(targets),
                     "CONSULTA_PESSOAL_SOLICITANTE_NOME": form_values["solicitante"],
+                    ENV_OUT_DIR: form_values["saida_dir"],
+                    ENV_CAMPOS_RELATORIO: form_values["campos_relatorio"],
                 }
                 if persistir_env:
                     env_files = _sync_env_values(
@@ -2325,8 +2628,21 @@ def _run_web_front(args: argparse.Namespace, script_dir: Path, repo_root: Path) 
                     debug_passos=bool(form_values["debug_passos"]),
                 )
 
-                valid_login = _validar_login_site(client)
-                status_msgs.append((bool(valid_login.get("ok")), str(valid_login.get("mensagem") or "")))
+                if acao == "validar":
+                    valid_login = _validar_login_site(client)
+                    status_msgs.append((bool(valid_login.get("ok")), str(valid_login.get("mensagem") or "")))
+                else:
+                    client_enabled = bool(getattr(client, "enabled", False))
+                    valid_login = {
+                        "ok": client_enabled,
+                        "mensagem": (
+                            "Validacao previa pulada para executar mais rapido."
+                            if client_enabled
+                            else "Credenciais vazias."
+                        ),
+                        "url_final": "",
+                    }
+                    status_msgs.append((bool(valid_login.get("ok")), str(valid_login.get("mensagem") or "")))
 
                 if acao in {"executar", "executar_word"}:
                     if not bool(valid_login.get("ok")):
@@ -2336,7 +2652,11 @@ def _run_web_front(args: argparse.Namespace, script_dir: Path, repo_root: Path) 
                     else:
                         data_ref = _parse_data_referencia(form_values["data_referencia"])
                         solicitante = form_values["solicitante"] or _solicitante_from_env()
-                        out_dir = _pasta_base_consulta(script_dir) / PASTA_SAIDA_CONSULTA
+                        campos_relatorio = _normalizar_campos_relatorio(
+                            form_values.get("campos_relatorio", ""),
+                            default_all=True,
+                        )
+                        out_dir = _saida_dir_from_text(form_values.get("saida_dir", ""), script_dir)
                         out_dir.mkdir(parents=True, exist_ok=True)
                         nome_base_rel = _nome_arquivo_relatorio_base(data_ref, solicitante)
                         out_pdf = out_dir / f"{nome_base_rel}.pdf"
@@ -2371,12 +2691,16 @@ def _run_web_front(args: argparse.Namespace, script_dir: Path, repo_root: Path) 
                                 ]
                             total_profiles = len(profiles)
                             for p_idx, profile in enumerate(profiles, start=1):
-                                rows_profile = list(profile.get("rows") or [])
+                                rows_profile = _filtrar_rows_por_campos(
+                                    list(profile.get("rows") or []),
+                                    campos_relatorio,
+                                )
                                 cad_profile = str(profile.get("cadastro") or info.get("cadastro") or "").strip()
                                 nome_profile = str(profile.get("nome") or info.get("nome_solicitado") or "").strip()
                                 titulo_profile = _best_header_text(cad_profile, nome_profile, rows_profile)
                                 detalhe_profile = f"{p_idx}/{total_profiles}" if total_profiles > 1 else ""
                                 status_profile = "OK" if bool(profile.get("ok")) else "FALHA"
+                                img_path_profile = str(profile.get("img_path") or "")
                                 result_rows.append(
                                     {
                                         "alvo": alvo,
@@ -2386,7 +2710,8 @@ def _run_web_front(args: argparse.Namespace, script_dir: Path, repo_root: Path) 
                                         "cadastro": cad_profile,
                                         "mensagem": str(profile.get("mensagem") or info.get("mensagem") or ""),
                                         "rows": rows_profile,
-                                        "img_path": str(profile.get("img_path") or ""),
+                                        "img_path": img_path_profile,
+                                        "img_src": _image_data_uri(img_path_profile),
                                         "ok": bool(profile.get("ok")),
                                     }
                                 )
@@ -2399,7 +2724,13 @@ def _run_web_front(args: argparse.Namespace, script_dir: Path, repo_root: Path) 
                         resultados_word = _resultados_para_word(resultados, tipo_busca)
                         if acao == "executar":
                             try:
-                                pdf_path = _gerar_pdf_unico(resultados_pdf, out_pdf, data_ref, solicitante)
+                                pdf_path = _gerar_pdf_unico(
+                                    resultados_pdf,
+                                    out_pdf,
+                                    data_ref,
+                                    solicitante,
+                                    campos_relatorio,
+                                )
                             except Exception as exc_pdf:
                                 _log_web_error(script_dir=script_dir, exc=exc_pdf)
                                 pdf_path = ""
@@ -2412,7 +2743,13 @@ def _run_web_front(args: argparse.Namespace, script_dir: Path, repo_root: Path) 
                                 )
                         elif acao == "executar_word":
                             try:
-                                word_path = _gerar_word_unico(resultados_word, out_word, data_ref, solicitante)
+                                word_path = _gerar_word_unico(
+                                    resultados_word,
+                                    out_word,
+                                    data_ref,
+                                    solicitante,
+                                    campos_relatorio,
+                                )
                             except Exception as exc_word:
                                 _log_web_error(script_dir=script_dir, exc=exc_word)
                                 word_path = ""
@@ -2511,6 +2848,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--debug-passos", action="store_true", help="Liga logs detalhados da consulta.")
     parser.add_argument("--out-dir", default="", help="Diretorio de saida do PDF.")
     parser.add_argument("--out-pdf", default="", help="Caminho do PDF consolidado (1 pagina por pessoa).")
+    parser.add_argument(
+        "--campos-relatorio",
+        default="",
+        help="Campos para incluir no PDF, separados por | ou ; (default: todos os campos padrao).",
+    )
     parser.add_argument(
         "--data-referencia",
         default="",
@@ -2612,6 +2954,7 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     data_referencia = _parse_data_referencia(args.data_referencia)
     solicitante = _solicitante_from_env()
+    campos_relatorio = _normalizar_campos_relatorio(args.campos_relatorio, default_all=True)
     out_pdf = (
         Path(args.out_pdf).resolve()
         if args.out_pdf
@@ -2644,7 +2987,13 @@ def main() -> None:
     ok = sum(1 for r in resultados if bool(r.get("ok")))
     falha = total - ok
     resultados_pdf = _resultados_para_pdf(resultados, tipo_busca)
-    pdf_path = _gerar_pdf_unico(resultados_pdf, out_pdf, data_referencia, solicitante)
+    pdf_path = _gerar_pdf_unico(
+        resultados_pdf,
+        out_pdf,
+        data_referencia,
+        solicitante,
+        campos_relatorio,
+    )
     cleanup_fn = getattr(mod, "cleanup_consulta_pessoal_imagens_temporarias", None)
     if callable(cleanup_fn):
         for info in resultados:

@@ -38,6 +38,8 @@ _REQUIRED_VIEWS = {
 _THREAD_STATE = threading.local()
 _QUERY_CACHE: dict[str, tuple[float, pd.DataFrame]] = {}
 _QUERY_CACHE_LOCK = threading.Lock()
+_ALMOCO_AREA_CACHE: dict[tuple, tuple[float, pd.DataFrame]] = {}
+_ALMOCO_AREA_CACHE_LOCK = threading.Lock()
 _READY_CONTRACT: dict[Path, tuple[int, int]] = {}
 
 
@@ -60,8 +62,11 @@ def _db_version(path: Path) -> tuple[int, int]:
 def _dw_connect(sqlite_path: Path, readonly: bool = True) -> sqlite3.Connection:
     if readonly:
         uri_path = sqlite_path.resolve().as_posix()
-        uri = f"file:{uri_path}?mode=ro&immutable=1&cache=shared"
-        conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
+        if uri_path.startswith("//"):
+            conn = sqlite3.connect(str(sqlite_path), check_same_thread=False)
+        else:
+            uri = f"file:{uri_path}?mode=ro&immutable=1&cache=shared"
+            conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
         conn.execute("PRAGMA query_only = ON;")
     else:
         conn = sqlite3.connect(str(sqlite_path), check_same_thread=False)
@@ -1055,6 +1060,33 @@ def build_dataframe_almoco_area_sql(
         where_area = 'LOWER(c."Área") LIKE ?'
         params_area = (f"%{str(area).strip().lower()}%",)
 
+    try:
+        sqlite_path = _dw_path(get_settings())
+        cache_version = _db_version(sqlite_path)
+    except Exception:
+        cache_version = None
+    pessoas_key = tuple(map(str, pessoas_alvo)) if isinstance(pessoas_alvo, tuple) else None
+    cache_key_area = (
+        cache_version,
+        str(area or "").strip(),
+        str(subarea or "").strip(),
+        dt_ini.strftime("%Y-%m-%d"),
+        dt_fim.strftime("%Y-%m-%d"),
+        pessoas_key,
+    )
+    now = time.time()
+    with _ALMOCO_AREA_CACHE_LOCK:
+        cached = _ALMOCO_AREA_CACHE.get(cache_key_area)
+        if cached is not None and (now - cached[0]) <= 900:
+            return cached[1].copy(deep=True)
+
+    def _return_cached(df_out: pd.DataFrame) -> pd.DataFrame:
+        with _ALMOCO_AREA_CACHE_LOCK:
+            if len(_ALMOCO_AREA_CACHE) > 128:
+                _ALMOCO_AREA_CACHE.clear()
+            _ALMOCO_AREA_CACHE[cache_key_area] = (time.time(), df_out.copy(deep=True))
+        return df_out.copy(deep=True)
+
     pair_clause = ""
     pair_params: tuple[str, str] | tuple[()] = ()
     if isinstance(pessoas_alvo, tuple) and len(pessoas_alvo) == 2:
@@ -1064,6 +1096,63 @@ def build_dataframe_almoco_area_sql(
             'INTERSECT SELECT "Data" FROM clust WHERE "Cadastro" = ?)'
         )
         pair_params = (c1, c2)
+
+    def _fallback_eventos_area() -> pd.DataFrame:
+        cad_df = query_dw(
+            f'''
+            SELECT c."Cadastro", c."Nome", c."Cargo", c."Área", c."Departamento"
+            FROM vw_colaboradores c
+            WHERE {where_area}
+            ''',
+            params_area,
+        )
+        if cad_df.empty:
+            return pd.DataFrame(columns=empty_cols)
+
+        cad_df = cad_df.copy()
+        cad_df["CadastroNorm"] = cad_df["Cadastro"].map(_norm_cadastro)
+        cad_df = cad_df[cad_df["CadastroNorm"].astype(bool)]
+        if cad_df.empty:
+            return pd.DataFrame(columns=empty_cols)
+        cad_df = cad_df.drop_duplicates("CadastroNorm")
+
+        clusters = build_dataframe_almoco_pessoas(
+            cad_df["CadastroNorm"].tolist(),
+            dt_ini=dt_ini,
+            dt_fim=dt_fim,
+        )
+        if clusters.empty:
+            return pd.DataFrame(columns=empty_cols)
+
+        clusters = clusters.copy()
+        clusters["CadastroNorm"] = clusters["Cadastro"].map(_norm_cadastro)
+        clusters = clusters[clusters["CadastroNorm"].isin(set(cad_df["CadastroNorm"]))]
+        if clusters.empty:
+            return pd.DataFrame(columns=empty_cols)
+
+        dias_ok = (
+            clusters.groupby("Data")["CadastroNorm"]
+            .nunique()
+            .loc[lambda s: s > 1]
+            .index
+        )
+        clusters = clusters[clusters["Data"].isin(dias_ok)]
+        if clusters.empty:
+            return pd.DataFrame(columns=empty_cols)
+
+        clusters["Planta"] = clusters["Clusters"].map(
+            lambda value: "|".join(sorted(_parse_cluster_set(value)))
+        )
+        out = clusters.merge(cad_df, on="CadastroNorm", how="left", suffixes=("", "_cad"))
+        out["Cadastro"] = out["Cadastro_cad"].where(
+            out["Cadastro_cad"].astype(str).str.strip().astype(bool),
+            out["Cadastro"],
+        )
+        out["Contagem Presença"] = 1
+        out = out[empty_cols].copy()
+        out["Data"] = pd.to_datetime(out["Data"], errors="coerce")
+        out = out.dropna(subset=["Data", "Cadastro"])
+        return out
 
     sql = f"""
     WITH cad AS (
@@ -1112,7 +1201,10 @@ def build_dataframe_almoco_area_sql(
     ) + pair_params
     df = query_dw(sql, params=params, parse_dates=["Data"])
     if df.empty:
-        return pd.DataFrame(columns=empty_cols)
+        df_fallback = _fallback_eventos_area()
+        if df_fallback.empty:
+            return _return_cached(pd.DataFrame(columns=empty_cols))
+        df = df_fallback
 
     df["Cadastro"] = df["Cadastro"].astype(str)
     if "Cargo" in df.columns:
@@ -1121,4 +1213,4 @@ def build_dataframe_almoco_area_sql(
         pd.to_numeric(df["Contagem Presença"], errors="coerce").fillna(0).astype(int)
     )
     df["Planta"] = df["Planta"].astype(str).fillna("")
-    return df
+    return _return_cached(df)

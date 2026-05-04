@@ -149,6 +149,9 @@ LANGUAGES = (
 )
 
 
+LANGUAGES = LANGUAGES[:]
+
+
 def language_selector() -> html.Div:
     """Componente visual de seleção de idioma no padrão do cabeçalho do MVC."""
     buttons = []
@@ -194,8 +197,183 @@ def language_selector() -> html.Div:
     )
 
 
+def tela_inicial_filtros() -> html.Div:
+    """Tela inicial do executável para pré-filtrar o dashboard geral."""
+    field_style = {'width': '100%', 'fontFamily': VW_PLOTLY_FONT}
+
+    return html.Div(
+        id='tela-inicial-filtros',
+        children=[
+            html.Div([
+                html.Div([
+                    html.Div([
+                        html.Div(
+                            "Dashboard MVC",
+                            style={
+                                'display': 'inline-block',
+                                'padding': '5px 10px',
+                                'marginBottom': '10px',
+                                'border': '1px solid rgba(0,0,0,0.18)',
+                                'borderRadius': '999px',
+                                'backgroundColor': '#e0e0e0',
+                                'fontFamily': VW_PLOTLY_FONT,
+                                'fontWeight': 'bold',
+                                'fontSize': '13px',
+                            },
+                        ),
+                        html.H1(
+                            "Filtros iniciais",
+                            style={
+                                'margin': '0',
+                                'fontFamily': VW_PLOTLY_FONT,
+                                'fontSize': 'clamp(26px, 4vw, 32px)',
+                                'lineHeight': '1.1',
+                            },
+                        ),
+                    ], style={'minWidth': '0'}),
+                    html.Div([
+                        html.Div("Monitoramento Comportamental", style={
+                            'padding': '9px 14px',
+                            'backgroundColor': '#e0e0e0',
+                            'borderRadius': '8px',
+                            'fontFamily': VW_PLOTLY_FONT,
+                            'fontWeight': 'bold',
+                            'boxShadow': '0px 2px 6px rgba(0,0,0,0.10)',
+                        })
+                    ])
+                ], className='prefiltro-header'),
+
+                html.Div([
+                    html.Div([
+                        html.Label("Incluir na análise", className='prefiltro-field-title'),
+                        dcc.Checklist(
+                            id='prefiltro-escopo',
+                            className='prefiltro-opcoes-lista',
+                            options=[
+                                {'label': 'Pessoas desligadas', 'value': 'desligados'},
+                                {'label': 'Áreas que viajam', 'value': 'viajam'},
+                            ],
+                            value=['desligados', 'viajam'],
+                        ),
+                    ], className='prefiltro-field prefiltro-field-wide prefiltro-field-shell'),
+
+                    html.Div([
+                        html.Label("Tipo de colaborador", className='prefiltro-field-title'),
+                        dcc.Checklist(
+                            id='prefiltro-cargo',
+                            className='prefiltro-cargo-lista',
+                            options=[
+                                {
+                                    'label': [
+                                        html.Span("E", className='prefiltro-cargo-badge'),
+                                        html.Span("Executivo"),
+                                    ],
+                                    'value': 'E',
+                                },
+                                {
+                                    'label': [
+                                        html.Span("H", className='prefiltro-cargo-badge'),
+                                        html.Span("Horista"),
+                                    ],
+                                    'value': 'H',
+                                },
+                                {
+                                    'label': [
+                                        html.Span("M", className='prefiltro-cargo-badge'),
+                                        html.Span("Mensalista"),
+                                    ],
+                                    'value': 'M',
+                                },
+                                {
+                                    'label': [
+                                        html.Span("3", className='prefiltro-cargo-badge'),
+                                        html.Span("Terceiro"),
+                                    ],
+                                    'value': 'T',
+                                },
+                            ],
+                            value=['E', 'H', 'M', 'T'],
+                        ),
+                    ], className='prefiltro-field prefiltro-field-shell'),
+
+                    html.Div([
+                        html.Label("Área(s)", className='prefiltro-field-title'),
+                        dcc.Dropdown(
+                            id='prefiltro-areas',
+                            options=dropdown_options,
+                            value=['GERAL'],
+                            multi=True,
+                            clearable=True,
+                            placeholder='Selecione uma ou mais áreas',
+                            style=field_style,
+                        ),
+                    ], className='prefiltro-field prefiltro-field-shell'),
+
+                    html.Div([
+                        html.Label("Período", className='prefiltro-field-title'),
+                        dcc.RadioItems(
+                            id='prefiltro-cenario',
+                            className='prefiltro-cenario-lista',
+                            options=[
+                                {'label': 'Jan/2024 a Abr/2025', 'value': 'c1'},
+                                {'label': 'Mai/2025 em diante', 'value': 'c2'},
+                            ],
+                            value='c1',
+                        ),
+                        dcc.RangeSlider(
+                            id='prefiltro-periodo',
+                            min=LT_C1_MIN,
+                            max=LT_C1_MAX,
+                            value=[LT_C1_MIN, LT_C1_MAX],
+                            marks=LT_MARKS,
+                            allowCross=False,
+                            step=1,
+                            pushable=1,
+                        ),
+                    ], className='prefiltro-field prefiltro-field-wide prefiltro-field-shell'),
+                ], className='prefiltro-form-grid'),
+
+                html.Div([
+                    html.Button(
+                        "Confirmar",
+                        id='prefiltro-confirmar',
+                        n_clicks=0,
+                        className='prefiltro-confirmar',
+                        style={
+                            'color': 'Black',
+                            'fontFamily': VW_PLOTLY_FONT,
+                            'fontWeight': 'bold',
+                            'padding': '10px 24px',
+                            'fontSize': '16px',
+                            'backgroundColor': '#e0e0e0',
+                            'border': 'none',
+                            'borderRadius': '5px',
+                            'cursor': 'pointer',
+                            'boxShadow': '0px 2px 6px rgba(0,0,0,0.25)',
+                        },
+                    )
+                ], className='prefiltro-footer'),
+            ], className='prefiltro-panel')
+        ],
+        style={
+            'minHeight': '100vh',
+            'display': 'none',
+            'alignItems': 'center',
+            'justifyContent': 'center',
+            'padding': '20px',
+            'boxSizing': 'border-box',
+            'backgroundColor': 'white',
+            'fontFamily': VW_PLOTLY_FONT,
+        },
+    )
+
+
 LAYOUT = html.Div([
     dcc.Location(id='url', refresh=False),
+    dcc.Store(id='prefiltro-aplicado', data=False),
+    dcc.Store(id='cargo-selecionado', data=[]),
+    dcc.Store(id='areas-prefiltro', data=[]),
+    tela_inicial_filtros(),
 
     # '''~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Geral ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'''
     html.Div([
@@ -531,7 +709,12 @@ LAYOUT = html.Div([
             dcc.Store(id='subarea-selecionada', data=None),
             dcc.Store(id='ultimo-clique', data={'faixa': None, 'timestamp': 0}),
             dcc.Store(id='periodo-indices', data=[LT_C1_MIN, LT_C1_MAX])
-        ], style={'padding': '20px', 'backgroundColor': 'white', 'fontFamily': VW_PLOTLY_FONT})
+        ], style={
+            'display': 'none',
+            'padding': '20px',
+            'backgroundColor': 'white',
+            'fontFamily': VW_PLOTLY_FONT,
+        })
     ]),
 
     # '''~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Individual ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'''
