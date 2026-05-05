@@ -1399,10 +1399,8 @@ def plot_weekly_criticality(weekly_df: pd.DataFrame, out_path: Path) -> None:
     mediana_presenca = weekly_df["mediana_presenca"].to_numpy(dtype=float)
     rolling = weekly_df["media_presenca_movel_4s"].to_numpy(dtype=float)
     media_meta = weekly_df["media_meta"].to_numpy(dtype=float)
-    holiday_mask = weekly_df["semana_feriado"].to_numpy(dtype=bool)
     ax.fill_between(x, media_presenca, color="#dcecf8", alpha=0.95, zorder=1)
     ax.fill_between(x, media_presenca, media_meta, where=media_presenca < media_meta, color="#f7d7df", alpha=0.65, interpolate=True, zorder=1)
-    ax.plot(x, media_presenca, color="#0f4c81", linewidth=4.0, marker="o", markersize=6.1, label="Presença média", zorder=3)
     ax.plot(
         x,
         mediana_presenca,
@@ -1416,24 +1414,13 @@ def plot_weekly_criticality(weekly_df: pd.DataFrame, out_path: Path) -> None:
     ax.plot(
         x,
         rolling,
-        color="#88aecd",
-        linewidth=3.0,
-        linestyle="--",
-        label="Média móvel 4 semanas",
+        color="#0f4c81",
+        linewidth=4.2,
+        linestyle="-",
+        label="Presença Média",
         zorder=5,
     )
     ax.plot(x, media_meta, color="#7cb59b", linewidth=3.0, linestyle="-.", label="Meta da semana", zorder=2)
-    if holiday_mask.any():
-        ax.scatter(
-            x[holiday_mask],
-            media_presenca[holiday_mask],
-            color="#d790a5",
-            edgecolor="#ffffff",
-            linewidth=1.4,
-            s=98,
-            zorder=5,
-            label="Semana com feriado",
-        )
     low_pos = int(np.nanargmin(media_presenca))
     last_pos = len(weekly_df) - 1
     ax.annotate(
@@ -1653,6 +1640,7 @@ def build_html_report(
     excluded_areas_df: pd.DataFrame,
     cumulative_df: pd.DataFrame,
     distribution_df: pd.DataFrame,
+    cargo_df: pd.DataFrame,
     area_df: pd.DataFrame,
     weekly_manager_df: pd.DataFrame,
     department_recent_df: pd.DataFrame,
@@ -1664,6 +1652,22 @@ def build_html_report(
     logo_path: Path | None,
 ) -> None:
     summary_map = dict(exec_summary.values.tolist())
+    bad_people_total = int(summary_map["Nao aderentes"])
+
+    def cargo_bad_count(cargo_code: str) -> int:
+        count = cargo_df.loc[cargo_df["Cargo"].eq(cargo_code), "Nao Aderentes"]
+        return int(count.iloc[0]) if not count.empty else 0
+
+    def cargo_bad_pct_value(count: int) -> float:
+        pct = (count / bad_people_total * 100.0) if bad_people_total else 0.0
+        return pct
+
+    mensalista_bad = cargo_bad_count("M")
+    executivo_bad = cargo_bad_count("E")
+    mensalista_bad_pct_value = cargo_bad_pct_value(mensalista_bad)
+    executivo_bad_pct_value = cargo_bad_pct_value(executivo_bad)
+    mensalista_bad_pct = f"{mensalista_bad_pct_value:.1f}%"
+    executivo_bad_pct = f"{executivo_bad_pct_value:.1f}%"
     chart_cumulative_rel = chart_cumulative.relative_to(html_path.parent).as_posix()
     chart_weekly_rel = chart_weekly.relative_to(html_path.parent).as_posix()
     chart_holiday_bridge_rel = chart_holiday_bridge.relative_to(html_path.parent).as_posix()
@@ -1827,6 +1831,9 @@ def build_html_report(
         )
     faixa_principal_pct = float(
         distribution_df.loc[distribution_df["Faixa"].eq("De 2,0 a 2,5"), "Percentual"].iloc[0]
+    )
+    faixa_principal_people = int(
+        distribution_df.loc[distribution_df["Faixa"].eq("De 2,0 a 2,5"), "Pessoas"].iloc[0]
     )
     weekly_low = weekly_manager_df.loc[weekly_manager_df["media_presenca"].idxmin()]
     weekly_last = weekly_manager_df.iloc[-1]
@@ -2568,7 +2575,7 @@ def build_html_report(
             "brief_h_people": "Pessoas",
             "brief_h_pct": "% dos colaboradores em descumprimento",
             "trend_title": "Tendência semanal da presença média",
-            "trend_note": "Mostra a presença média e mediana semanal frente à meta esperada. Os pontos vermelhos indicam semanas com feriado.",
+            "trend_note": "Mostra a presença média suavizada em 4 semanas e a mediana semanal frente à meta esperada.",
             "trend_callout": f"Pior semana do período em <strong>{weekly_low_pt}</strong> com <strong>{float(weekly_low['media_presenca']):.2f}</strong> dia(s) de presença média e mediana de <strong>{float(weekly_low['mediana_presenca']):.2f}</strong> dia(s). Nas semanas com feriado, a mediana ficou em <strong>{holiday_median_days:.2f}</strong> dia(s), contra <strong>{normal_median_days:.2f}</strong> em semanas normais.",
             "heat_title": "Heatmap de departamentos/subáreas",
             "heat_note": "Cada célula mostra o % abaixo da regra e, abaixo, os dias médios presenciais. 100% significa todos abaixo da regra, não ausência total; cinza indica semana sem registro no DW.",
@@ -2673,7 +2680,7 @@ def build_html_report(
             "brief_h_people": "People",
             "brief_h_pct": "% of the non-adherent group",
             "trend_title": "Weekly average attendance trend",
-            "trend_note": "Shows the weekly average attendance against the expected target. Red points mark holiday weeks.",
+            "trend_note": "Shows the 4-week smoothed average attendance and the weekly median against the expected target.",
             "trend_callout": f"Worst week in the period: <strong>{weekly_low_en}</strong> with <strong>{float(weekly_low['media_presenca']):.2f}</strong> attendance day(s) on average for a target of <strong>{float(weekly_low['media_meta']):.2f}</strong> day(s). In the last week, the indicator reached <strong>{float(weekly_last['media_presenca']):.2f}</strong> day(s) for a target of <strong>{float(weekly_last['media_meta']):.2f}</strong> day(s), with a recent 4-week average of <strong>{weekly_recent:.2f}</strong> day(s).",
             "heat_title": "Department/subarea heatmap",
             "heat_note": "Each cell shows the % below the rule and, below it, the average on-site days. 100% means everyone was below the rule, not total absence; gray marks weeks without DW records.",
@@ -2729,7 +2736,7 @@ def build_html_report(
             "brief_h_people": "Personas",
             "brief_h_pct": "% de los no adherentes",
             "trend_title": "Tendencia semanal de la presencia media",
-            "trend_note": "Muestra la presencia media semanal frente a la meta esperada. Los puntos rojos indican semanas con festivo.",
+            "trend_note": "Muestra la presencia media suavizada en 4 semanas y la mediana semanal frente a la meta esperada.",
             "trend_callout": f"Peor semana del período: <strong>{weekly_low_es}</strong> con <strong>{float(weekly_low['media_presenca']):.2f}</strong> día(s) de presencia media para una meta de <strong>{float(weekly_low['media_meta']):.2f}</strong> día(s). En la última semana, el indicador quedó en <strong>{float(weekly_last['media_presenca']):.2f}</strong> día(s) para una meta de <strong>{float(weekly_last['media_meta']):.2f}</strong> día(s), con media reciente de <strong>{weekly_recent:.2f}</strong> día(s) en las últimas 4 semanas.",
             "heat_title": "Heatmap de departamentos/subáreas",
             "heat_note": "Cada celda muestra el % por debajo de la regla y, debajo, los días medios presenciales. 100% significa todos por debajo de la regla, no ausencia total; gris indica semanas sin registro en el DW.",
@@ -2785,7 +2792,7 @@ def build_html_report(
             "brief_h_people": "Personnes",
             "brief_h_pct": "% des non-adhérents",
             "trend_title": "Tendance hebdomadaire de la présence moyenne",
-            "trend_note": "Montre la présence moyenne hebdomadaire par rapport à la cible attendue. Les points rouges signalent les semaines avec jour férié.",
+            "trend_note": "Montre la présence moyenne lissée sur 4 semaines et la médiane hebdomadaire par rapport à la cible attendue.",
             "trend_callout": f"Pire semaine de la période: <strong>{weekly_low_fr}</strong> avec <strong>{float(weekly_low['media_presenca']):.2f}</strong> jour(s) de présence moyenne pour une cible de <strong>{float(weekly_low['media_meta']):.2f}</strong> jour(s). Lors de la dernière semaine, l'indicateur a atteint <strong>{float(weekly_last['media_presenca']):.2f}</strong> jour(s) pour une cible de <strong>{float(weekly_last['media_meta']):.2f}</strong> jour(s), avec une moyenne récente de <strong>{weekly_recent:.2f}</strong> jour(s) sur les 4 dernières semaines.",
             "heat_title": "Heatmap des départements/sous-zones",
             "heat_note": "Affiche la part du département sous la règle hebdomadaire. 100% signifie que tous sont sous la règle, pas une absence totale; le gris marque les semaines sans enregistrement DW.",
@@ -2841,7 +2848,7 @@ def build_html_report(
             "brief_h_people": "Persone",
             "brief_h_pct": "% dei non aderenti",
             "trend_title": "Trend settimanale della presenza media",
-            "trend_note": "Mostra la presenza media settimanale rispetto al target atteso. I punti rossi indicano settimane con festività.",
+            "trend_note": "Mostra la presenza media smussata su 4 settimane e la mediana settimanale rispetto al target atteso.",
             "trend_callout": f"Settimana peggiore del periodo: <strong>{weekly_low_it}</strong> con <strong>{float(weekly_low['media_presenca']):.2f}</strong> giorno(i) di presenza media per un target di <strong>{float(weekly_low['media_meta']):.2f}</strong> giorno(i). Nell'ultima settimana, l'indicatore è rimasto a <strong>{float(weekly_last['media_presenca']):.2f}</strong> giorno(i) per un target di <strong>{float(weekly_last['media_meta']):.2f}</strong> giorno(i), con media recente di <strong>{weekly_recent:.2f}</strong> giorno(i) nelle ultime 4 settimane.",
             "heat_title": "Heatmap di dipartimenti/subaree",
             "heat_note": "Mostra la quota del dipartimento sotto la regola settimanale. 100% significa tutti sotto la regola, non assenza totale; il grigio indica settimane senza record DW.",
@@ -2897,7 +2904,7 @@ def build_html_report(
             "brief_h_people": "Personen",
             "brief_h_pct": "% der nicht adherenten Gruppe",
             "trend_title": "Wochentrend des Anwesenheitsdurchschnitts",
-            "trend_note": "Zeigt den wochentlichen Anwesenheitsdurchschnitt gegen das Soll. Rote Punkte markieren Feiertagswochen.",
+            "trend_note": "Zeigt den geglätteten 4-Wochen-Anwesenheitsdurchschnitt und den Wochenmedian im Vergleich zum Soll.",
             "trend_callout": f"Schlechteste Woche im Zeitraum: <strong>{weekly_low_de}</strong> mit <strong>{float(weekly_low['media_presenca']):.2f}</strong> durchschnittlichen Anwesenheitstagen bei einem Soll von <strong>{float(weekly_low['media_meta']):.2f}</strong> Tagen. In der letzten Woche lag der Wert bei <strong>{float(weekly_last['media_presenca']):.2f}</strong> Tagen bei einem Soll von <strong>{float(weekly_last['media_meta']):.2f}</strong> Tagen, der 4-Wochen-Durchschnitt liegt bei <strong>{weekly_recent:.2f}</strong> Tagen.",
             "heat_title": "Heatmap der Abteilungen/Subbereiche",
             "heat_note": "Zeigt den Anteil der Abteilung unter der Wochenregel. 100% bedeutet alle unter der Regel, nicht vollständige Abwesenheit; Grau markiert Wochen ohne DW-Datensatz.",
@@ -2961,7 +2968,7 @@ def build_html_report(
         brief_h_people="Osoby",
         brief_h_pct="% grupy niezgodnej",
         trend_title="Tygodniowy trend średniej obecności",
-        trend_note="Pokazuje tygodniową średnią obecność względem oczekiwanego celu. Czerwone punkty oznaczają tygodnie ze świętem.",
+        trend_note="Pokazuje wygładzoną 4-tygodniową średnią obecność i tygodniową medianę względem oczekiwanego celu.",
         trend_callout=f"Najgorszy tydzień w okresie: <strong>{weekly_low_pl}</strong> ze średnią <strong>{float(weekly_low['media_presenca']):.2f}</strong> dnia obecności przy celu <strong>{float(weekly_low['media_meta']):.2f}</strong> dnia. W ostatnim tygodniu wskaźnik osiągnął <strong>{float(weekly_last['media_presenca']):.2f}</strong> dnia przy celu <strong>{float(weekly_last['media_meta']):.2f}</strong> dnia, a średnia z ostatnich 4 tygodni wyniosła <strong>{weekly_recent:.2f}</strong> dnia.",
         heat_title="Mapa cieplna działów/podobszarów",
         heat_note="Pokazuje udział działu poniżej reguły tygodniowej. 100% oznacza wszystkich poniżej reguły, a nie całkowitą nieobecność; szary oznacza tygodnie bez rekordów DW.",
@@ -3019,7 +3026,7 @@ def build_html_report(
         brief_h_people="Ľudia",
         brief_h_pct="% nevyhovujúcej skupiny",
         trend_title="Týždenný trend priemernej prítomnosti",
-        trend_note="Ukazuje týždennú priemernú prítomnosť oproti očakávanému cieľu. Červené body označujú sviatočné týždne.",
+        trend_note="Ukazuje vyhladený 4-týždňový priemer prítomnosti a týždenný medián oproti očakávanému cieľu.",
         trend_callout=f"Najslabší týždeň obdobia: <strong>{weekly_low_sk}</strong> s priemerom <strong>{float(weekly_low['media_presenca']):.2f}</strong> dňa prítomnosti pri cieli <strong>{float(weekly_low['media_meta']):.2f}</strong> dňa. V poslednom týždni ukazovateľ dosiahol <strong>{float(weekly_last['media_presenca']):.2f}</strong> dňa pri cieli <strong>{float(weekly_last['media_meta']):.2f}</strong> dňa a 4-týždňový priemer bol <strong>{weekly_recent:.2f}</strong> dňa.",
         heat_title="Tepelná mapa oddelení/podoblastí",
         heat_note="Zobrazuje podiel oddelenia pod týždenným pravidlom. 100% znamená všetkých pod pravidlom, nie úplnú neprítomnosť; sivá označuje týždne bez záznamov v DW.",
@@ -3077,7 +3084,7 @@ def build_html_report(
         brief_h_people="人数",
         brief_h_pct="未达标人群占比",
         trend_title="周均到岗趋势",
-        trend_note="展示每周平均到岗与目标的对比。红点表示节假日周。",
+        trend_note="展示 4 周平滑平均到岗和周度中位数与目标的对比。",
         trend_callout=f"期间最差一周为 <strong>{weekly_low_zh}</strong>，平均到岗 <strong>{float(weekly_low['media_presenca']):.2f}</strong> 天，目标为 <strong>{float(weekly_low['media_meta']):.2f}</strong> 天。最近一周指标为 <strong>{float(weekly_last['media_presenca']):.2f}</strong> 天，目标为 <strong>{float(weekly_last['media_meta']):.2f}</strong> 天，最近 4 周平均为 <strong>{weekly_recent:.2f}</strong> 天。",
         heat_title="部门/子区域热力图",
         heat_note="显示该部门低于周规则的比例。100% 表示所有人低于规则，不代表全部缺勤；灰色表示 DW 中没有该周记录。",
@@ -3135,7 +3142,7 @@ def build_html_report(
         brief_h_people="लोग",
         brief_h_pct="अधूरे अनुपालन समूह का %",
         trend_title="साप्ताहिक औसत उपस्थिति प्रवृत्ति",
-        trend_note="यह अपेक्षित लक्ष्य के मुकाबले साप्ताहिक औसत उपस्थिति दिखाता है। लाल बिंदु छुट्टी वाले सप्ताह दर्शाते हैं।",
+        trend_note="यह अपेक्षित लक्ष्य के मुकाबले 4-सप्ताह की स्मूद औसत उपस्थिति और साप्ताहिक माध्यिका दिखाता है।",
         trend_callout=f"अवधि का सबसे कमजोर सप्ताह <strong>{weekly_low_hi}</strong> रहा, जिसमें औसत उपस्थिति <strong>{float(weekly_low['media_presenca']):.2f}</strong> दिन थी और लक्ष्य <strong>{float(weekly_low['media_meta']):.2f}</strong> दिन था। अंतिम सप्ताह में संकेतक <strong>{float(weekly_last['media_presenca']):.2f}</strong> दिन रहा, लक्ष्य <strong>{float(weekly_last['media_meta']):.2f}</strong> दिन था, और पिछले 4 सप्ताह का औसत <strong>{weekly_recent:.2f}</strong> दिन रहा।",
         heat_title="विभाग/उप-क्षेत्र हीटमैप",
         heat_note="यह विभाग में साप्ताहिक नियम से नीचे रहे लोगों का हिस्सा दिखाता है। 100% का अर्थ है सभी नियम से नीचे थे, पूरी अनुपस्थिति नहीं; धूसर रंग DW में रिकॉर्ड न होने वाले सप्ताह दिखाता है।",
@@ -3422,6 +3429,131 @@ def build_html_report(
         translations.setdefault(lang, {}).update(values)
     for lang, values in rules_page_overrides.items():
         translations.setdefault(lang, {}).update(values)
+
+    role_kpi_copy = {
+        "pt": {
+            "kpi2_label": "Mensalistas x Executivos",
+            "kpi2_note": "Abertura dos colaboradores em descumprimento por cargo.",
+            "kpi_denominator_prefix": "de",
+            "kpi_mensalista_label": "Mensalistas",
+            "kpi_executivo_label": "Executivos",
+        },
+        "en": {
+            "kpi2_label": "Monthly-paid x Executives",
+            "kpi2_note": "Breakdown of employees in non-compliance by role.",
+            "kpi_denominator_prefix": "of",
+            "kpi_mensalista_label": "Monthly-paid",
+            "kpi_executivo_label": "Executives",
+        },
+        "de": {
+            "kpi2_label": "Monatsangestellte x Executives",
+            "kpi2_note": "Aufteilung der nicht konformen Mitarbeitenden nach Rolle.",
+            "kpi_denominator_prefix": "von",
+            "kpi_mensalista_label": "Monatsangestellte",
+            "kpi_executivo_label": "Executives",
+        },
+        "es": {
+            "kpi2_label": "Mensualistas x Ejecutivos",
+            "kpi2_note": "Apertura de los colaboradores en incumplimiento por cargo.",
+            "kpi_denominator_prefix": "de",
+            "kpi_mensalista_label": "Mensualistas",
+            "kpi_executivo_label": "Ejecutivos",
+        },
+        "fr": {
+            "kpi2_label": "Mensuels x Exécutifs",
+            "kpi2_note": "Répartition des collaborateurs non conformes par rôle.",
+            "kpi_denominator_prefix": "sur",
+            "kpi_mensalista_label": "Mensuels",
+            "kpi_executivo_label": "Exécutifs",
+        },
+        "it": {
+            "kpi2_label": "Mensili x Executive",
+            "kpi2_note": "Ripartizione dei collaboratori non conformi per ruolo.",
+            "kpi_denominator_prefix": "su",
+            "kpi_mensalista_label": "Mensili",
+            "kpi_executivo_label": "Executive",
+        },
+        "pl": {
+            "kpi2_label": "Miesięczni x Executives",
+            "kpi2_note": "Podział osób niezgodnych według roli.",
+            "kpi_denominator_prefix": "z",
+            "kpi_mensalista_label": "Miesięczni",
+            "kpi_executivo_label": "Executives",
+        },
+        "sk": {
+            "kpi2_label": "Mesační x Executives",
+            "kpi2_note": "Rozdelenie nevyhovujúcich osôb podľa roly.",
+            "kpi_denominator_prefix": "z",
+            "kpi_mensalista_label": "Mesační",
+            "kpi_executivo_label": "Executives",
+        },
+        "zh": {
+            "kpi2_label": "月薪员工 x 高管",
+            "kpi2_note": "按岗位拆分未达标人员。",
+            "kpi_denominator_prefix": "共",
+            "kpi_mensalista_label": "月薪员工",
+            "kpi_executivo_label": "高管",
+        },
+        "hi": {
+            "kpi2_label": "Monthly-paid x Executives",
+            "kpi2_note": "लक्ष्य-अनुपालन मानदंड में आए लोगों का भूमिका अनुसार विभाजन।",
+            "kpi_denominator_prefix": "of",
+            "kpi_mensalista_label": "Monthly-paid",
+            "kpi_executivo_label": "Executives",
+        },
+    }
+    kpi4_explanation_copy = {
+        "pt": {
+            "kpi4_label": "Faixa principal: 2,0 a 2,5 dias",
+            "kpi4_note": f"{faixa_principal_people} dos {bad_people_total} colaboradores em descumprimento ficam nessa faixa de média semanal presencial.",
+        },
+        "en": {
+            "kpi4_label": "Main band: 2.0 to 2.5 days",
+            "kpi4_note": f"{faixa_principal_people} of the {bad_people_total} non-compliant employees fall in this weekly average on-site band.",
+        },
+        "de": {
+            "kpi4_label": "Hauptband: 2,0 bis 2,5 Tage",
+            "kpi4_note": f"{faixa_principal_people} von {bad_people_total} nicht konformen Mitarbeitenden liegen in diesem Band des wöchentlichen Anwesenheitsdurchschnitts.",
+        },
+        "es": {
+            "kpi4_label": "Franja principal: 2,0 a 2,5 días",
+            "kpi4_note": f"{faixa_principal_people} de los {bad_people_total} colaboradores en incumplimiento quedan en esta franja de promedio semanal presencial.",
+        },
+        "fr": {
+            "kpi4_label": "Bande principale: 2,0 à 2,5 jours",
+            "kpi4_note": f"{faixa_principal_people} des {bad_people_total} collaborateurs non conformes se situent dans cette bande moyenne hebdomadaire sur site.",
+        },
+        "it": {
+            "kpi4_label": "Fascia principale: 2,0-2,5 giorni",
+            "kpi4_note": f"{faixa_principal_people} dei {bad_people_total} collaboratori non conformi rientrano in questa fascia di media settimanale in sede.",
+        },
+        "pl": {
+            "kpi4_label": "Główne pasmo: 2,0-2,5 dnia",
+            "kpi4_note": f"{faixa_principal_people} z {bad_people_total} osób niezgodnych mieści się w tym paśmie średniej tygodniowej obecności.",
+        },
+        "sk": {
+            "kpi4_label": "Hlavné pásmo: 2,0 až 2,5 dňa",
+            "kpi4_note": f"{faixa_principal_people} z {bad_people_total} nevyhovujúcich osôb patrí do tohto pásma týždenného priemeru prítomnosti.",
+        },
+        "zh": {
+            "kpi4_label": "主要区间：2.0 至 2.5 天",
+            "kpi4_note": f"{bad_people_total} 名未达标人员中有 {faixa_principal_people} 人落在该周均到岗区间。",
+        },
+        "hi": {
+            "kpi4_label": "मुख्य श्रेणी: 2.0 से 2.5 दिन",
+            "kpi4_note": f"{bad_people_total} लक्ष्य-अनुपालन मानदंड में आए लोगों में से {faixa_principal_people} इस साप्ताहिक औसत ऑन-साइट श्रेणी में हैं।",
+        },
+    }
+    for lang, values in translations.items():
+        non_compliance_label = values.get("kpi2_label", "Non-adherent")
+        non_compliance_note = values.get(
+            "kpi2_note",
+            f"{summary_map['Percentual nao aderente']} of the population entered the non-compliance criterion.",
+        )
+        values["kpi1_label"] = non_compliance_label
+        values["kpi1_note"] = non_compliance_note
+        values.update(role_kpi_copy.get(lang, role_kpi_copy["en"]))
+        values.update(kpi4_explanation_copy.get(lang, kpi4_explanation_copy["en"]))
 
     html = f"""<!DOCTYPE html>
 <html lang="pt-BR">
@@ -3784,6 +3916,82 @@ def build_html_report(
       font-weight: 800;
       letter-spacing: -0.03em;
       margin-bottom: 6px;
+    }}
+    .kpi-denominator {{
+      color: #96a3b3;
+      font-size: clamp(13px, 1.1vw, 16px);
+      font-weight: 700;
+      letter-spacing: 0;
+      margin-left: 6px;
+      white-space: nowrap;
+      vertical-align: baseline;
+    }}
+    .kpi-breakdown {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0;
+      margin: 8px 0 12px;
+      border: 1px solid #dde7f1;
+      border-radius: 18px;
+      background: rgba(247, 250, 253, 0.88);
+      overflow: hidden;
+    }}
+    .kpi-breakdown-item {{
+      min-width: 0;
+      padding: 14px 16px 13px;
+    }}
+    .kpi-breakdown-item + .kpi-breakdown-item {{
+      border-left: 4px solid #d2dee9;
+    }}
+    .kpi-breakdown-item strong {{
+      display: block;
+      font-size: clamp(36px, 4.2vw, 54px);
+      line-height: 1;
+      font-weight: 800;
+    }}
+    .kpi-breakdown-item.mensalista strong {{
+      color: #0b4f82;
+    }}
+    .kpi-breakdown-item.executivo strong {{
+      color: #6faed2;
+    }}
+    .kpi-breakdown-item span {{
+      display: block;
+      margin-top: 6px;
+      color: var(--ink);
+      font-size: 16px;
+      font-weight: 800;
+      line-height: 1.2;
+    }}
+    .kpi-breakdown-item small {{
+      display: block;
+      margin-top: 4px;
+      color: #96a3b3;
+      font-size: 13px;
+      font-weight: 700;
+    }}
+    .kpi-role-bar {{
+      display: flex;
+      gap: 4px;
+      height: 15px;
+      padding: 3px;
+      margin: 2px 0 12px;
+      border-radius: 999px;
+      background: #d9e3ee;
+      box-shadow: inset 0 1px 2px rgba(13, 43, 72, 0.12);
+    }}
+    .kpi-role-segment {{
+      min-width: 12px;
+      height: 100%;
+      border-radius: 999px;
+    }}
+    .kpi-role-segment.mensalista {{
+      flex: 0 1 var(--mensalista-share);
+      background: linear-gradient(90deg, #0b4f82 0%, #2f7fb4 100%);
+    }}
+    .kpi-role-segment.executivo {{
+      flex: 0 1 var(--executivo-share);
+      background: linear-gradient(90deg, #6faed2 0%, #a8d0e8 100%);
     }}
     .kpi-note {{
       color: var(--muted);
@@ -4464,12 +4672,27 @@ def build_html_report(
     <section class="grid-4">
       <article class="card kpi-card">
         <div class="kpi-label" id="kpi1-label">{translations['pt']['kpi1_label']}</div>
-        <div class="kpi-value">{summary_map['Universo considerado']}</div>
+        <div class="kpi-value">{summary_map['Nao aderentes']}<span class="kpi-denominator"><span id="kpi-denominator-prefix">{translations['pt']['kpi_denominator_prefix']}</span> {summary_map['Universo considerado']}</span></div>
         <div class="kpi-note" id="kpi1-note">{translations['pt']['kpi1_note']}</div>
       </article>
       <article class="card kpi-card">
         <div class="kpi-label" id="kpi2-label">{translations['pt']['kpi2_label']}</div>
-        <div class="kpi-value">{summary_map['Nao aderentes']}</div>
+        <div class="kpi-breakdown">
+          <div class="kpi-breakdown-item mensalista">
+            <strong>{mensalista_bad}</strong>
+            <span id="kpi-mensalista-label">{translations['pt']['kpi_mensalista_label']}</span>
+            <small>{mensalista_bad_pct}</small>
+          </div>
+          <div class="kpi-breakdown-item executivo">
+            <strong>{executivo_bad}</strong>
+            <span id="kpi-executivo-label">{translations['pt']['kpi_executivo_label']}</span>
+            <small>{executivo_bad_pct}</small>
+          </div>
+        </div>
+        <div class="kpi-role-bar" style="--mensalista-share: {mensalista_bad_pct_value:.1f}%; --executivo-share: {executivo_bad_pct_value:.1f}%;" aria-hidden="true">
+          <div class="kpi-role-segment mensalista"></div>
+          <div class="kpi-role-segment executivo"></div>
+        </div>
         <div class="kpi-note" id="kpi2-note">{translations['pt']['kpi2_note']}</div>
       </article>
       <article class="card kpi-card">
@@ -4722,6 +4945,9 @@ def build_html_report(
       setText('kpi1-note', t.kpi1_note);
       setText('kpi2-label', t.kpi2_label);
       setText('kpi2-note', t.kpi2_note);
+      setText('kpi-denominator-prefix', t.kpi_denominator_prefix || fallback.kpi_denominator_prefix);
+      setText('kpi-mensalista-label', t.kpi_mensalista_label || fallback.kpi_mensalista_label);
+      setText('kpi-executivo-label', t.kpi_executivo_label || fallback.kpi_executivo_label);
       setText('kpi3-label', t.kpi3_label);
       setText('kpi3-note', t.kpi3_note);
       setText('kpi4-label', t.kpi4_label);
@@ -5963,6 +6189,7 @@ def main() -> None:
         excluded_areas_df=excluded_areas_df,
         cumulative_df=cumulative_df,
         distribution_df=distribution_df,
+        cargo_df=cargo_df,
         area_df=area_df,
         weekly_manager_df=weekly_manager_df,
         department_recent_df=department_recent_df,
