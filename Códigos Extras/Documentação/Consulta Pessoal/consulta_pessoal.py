@@ -2039,7 +2039,7 @@ def _build_web_page(
         word_html = f"<div class='file-path'>Word gerado: <code>{html_escape(str(word_path))}</code></div>"
 
     user_val = html_escape(form_values.get("user", ""))
-    password_val = html_escape(form_values.get("password", ""))
+    password_val = ""
     solicitante_val = html_escape(form_values.get("solicitante", ""))
     data_ref_val = html_escape(form_values.get("data_referencia", ""))
     lista_val = html_escape(form_values.get("lista_alvos", ""))

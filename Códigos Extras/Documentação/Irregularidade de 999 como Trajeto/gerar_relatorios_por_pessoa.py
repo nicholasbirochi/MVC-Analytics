@@ -459,7 +459,7 @@ class ConsultaPessoalClient:
         if not self.capturar_print:
             return req_out
 
-        # Consulta por nome prioriza retorno textual para evitar dependência de Selenium/Edge.
+        # Consulta por nome prioriza retorno textual para evitar dependência de automação de navegador.
         if bool(req_out.get("ok")):
             req_out["mensagem_print"] = "Captura de print nao aplicada para consulta por nome."
         return req_out
