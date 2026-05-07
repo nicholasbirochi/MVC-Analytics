@@ -363,7 +363,7 @@ class ConsultaPessoalClient:
 
         req_out: dict | None = None
         if (self.session is not None) and (BeautifulSoup is not None):
-            req_out = self._consultar_via_requests(cad, nome_hint=nome_hint)
+            req_out = self._consultar_via_requests(cad, nome_hint=nome_hint, validar_cpf_unico=True)
 
         if not self.capturar_print:
             if req_out is not None:
@@ -450,7 +450,13 @@ class ConsultaPessoalClient:
 
         req_out: dict | None = None
         if (self.session is not None) and (BeautifulSoup is not None):
-            req_out = self._consultar_via_requests("", nome_hint=nome_hint, modo_busca="NOME", termo_busca=nome_hint)
+            req_out = self._consultar_via_requests(
+                "",
+                nome_hint=nome_hint,
+                modo_busca="NOME",
+                termo_busca=nome_hint,
+                validar_cpf_unico=True,
+            )
 
         if req_out is None:
             out["mensagem"] = "Consulta textual indisponivel (requests/bs4 nao disponiveis)."
@@ -600,6 +606,41 @@ class ConsultaPessoalClient:
             if ku in {"NUMERO PESSOAL", "NO PESSOAL"}:
                 return self._normalizar_chapa_key(str(v or ""))
         return ""
+
+    def _cpfs_de_html_ficha(self, html_text: str) -> list[str]:
+        cpfs: list[str] = []
+        seen: set[str] = set()
+        try:
+            campos = self._extract_ficha_campos(html_text)
+        except Exception:
+            campos = []
+        for campo, valor in list(campos or []):
+            if normalize_ascii_upper(str(campo or "")) not in {"CNPF", "CPF"}:
+                continue
+            candidatos = [str(valor or "")]
+            candidatos.extend(re.findall(r"\d{3}\.?\d{3}\.?\d{3}-?\d{2}", str(valor or "")))
+            for cand in candidatos:
+                cpf = normalizar_cpf_value(cand)
+                if cpf and cpf not in seen:
+                    seen.add(cpf)
+                    cpfs.append(cpf)
+        return cpfs
+
+    def _cpfs_distintos_paginas(self, paginas: list[tuple[str, str]], limite: int = 2) -> list[str]:
+        cpfs: list[str] = []
+        seen: set[str] = set()
+        for _, html_text in list(paginas or []):
+            for cpf in self._cpfs_de_html_ficha(html_text):
+                if cpf in seen:
+                    continue
+                seen.add(cpf)
+                cpfs.append(cpf)
+                if len(cpfs) >= int(max(limite, 1)):
+                    return cpfs
+        return cpfs
+
+    def _tem_cpfs_distintos_suficientes(self, paginas: list[tuple[str, str]]) -> bool:
+        return len(self._cpfs_distintos_paginas(paginas, limite=2)) > 1
 
     def _normalizar_numero_pessoal_em_linha(self, linha: str) -> str:
         return str(linha or "")
@@ -1029,8 +1070,10 @@ class ConsultaPessoalClient:
         nome_hint: str = "",
         modo_busca: str = "",
         termo_busca: str = "",
+        validar_cpf_unico: bool = False,
     ) -> dict:
         cad = self._normalizar_numero_pessoal(cadastro)
+        validar_cpf_unico = bool(validar_cpf_unico) and normalize_ascii_upper(modo_busca) != "CPF"
         out = {
             "cadastro": cad,
             "ok": False,
@@ -1095,11 +1138,17 @@ class ConsultaPessoalClient:
             # tentativa direta: se a pagina ja trouxe links de ficha, abre agora
             direct_details: list[tuple[str, str]] = []
             html_search = self._response_text(resp_search)
-            for m in re.findall(
+            direct_links = re.findall(
                 r"(ExibeFicha(?:Funcionais|Pessoais)\.asp\?chapa=[0-9]+)",
                 str(html_search or ""),
                 flags=re.I,
-            )[:6]:
+            )
+            if validar_cpf_unico:
+                direct_links = sorted(
+                    direct_links,
+                    key=lambda u: (0 if "PESSOAIS" in normalize_ascii_upper(u) else 1, u),
+                )
+            for m in direct_links[:12 if validar_cpf_unico else 6]:
                 u = urljoin(str(resp_search.url or ""), m)
                 try:
                     r0 = self.session.get(
@@ -1116,6 +1165,8 @@ class ConsultaPessoalClient:
                     if not getattr(r0, "encoding", None):
                         r0.encoding = "latin-1"
                     direct_details.append((str(r0.url or u), self._response_text(r0)))
+                    if validar_cpf_unico and self._tem_cpfs_distintos_suficientes(direct_details):
+                        break
                 except Exception:
                     continue
 
@@ -1152,10 +1203,20 @@ class ConsultaPessoalClient:
                         trace.append(f"[PASSO 3B] GET ExibePeople: {r_people.url} (status={r_people.status_code})")
                     if r_people.ok:
                         # injeta a pagina de resultado no fluxo de detalhes
-                        details = self._fetch_detail_pages(r_people, cad)
+                        details = self._fetch_detail_pages(
+                            r_people,
+                            cad,
+                            parar_ao_segundo_cpf=validar_cpf_unico,
+                            priorizar_cnpf=validar_cpf_unico,
+                        )
                     else:
                         # fallback: tenta submeter formularios do FindPeople para obter o resultado real
-                        details = self._fetch_detail_pages(resp_search, cad)
+                        details = self._fetch_detail_pages(
+                            resp_search,
+                            cad,
+                            parar_ao_segundo_cpf=validar_cpf_unico,
+                            priorizar_cnpf=validar_cpf_unico,
+                        )
                         if BeautifulSoup is not None:
                             try:
                                 soup_fp = BeautifulSoup(resp_search.text, "html.parser")
@@ -1176,7 +1237,12 @@ class ConsultaPessoalClient:
                                     r_fp = self._request_form(action, method, payload)
                                     if self.debug_passos:
                                         trace.append(f"[PASSO 3C] POST resultado: {r_fp.url} (status={r_fp.status_code})")
-                                    details = self._fetch_detail_pages(r_fp, cad)
+                                    details = self._fetch_detail_pages(
+                                        r_fp,
+                                        cad,
+                                        parar_ao_segundo_cpf=validar_cpf_unico,
+                                        priorizar_cnpf=validar_cpf_unico,
+                                    )
                                     break
                                 except Exception as exc_post:
                                     if self.debug_passos:
@@ -1184,15 +1250,27 @@ class ConsultaPessoalClient:
                                     continue
                 else:
                     if not direct_details:
-                        details = self._fetch_detail_pages(resp_search, cad)
+                        details = self._fetch_detail_pages(
+                            resp_search,
+                            cad,
+                            parar_ao_segundo_cpf=validar_cpf_unico,
+                            priorizar_cnpf=validar_cpf_unico,
+                        )
             except Exception as exc_people:
                 if self.debug_passos:
                     trace.append(f"[PASSO 3B] Falha ao abrir ExibePeople: {exc_people}")
                 if not direct_details:
-                    details = self._fetch_detail_pages(resp_search, cad)
+                    details = self._fetch_detail_pages(
+                        resp_search,
+                        cad,
+                        parar_ao_segundo_cpf=validar_cpf_unico,
+                        priorizar_cnpf=validar_cpf_unico,
+                    )
             if self.debug_passos:
                 trace.append(f"[PASSO 4] Paginas coletadas (antes expansão): {len(details)}")
-            details = self._expandir_fichas_via_resultado(details, cadastro_hint=cad)
+            cpfs_pre_expansao = self._cpfs_distintos_paginas(details, limite=2) if validar_cpf_unico else []
+            if not (validar_cpf_unico and len(cpfs_pre_expansao) > 1):
+                details = self._expandir_fichas_via_resultado(details, cadastro_hint=cad)
             if self.debug_passos:
                 trace.append(f"[PASSO 5] Paginas coletadas (após expansão): {len(details)}")
 
@@ -2026,7 +2104,13 @@ class ConsultaPessoalClient:
             raise RuntimeError("Falha ao submeter pesquisa na consulta pessoal.")
         return ultimo_resp
 
-    def _fetch_detail_pages(self, response, cadastro: str) -> list[tuple[str, str]]:
+    def _fetch_detail_pages(
+        self,
+        response,
+        cadastro: str,
+        parar_ao_segundo_cpf: bool = False,
+        priorizar_cnpf: bool = False,
+    ) -> list[tuple[str, str]]:
         """
         Retorna páginas de detalhe da consulta pessoal, juntando:
         - ExibeFichaFuncionais
@@ -2051,9 +2135,9 @@ class ConsultaPessoalClient:
             if ("EXIBEPEOPLE" in href_u) or ("EXIBEPEOLPLE" in href_u):
                 return 0
             if "EXIBEFICHAFUNCIONAIS" in href_u:
-                return 1
+                return 2 if priorizar_cnpf else 1
             if "EXIBEFICHAPESSOAIS" in href_u:
-                return 2
+                return 1 if priorizar_cnpf else 2
             if "EXIBEFICHA" in href_u:
                 return 3
             if any(v and ((v in href_u) or (v in txt_u)) for v in cadastro_vars):
@@ -2120,13 +2204,43 @@ class ConsultaPessoalClient:
         out_pages.append((base_url, html_text))
         seen_urls.add(base_url)
         _enqueue_links(base_url, html_text)
+
+        def _finalizar_out_pages() -> list[tuple[str, str]]:
+            # garante ao menos resultado base
+            if not out_pages:
+                out_pages.append((str(response.url or ""), html_text))
+
+            def _page_rank(item: tuple[str, str]) -> tuple[int, str]:
+                u = normalize_ascii_upper(item[0])
+                if "EXIBEPEOPLE" in u:
+                    return (0, item[0])
+                if "EXIBEFICHAPESSOAIS" in u:
+                    return ((1 if priorizar_cnpf else 2), item[0])
+                if "EXIBEFICHAFUNCIONAIS" in u:
+                    return ((2 if priorizar_cnpf else 1), item[0])
+                if "FINDPEOPLE" in u:
+                    return (3, item[0])
+                return (4, item[0])
+
+            dedup = {}
+            for u, html in out_pages:
+                uu = str(u or "").strip()
+                if uu not in dedup:
+                    dedup[uu] = html
+            return sorted([(u, h) for u, h in dedup.items()], key=_page_rank)
+
         # se a pagina de resultado ja traz links de ficha, abre direto
         direct_links = re.findall(
             r"(ExibeFicha(?:Funcionais|Pessoais)\.asp\?chapa=[0-9]+)",
             str(html_text or ""),
             flags=re.I,
         )
-        for m in direct_links[:6]:
+        if priorizar_cnpf:
+            direct_links = sorted(
+                direct_links,
+                key=lambda u: (0 if "PESSOAIS" in normalize_ascii_upper(u) else 1, u),
+            )
+        for m in direct_links[:12 if priorizar_cnpf else 6]:
             u = urljoin(base_url, m)
             if u in seen_urls:
                 continue
@@ -2147,6 +2261,8 @@ class ConsultaPessoalClient:
                 html0 = self._response_text(r0)
                 out_pages.append((str(r0.url or u), html0))
                 seen_urls.add(str(r0.url or u))
+                if parar_ao_segundo_cpf and self._tem_cpfs_distintos_suficientes(out_pages):
+                    return _finalizar_out_pages()
             except Exception:
                 continue
         if not queue:
@@ -2180,6 +2296,8 @@ class ConsultaPessoalClient:
                     html0 = self._response_text(r0)
                     out_pages.append((str(r0.url or u), html0))
                     seen_urls.add(str(r0.url or u))
+                    if parar_ao_segundo_cpf and self._tem_cpfs_distintos_suficientes(out_pages):
+                        return _finalizar_out_pages()
                 except Exception:
                     continue
 
@@ -2205,35 +2323,13 @@ class ConsultaPessoalClient:
                     r.encoding = "latin-1"
                 html_r = self._response_text(r)
                 out_pages.append((str(r.url or u), html_r))
+                if parar_ao_segundo_cpf and self._tem_cpfs_distintos_suficientes(out_pages):
+                    return _finalizar_out_pages()
                 _enqueue_links(r.url, html_r)
             except Exception:
                 continue
 
-        # garante ao menos resultado base
-        if not out_pages:
-            out_pages.append((str(response.url or ""), html_text))
-
-        # mantém Funcionais/Pessoais primeiro
-        def _page_rank(item: tuple[str, str]) -> tuple[int, str]:
-            u = normalize_ascii_upper(item[0])
-            if "EXIBEPEOPLE" in u:
-                return (0, item[0])
-            if "EXIBEFICHAFUNCIONAIS" in u:
-                return (1, item[0])
-            if "EXIBEFICHAPESSOAIS" in u:
-                return (2, item[0])
-            if "FINDPEOPLE" in u:
-                return (3, item[0])
-            return (4, item[0])
-
-        # dedup final por URL
-        dedup = {}
-        for u, html in out_pages:
-            uu = str(u or "").strip()
-            if uu not in dedup:
-                dedup[uu] = html
-        out_pages = sorted([(u, h) for u, h in dedup.items()], key=_page_rank)
-        return out_pages
+        return _finalizar_out_pages()
 
     def _consultar_via_playwright(self, cadastro: str) -> dict:
         cad = self._normalizar_numero_pessoal(cadastro)
