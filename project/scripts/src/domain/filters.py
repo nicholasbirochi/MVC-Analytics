@@ -20,7 +20,7 @@ import pandas as pd
 from ..core.config import AREAS_FORA, get_settings
 from ..core import repo_global as repo
 from .cargo import normalize_cargo_columns
-from .periods import LT_MONTHS, periodo_limites
+from .periods import LT_MONTHS, listar_segundas_periodo, periodo_limites
 from .tenure import carregar_adm_dem_cache, sobrepoe_periodo
 
 _FILTER_CACHE: dict[tuple, tuple[float, pd.DataFrame]] = {}
@@ -293,6 +293,53 @@ def _agrupar_media_colaboradores(df_base: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _dias_monitorados_colaborador(
+    cadastro: object,
+    dt_ini,
+    dt_fim,
+    adm_cache: dict[str, pd.Timestamp],
+    dem_cache: dict[str, pd.Timestamp],
+) -> int:
+    inicio = pd.Timestamp(dt_ini).normalize()
+    fim = pd.Timestamp(dt_fim).normalize()
+    cad = str(cadastro)
+    adm = pd.to_datetime(adm_cache.get(cad), errors="coerce")
+    dem = pd.to_datetime(dem_cache.get(cad), errors="coerce")
+    if pd.notna(adm):
+        inicio = max(inicio, adm.normalize())
+    if pd.notna(dem):
+        fim = min(fim, dem.normalize())
+    if inicio > fim:
+        return 0
+    return len(listar_segundas_periodo(inicio, fim))
+
+
+def _ajustar_media_para_periodo(
+    df_media: pd.DataFrame,
+    dt_ini,
+    dt_fim,
+    df_semana_merged: pd.DataFrame,
+) -> pd.DataFrame:
+    if df_media is None or df_media.empty or "Cadastro" not in df_media.columns:
+        return df_media
+
+    out = df_media.copy()
+    adm_cache, dem_cache = carregar_adm_dem_cache(
+        repo.df_df_desligados if hasattr(repo, "df_df_desligados") else None,
+        repo.df_df_ativos if hasattr(repo, "df_df_ativos") else None,
+        df_semana_merged,
+    )
+    if "Dias Presenca" not in out.columns:
+        out["Dias Presenca"] = 0.0
+    out["Dias Presenca"] = pd.to_numeric(out["Dias Presenca"], errors="coerce").fillna(0.0)
+    out["Dias Monitorados"] = out["Cadastro"].apply(
+        lambda cad: _dias_monitorados_colaborador(cad, dt_ini, dt_fim, adm_cache, dem_cache)
+    )
+    monitorados = pd.to_numeric(out["Dias Monitorados"], errors="coerce").fillna(0.0)
+    out["Média Presença"] = (out["Dias Presenca"] / monitorados.where(monitorados > 0)).fillna(0.0)
+    return out
+
+
 def filtrar_base(
     df_desligados: str,
     viajam: str,
@@ -386,10 +433,15 @@ def carregar_media_colaboradores(
         return cached
 
     dt_ini, dt_fim = periodo_limites(periodo_idx)
+    semanas_periodo = listar_segundas_periodo(dt_ini, dt_fim)
+    if not semanas_periodo:
+        return _agrupar_media_colaboradores(pd.DataFrame())
 
     if getattr(repo, "USING_DW_SQLITE", False):
         from .pipeline import query_dw
 
+        semanas_sql = [pd.Timestamp(dia).strftime("%Y-%m-%d") for dia in semanas_periodo]
+        placeholders = ",".join(["?"] * len(semanas_sql))
         sql = """
         SELECT
             "Cadastro",
@@ -404,15 +456,12 @@ def carregar_media_colaboradores(
             SUM(COALESCE("Contagem Presença", 0)) AS "Dias Presenca",
             COUNT(1) AS "Dias Monitorados"
         FROM vw_semana_enriquecida
-        WHERE "Data" BETWEEN ? AND ?
+        WHERE "Data" IN (__SEMANAS__)
         GROUP BY "Cadastro";
-        """
+        """.replace("__SEMANAS__", placeholders)
         df_media = query_dw(
             sql,
-            params=(
-                pd.Timestamp(dt_ini).strftime("%Y-%m-%d"),
-                pd.Timestamp(dt_fim).strftime("%Y-%m-%d"),
-            ),
+            params=tuple(semanas_sql),
             cache_ttl=_cache_ttl(),
         )
         if "Cadastro" in df_media.columns:
@@ -421,9 +470,15 @@ def carregar_media_colaboradores(
         df_media = df_media[df_media["Cadastro"].isin(elegiveis)].copy()
     else:
         base = filtrar_por_periodo(df_semana_merged, dt_ini, dt_fim).copy()
+        semanas_set = {pd.Timestamp(dia).normalize() for dia in semanas_periodo}
+        if "Data" in base.columns:
+            base["Data"] = pd.to_datetime(base["Data"], errors="coerce").dt.normalize()
+            base = base[base["Data"].isin(semanas_set)].copy()
         elegiveis = _cadastros_elegiveis(base, dt_ini, dt_fim, df_semana_merged)
         base = base[base["Cadastro"].astype(str).isin(elegiveis)]
         df_media = _agrupar_media_colaboradores(base)
+
+    df_media = _ajustar_media_para_periodo(df_media, dt_ini, dt_fim, df_semana_merged)
 
     if df_desligados == "right" and "Desligado" in df_media.columns:
         df_media = df_media[df_media["Desligado"] != "Sim"].copy()

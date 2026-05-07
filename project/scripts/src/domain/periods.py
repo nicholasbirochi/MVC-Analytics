@@ -12,16 +12,70 @@ Padronização:
 from __future__ import annotations
 
 import datetime as dt
+import sqlite3
+from pathlib import Path
 from typing import Iterable, Sequence
 
 import pandas as pd
 
-from ..core.config import FERIAS_COLETIVAS
+from ..core.config import FERIAS_COLETIVAS, SETTINGS
 
 
 # ----- Linha do tempo global --------------------------------------------------
 LT_INICIO_ABS = dt.date(2024, 1, 1)
-LT_FIM_ABS = dt.date.today()
+
+
+def _max_data_dw() -> dt.date | None:
+    """Usa a última presença real em mês fechado para evitar dados parciais/futuros."""
+    dw_path_config = getattr(SETTINGS, "dw_path", None)
+    if not dw_path_config:
+        return None
+
+    dw_path = Path(dw_path_config)
+    if not dw_path.exists():
+        return None
+
+    hoje = pd.Timestamp(dt.date.today()).normalize()
+    primeiro_dia_mes_atual = hoje.replace(day=1)
+    limite_mes_fechado = (primeiro_dia_mes_atual - pd.Timedelta(days=1)).date()
+
+    consultas_principais = (
+        ("agg_diarios_unico", "data"),
+        ('vw_df_diarios_unico', '"Data"'),
+    )
+    consultas_fallback = (
+        ('vw_df_diarios', '"Data"'),
+        ('evento_acesso_flat', 'data'),
+    )
+
+    def executar(
+        conn: sqlite3.Connection,
+        consultas: Iterable[tuple[str, str]],
+    ) -> dt.date | None:
+        datas: list[dt.date] = []
+        for tabela, coluna in consultas:
+            try:
+                row = conn.execute(
+                    f"SELECT MAX({coluna}) FROM {tabela} WHERE {coluna} <= ?",
+                    (limite_mes_fechado.strftime("%Y-%m-%d"),),
+                ).fetchone()
+            except sqlite3.Error:
+                continue
+            if not row or row[0] is None:
+                continue
+            valor = pd.to_datetime(row[0], errors="coerce")
+            if not pd.isna(valor):
+                datas.append(pd.Timestamp(valor).date())
+        return max(datas) if datas else None
+
+    try:
+        with sqlite3.connect(str(dw_path)) as conn:
+            return executar(conn, consultas_principais) or executar(conn, consultas_fallback)
+    except sqlite3.Error:
+        return None
+
+
+LT_FIM_ABS = _max_data_dw() or dt.date.today()
 LT_MONTHS: Sequence[dt.date] = pd.date_range(LT_INICIO_ABS, LT_FIM_ABS, freq="MS").date
 
 
@@ -74,10 +128,37 @@ def listar_segundas_validas(df_semana: pd.DataFrame) -> list[pd.Timestamp]:
     ]
 
 
+def listar_segundas_periodo(dt_ini, dt_fim) -> list[pd.Timestamp]:
+    if dt_ini is None or dt_fim is None:
+        return []
+    try:
+        inicio = pd.Timestamp(dt_ini).normalize()
+        fim = pd.Timestamp(dt_fim).normalize()
+    except Exception:
+        return []
+    if pd.isna(inicio) or pd.isna(fim):
+        return []
+    if inicio > fim:
+        inicio, fim = fim, inicio
+
+    dias_ate_segunda = (7 - inicio.weekday()) % 7
+    primeira_segunda = inicio + pd.Timedelta(days=dias_ate_segunda)
+    if primeira_segunda > fim:
+        return []
+
+    segundas = pd.date_range(primeira_segunda, fim, freq="7D")
+    return [
+        pd.Timestamp(dia)
+        for dia in segundas
+        if not esta_em_ferias(dia)
+        and getattr(dia.isocalendar(), "week", dia.isocalendar()[1]) != 1
+    ]
+
+
 def periodo_limites(indices: Iterable[int]) -> tuple[pd.Timestamp, pd.Timestamp]:
     i0, i1 = indices
     i0 = max(0, min(i0, len(LT_MONTHS) - 1))
     i1 = max(0, min(i1, len(LT_MONTHS) - 1))
     dt_ini = pd.to_datetime(LT_MONTHS[i0]).replace(day=1)
-    dt_fim = pd.to_datetime(LT_MONTHS[i1]) + pd.offsets.MonthEnd(0)
+    dt_fim = min(pd.to_datetime(LT_MONTHS[i1]) + pd.offsets.MonthEnd(0), pd.Timestamp(LT_FIM_ABS))
     return dt_ini, dt_fim

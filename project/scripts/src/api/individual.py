@@ -50,6 +50,7 @@ from ..domain.periods import (
     LT_C1_MIN,
     LT_C2_MAX,
     LT_C2_MIN,
+    listar_segundas_periodo,
     periodo_limites,
 )
 from ..domain.tenure import obter_periodo_admissao
@@ -639,13 +640,41 @@ def register(app):
 
         nome_input = df_chapa_semana['Nome'].iloc[0].title()
 
+        periodo_ini_calc = pd.Timestamp(dt_ini).normalize()
+        periodo_fim_calc = pd.Timestamp(dt_fim).normalize()
+        data_adm, data_dem = obter_periodo_admissao(chapa_input)
+        adm_ts = pd.to_datetime(data_adm, errors="coerce")
+        dem_ts = pd.to_datetime(data_dem, errors="coerce")
+        if pd.notna(adm_ts):
+            periodo_ini_calc = max(periodo_ini_calc, adm_ts.normalize())
+        if pd.notna(dem_ts):
+            periodo_fim_calc = min(periodo_fim_calc, dem_ts.normalize())
+        if periodo_ini_calc > periodo_fim_calc:
+            return None, estilo_oculto, estilo_exibir, no_update
+
         # Semana-Ano
+        df_chapa_semana["Data"] = pd.to_datetime(df_chapa_semana["Data"], errors="coerce").dt.normalize()
+        df_chapa_semana = df_chapa_semana[
+            (df_chapa_semana["Data"] >= periodo_ini_calc)
+            & (df_chapa_semana["Data"] <= periodo_fim_calc)
+        ].copy()
+        if df_chapa_semana.empty:
+            return None, estilo_oculto, estilo_exibir, no_update
+
         df_chapa_semana['Semana_Ano'] = (
             df_chapa_semana['Ano'].astype(str) + "-" + df_chapa_semana['Semana por Ano'].astype(str).str.zfill(2)
         )
 
         # Presenças por semana
-        dias_presenca_por_semana = df_chapa_semana.groupby('Semana_Ano')['Contagem Presença'].mean()
+        dias_presenca_raw = df_chapa_semana.groupby('Semana_Ano')['Contagem Presença'].mean()
+        semanas_periodo = listar_segundas_periodo(periodo_ini_calc, periodo_fim_calc)
+        semana_index = [
+            f"{dia.isocalendar().year}-{dia.isocalendar().week:02d}"
+            for dia in semanas_periodo
+        ]
+        if not semana_index:
+            return None, estilo_oculto, estilo_exibir, no_update
+        dias_presenca_por_semana = dias_presenca_raw.reindex(semana_index, fill_value=0.0)
         media_presenca_semana = round(dias_presenca_por_semana.mean(), 2)
         min_req_por_semana = dias_presenca_por_semana.index.to_series().apply(min_presencial_exigido)
         media_min_req = (
@@ -660,7 +689,7 @@ def register(app):
         percentuais_presenca = calcular_percentual_presenca(dias_presenca_por_semana)
 
         # Distribuição de presenças (0..7) baseada na fonte canônica SQL do colaborador.
-        distribuicao_presencas = df_chapa_semana['Contagem Presença'].value_counts().sort_index()
+        distribuicao_presencas = dias_presenca_por_semana.round().astype(int).value_counts().sort_index()
         x = sorted(set(distribuicao_presencas.index))
         y_presencas = distribuicao_presencas.reindex(x, fill_value=0)
 
@@ -670,17 +699,15 @@ def register(app):
         y_presenca_por_semana = dias_presenca_por_semana_ordenado.values
 
         # Datas reais da chapa em df_datas
-        df_chapa_data = dw_fetch_diarios([str(chapa_input)], dt_ini=dt_ini, dt_fim=dt_fim)[['Data', 'Cadastro']].copy()
+        df_chapa_data = dw_fetch_diarios(
+            [str(chapa_input)],
+            dt_ini=periodo_ini_calc,
+            dt_fim=periodo_fim_calc,
+        )[['Data', 'Cadastro']].copy()
         df_chapa_data['Data'] = pd.to_datetime(df_chapa_data['Data'], errors='coerce')
 
-        # Se quiser limitar por admissão/demissão, usa o range dentro desse intervalo:
-        # garanta que são Timestamps
-        min_real = pd.Timestamp(df_chapa_data['Data'].min())
-        max_real = pd.Timestamp(df_chapa_data['Data'].max())
-
-        if pd.isna(min_real) or pd.isna(max_real):
-            # Sem datas -> não há como montar o heatmap
-            return None, estilo_oculto, estilo_exibir, no_update
+        min_real = periodo_ini_calc
+        max_real = periodo_fim_calc
 
         def _fmt_mes_ano(dt_ref: pd.Timestamp) -> str:
             try:
@@ -700,15 +727,6 @@ def register(app):
         mes_ano_inicio = min_real.strftime("%b %Y").capitalize()
         mes_ano_fim    = max_real.strftime("%b %Y").capitalize()
         periodo_label_curto = f"{mes_ano_inicio} a {mes_ano_fim}"
-
-        # Se quiser cruzar com adm/dem, aplique aqui:
-        data_adm, data_dem = obter_periodo_admissao(chapa_input)
-        adm_ts = pd.to_datetime(data_adm, errors="coerce")
-        dem_ts = pd.to_datetime(data_dem, errors="coerce")
-        if pd.notna(adm_ts):
-            min_real = max(min_real.normalize(), adm_ts.normalize())
-        if pd.notna(dem_ts):
-            max_real = min(max_real.normalize(), dem_ts.normalize())
 
         # Gera TODAS as datas no período [min_real .. max_real]
         todas_datas = pd.date_range(min_real.normalize(), max_real.normalize(), freq='D')
@@ -787,7 +805,15 @@ def register(app):
         ax_clock.set_theta_offset(np.pi)
         ax_clock.set_theta_direction(-1)
         current_val = float(media_presenca_semana)
-        colors = ['#ffb3b3', '#f4cccc', '#d9ead3', '#b6e6c5', '#96ddb1', '#6ccf9a', '#3fbe81']
+        meta_gauge = max(0.0, float(media_min_req))
+        colors = [
+            '#ffb3b3' if (i + 1) <= meta_gauge - 1 else
+            '#f4cccc' if (i + 1) <= meta_gauge else
+            '#fff9a9' if i >= 5 else
+            '#d9ead3' if i == int(meta_gauge) else
+            '#b6e6c5'
+            for i in range(7)
+        ]
         bounds = [0, 1, 2, 3, 4, 5, 6, 7]
         ax_clock.set_yticklabels([]); ax_clock.set_xticklabels([]); ax_clock.set_axis_off()
         for i in range(len(colors)):
@@ -909,7 +935,13 @@ def register(app):
             semana_codigo = semana_label.split(" |")[0].replace(" ", "-")
             if semana_codigo in dias_presenca_por_semana.index:
                 qtd_presenca = dias_presenca_por_semana.loc[semana_codigo]
-                cor_destaque = "#ffb3b3" if qtd_presenca == 0 else ("#f4cccc" if qtd_presenca == 1 else "#d9ead3")
+                qtd_float = 0.0 if pd.isna(qtd_presenca) else float(qtd_presenca)
+                meta_semana = float(min_presencial_exigido(semana_codigo))
+                cor_destaque = (
+                    "#d9ead3" if qtd_float >= meta_semana else
+                    "#ffb3b3" if qtd_float <= max(0.0, meta_semana - 2.0) else
+                    "#f4cccc"
+                )
                 for col_idx in range(tabela_heatmap.shape[1]):
                     ax_heatmap.add_patch(
                         plt.Rectangle((col_idx, y_idx), 1, 1, facecolor=cor_destaque,
@@ -953,7 +985,12 @@ def register(app):
                 semana_codigo = semana_label.split(" |")[0].replace(" ", "-")
                 if semana_codigo in dias_presenca_por_semana.index:
                     qtd_presenca = dias_presenca_por_semana.loc[semana_codigo]
-                    cor_destaque = "#ffb3b3" if qtd_presenca == 0 else "#f4cccc"
+                    qtd_float = 0.0 if pd.isna(qtd_presenca) else float(qtd_presenca)
+                    meta_semana = float(min_presencial_exigido(semana_codigo))
+                    cor_destaque = (
+                        "#ffb3b3" if qtd_float <= max(0.0, meta_semana - 2.0) else
+                        "#f4cccc"
+                    )
                     for col_idx in range(tabela_heatmap_baixa.shape[1]):
                         ax_heatmap3.add_patch(
                             plt.Rectangle((col_idx, y_idx), 1, 1, facecolor=cor_destaque,
@@ -969,7 +1006,11 @@ def register(app):
         ax_heatmap2 = fig.add_subplot(gs_heatmaps[1])
 
         # Fonte diária de presença
-        df_chapa_data = dw_fetch_diarios([str(chapa_input)], dt_ini=dt_ini, dt_fim=dt_fim)[['Data']].copy()
+        df_chapa_data = dw_fetch_diarios(
+            [str(chapa_input)],
+            dt_ini=periodo_ini_calc,
+            dt_fim=periodo_fim_calc,
+        )[['Data']].copy()
         df_chapa_data['Data'] = pd.to_datetime(df_chapa_data['Data'], errors='coerce')
         df_chapa_data = df_chapa_data.dropna(subset=['Data'])
 

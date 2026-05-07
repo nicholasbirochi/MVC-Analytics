@@ -252,7 +252,7 @@ def areas_toggle_ui():
                             },
                         ),
                         html.Span(
-                            "🕸️",
+                            "📡",
                             id="ico_net",
                             style={
                                 "position": "absolute",
@@ -443,7 +443,14 @@ def register(app):
         mudou_periodo     = trig in ('periodo-slider-area', 'cenario-toggle-area')
         mudou_filtros     = trig in ('desligados-toggle-area', 'viajam-toggle-area')
 
-        df_key = cache_key(area_base, sub_val_out, df_desligados_area, viajam_area, i0, i1)
+        dt_ini_key = pd.Timestamp(dt_ini).strftime("%Y-%m-%d") if dt_ini is not None else ""
+        dt_fim_key = pd.Timestamp(dt_fim).strftime("%Y-%m-%d") if dt_fim is not None else ""
+        df_key = (
+            *cache_key(area_base, sub_val_out, df_desligados_area, viajam_area, i0, i1),
+            modo,
+            dt_ini_key,
+            dt_fim_key,
+        )
 
         if not hasattr(callback_unificado, "_df_cache"):
             callback_unificado._df_cache = {}
@@ -1093,7 +1100,7 @@ def register(app):
                 Object.assign(knob_style, knob_on);
                 Object.assign(heat_style, ico_dim);
                 Object.assign(net_style, ico_on_color);
-                knob_ico_txt = "🕸️";
+                knob_ico_txt = "📡";
                 Object.assign(knob_ico_style, { color: "#f3f3f3", transform: "translateX(25px)" });
             } else {
                 Object.assign(net_style, ico_dim);

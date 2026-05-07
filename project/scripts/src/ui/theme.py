@@ -715,13 +715,24 @@ LANGUAGE_JS = r"""
     return translations[lang].selected_period_prefix + ": " + body;
   }
 
-  function formatMonthYear(value, lang) {
+  function formatPeriodValue(value, lang) {
     const parts = String(value || "").split("-");
     if (parts.length < 2) {
       return value || "";
     }
     const year = parts[0];
     const monthIdx = Math.max(0, Math.min(11, parseInt(parts[1], 10) - 1));
+    if (parts.length >= 3 && parts[2]) {
+      const day = String(parseInt(parts[2], 10)).padStart(2, "0");
+      const month = String(monthIdx + 1).padStart(2, "0");
+      if (lang === "zh") {
+        return year + "年" + String(monthIdx + 1) + "月" + String(parseInt(parts[2], 10)) + "日";
+      }
+      if (lang === "en") {
+        return month + "/" + day + "/" + year;
+      }
+      return day + "/" + month + "/" + year;
+    }
     if (lang === "zh") {
       return year + "年" + String(monthIdx + 1) + "月";
     }
@@ -737,9 +748,9 @@ LANGUAGE_JS = r"""
       }
       el.textContent = [
         translations[lang].selected_period_prefix + ":",
-        formatMonthYear(start, lang),
+        formatPeriodValue(start, lang),
         translations[lang].selected_period_to,
-        formatMonthYear(end, lang)
+        formatPeriodValue(end, lang)
       ].join(" ");
     });
   }

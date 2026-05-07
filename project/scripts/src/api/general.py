@@ -52,6 +52,9 @@ from ..domain.exports import (
     fig_to_bytes,
     gerar_relatorio_formatado,
     calcular_percentual_presenca,
+    DATA_MUDANCA_REGRA_PRESENCIAL,
+    MIN_PRESENCIAL_ANTES_MUDANCA,
+    MIN_PRESENCIAL_APOS_MUDANCA,
 )
 from ..domain.copresenca import calcular_ordem_heatmap
 from ..domain.cargo import HORISTA_LABEL, TERCEIRO_LABEL, normalize_cargo_columns
@@ -199,6 +202,52 @@ def _media_ponderada(df: pd.DataFrame, cargo: str | None = None) -> float:
     return round(float(dias_presenca / dias_monitorados), 2)
 
 
+def _meta_presencial_periodo(periodo_idx) -> float:
+    try:
+        dt_ini, dt_fim = periodo_limites(periodo_idx)
+    except Exception:
+        return float(MIN_PRESENCIAL_APOS_MUDANCA)
+
+    dt_ini = pd.Timestamp(dt_ini).normalize()
+    dt_fim = pd.Timestamp(dt_fim).normalize()
+    if dt_ini > dt_fim:
+        dt_ini, dt_fim = dt_fim, dt_ini
+
+    if dt_ini >= DATA_MUDANCA_REGRA_PRESENCIAL:
+        return float(MIN_PRESENCIAL_APOS_MUDANCA)
+    if dt_fim < DATA_MUDANCA_REGRA_PRESENCIAL:
+        return float(MIN_PRESENCIAL_ANTES_MUDANCA)
+
+    semanas = pd.period_range(dt_ini, dt_fim, freq="W")
+    metas = [
+        MIN_PRESENCIAL_APOS_MUDANCA
+        if pd.Timestamp(semana.end_time).normalize() >= DATA_MUDANCA_REGRA_PRESENCIAL
+        else MIN_PRESENCIAL_ANTES_MUDANCA
+        for semana in semanas
+    ]
+    if not metas:
+        return float(MIN_PRESENCIAL_APOS_MUDANCA)
+    return round(float(sum(metas) / len(metas)), 2)
+
+
+def _percentual_vs_meta(media, meta: float) -> float:
+    try:
+        media_f = float(media)
+        meta_f = float(meta)
+    except Exception:
+        return -100.0
+    if meta_f <= 0:
+        return 0.0
+    return round(((media_f / meta_f) * 100) - 100, 2)
+
+
+def _cor_vs_meta(media, meta: float) -> str:
+    try:
+        return "green" if float(media) >= float(meta) else "red"
+    except Exception:
+        return "red"
+
+
 def register(app):
     @app.callback(
         Output('tela-inicial-filtros', 'style'),
@@ -335,12 +384,12 @@ def register(app):
         ],
         [
             Input('dropdown-area', 'value'),
+            Input('dropdown-subarea', 'value'),
             Input('cenario-toggle', 'value'),
             Input('periodo-slider', 'value'),
         ],
-        State('dropdown-subarea', 'value')
     )
-    def orquestrador(area, cenario, slider_val, sub_val_atual):
+    def orquestrador(area, sub_val_atual, cenario, slider_val):
         # ------ Área/Subárea ------
         if not area or area == 'GERAL':
             sub_opts, sub_style, sub_val = [], {'display': 'none'}, None
@@ -387,8 +436,9 @@ def register(app):
                 return dt.strftime("%b/%Y").capitalize()
 
         i0, i1 = slider_out
-        d0 = pd.Timestamp(LT_MONTHS[i0])
-        d1 = (pd.Timestamp(LT_MONTHS[i1]) + pd.offsets.MonthEnd(1))
+        d0, d1 = periodo_limites(slider_out)
+        d0 = pd.Timestamp(d0)
+        d1 = pd.Timestamp(d1)
         periodo_txt = html.Span(
             f"Período selecionado: {fmt_mes_ano(d0)} a {fmt_mes_ano(d1)}",
             **{
@@ -482,8 +532,11 @@ def register(app):
             chapa_ref = _normalizar_cadastro(chapa_selecionada)
             media_colab = media_colab[media_colab['Chapa'].astype(str) == chapa_ref]
 
+        meta_periodo = _meta_presencial_periodo(periodo_idx)
         media_colab = aplicar_filtro_faixas(media_colab, 'Média Dia', faixas)
-        media_colab['Média %'] = (((media_colab['Média Dia'] / 2) * 100) - 100).round(2)
+        media_colab['Média %'] = media_colab['Média Dia'].apply(
+            lambda valor: _percentual_vs_meta(valor, meta_periodo)
+        )
         media_colab = media_colab.sort_values(by=['Área', 'Média %'], ascending=True)
         media_colab['Média %'] = media_colab['Média %'].astype(str) + ' %'
         try:
@@ -514,10 +567,7 @@ def register(app):
                                 'width': '100%',
                                 'height': '100%',
                                 'color': (
-                                    'green' if (
-                                        (isinstance(linha[5], (int, float)) and linha[5] >= 2) or
-                                        (isinstance(linha[6], str) and '%' in linha[6] and float(linha[6].replace('%', '').strip()) >= 0)
-                                    ) else 'red'
+                                    _cor_vs_meta(linha[5], meta_periodo)
                                 ),
                                 'textDecoration': 'none',
                             }),
@@ -655,11 +705,12 @@ def register(app):
         quant_vermelho, indices_vermelho = [], []
         quant_amarelo, indices_amarelo = [], []
         quant_verde, indices_verde = [], []
+        meta_periodo = _meta_presencial_periodo(periodo_idx)
 
         for i, faixa in enumerate(x_faixas):
             fmin = int(faixa.split(" ")[0])
             qtd = y_faixas[i]
-            if fmin < 2:
+            if fmin < meta_periodo:
                 quant_vermelho.append(qtd)
                 indices_vermelho.append(i)
             elif fmin > 4:
@@ -920,6 +971,7 @@ def register(app):
             return figura_vazia_linha("Sem dados para montar o boxplot no período e filtros selecionados.")
 
         fig_boxplot = go.Figure()
+        meta_periodo = _meta_presencial_periodo(periodo_idx)
         AZUL_LINHA = "#3299dd"
         AZUL_FILL = 'rgba(21,116,179,0.30)'
         VERM_LINHA = "#FF0000"
@@ -927,7 +979,7 @@ def register(app):
 
         for area_nome, dados_area in medias_individuais.groupby('Área'):
             s = dados_area['Média Presença'].dropna()
-            tem_abaixo = (s.min() < 2)
+            tem_abaixo = (s.min() < meta_periodo)
             cor_linha = VERM_LINHA if tem_abaixo else AZUL_LINHA
             cor_fill = VERM_FILL if tem_abaixo else AZUL_FILL
 
@@ -962,7 +1014,7 @@ def register(app):
             boxmode='group',
             height=600,
             shapes=[dict(
-                type="line", xref="paper", yref="y", x0=0, x1=1, y0=2, y1=2,
+                type="line", xref="paper", yref="y", x0=0, x1=1, y0=meta_periodo, y1=meta_periodo,
                 line=dict(color="#A10000", width=3, dash="solid")
             )]
         )
@@ -1012,6 +1064,7 @@ def register(app):
         media_presenca_executivos = _media_ponderada(media_df, cargo='E')
         media_presenca_horistas = _media_ponderada(media_df, cargo='H')
         media_presenca_terceiros = _media_ponderada(media_df, cargo='T')
+        meta_periodo = _meta_presencial_periodo(periodo_idx)
 
         def _to_number(value):
             if value is None:
@@ -1136,7 +1189,10 @@ def register(app):
             Media_Dia=('Média Dia', 'mean')
         ).reset_index()
         resumo_area['Média Dia'] = resumo_area['Media_Dia'].round(2)
-        resumo_area['Média %'] = ((resumo_area['Média Dia'] / 2) * 100 - 100).round(2)
+        meta_periodo = _meta_presencial_periodo(periodo_idx)
+        resumo_area['Média %'] = resumo_area['Média Dia'].apply(
+            lambda valor: _percentual_vs_meta(valor, meta_periodo)
+        )
         resumo_area = aplicar_filtro_faixas(resumo_area, 'Média Dia', faixas)
 
         def _td_link_area(texto, area, extra_style=None):
@@ -1206,7 +1262,7 @@ def register(app):
                             html.Td(_td_link_area(f"{row['Média %']} %", row['Área']),
                                     style=td_style('left', '0%')),
                         ],
-                        style={'color': 'red'} if row['Média Dia'] < 2 else {'color': 'green'})
+                        style={'color': _cor_vs_meta(row['Média Dia'], meta_periodo)})
                         for _, row in resumo_area.iterrows()
                     ])
                 ], style={
