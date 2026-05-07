@@ -286,7 +286,7 @@ def tela_inicial_filtros() -> html.Div:
                                 },
                                 {
                                     'label': [
-                                        html.Span("3", className='prefiltro-cargo-badge'),
+                                        html.Span("T", className='prefiltro-cargo-badge'),
                                         html.Span("Terceiro"),
                                     ],
                                     'value': 'T',
@@ -297,14 +297,13 @@ def tela_inicial_filtros() -> html.Div:
                     ], className='prefiltro-field prefiltro-field-shell'),
 
                     html.Div([
-                        html.Label("Área(s)", className='prefiltro-field-title'),
+                        html.Label("Área", className='prefiltro-field-title'),
                         dcc.Dropdown(
                             id='prefiltro-areas',
                             options=dropdown_options,
-                            value=['GERAL'],
-                            multi=True,
-                            clearable=True,
-                            placeholder='Selecione uma ou mais áreas',
+                            value='GERAL',
+                            clearable=False,
+                            placeholder='Selecione uma área',
                             style=field_style,
                         ),
                     ], className='prefiltro-field prefiltro-field-shell'),
@@ -370,7 +369,7 @@ def tela_inicial_filtros() -> html.Div:
 
 LAYOUT = html.Div([
     dcc.Location(id='url', refresh=False),
-    dcc.Store(id='prefiltro-aplicado', data=False),
+    dcc.Store(id='prefiltro-aplicado', data=True),
     dcc.Store(id='cargo-selecionado', data=[]),
     dcc.Store(id='areas-prefiltro', data=[]),
     tela_inicial_filtros(),
