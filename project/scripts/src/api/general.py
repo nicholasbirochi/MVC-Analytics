@@ -10,7 +10,7 @@ Padronização:
 - Linhas <= 100 colunas quando possível
 """
 from __future__ import annotations
-from dash import Input, Output, State, callback_context, dcc, html, no_update
+from dash import Input, Output, State, callback_context, dcc, html
 from dash.exceptions import PreventUpdate
 import pandas as pd
 import plotly.graph_objects as go
@@ -293,8 +293,6 @@ def register(app):
         Output('areas-prefiltro', 'data'),
         Output('prefiltro-aplicado', 'data'),
         Output('url', 'pathname', allow_duplicate=True),
-        Output('prefiltro-aviso', 'children'),
-        Output('prefiltro-aviso', 'style'),
         Input('prefiltro-confirmar', 'n_clicks'),
         State('prefiltro-cargo', 'value'),
         State('prefiltro-escopo', 'value'),
@@ -309,31 +307,6 @@ def register(app):
 
         cenario_norm, periodo_norm = _normalizar_periodo_prefiltro(cenario, periodo)
         cargo_norm = _normalizar_cargo_prefiltro(cargo)
-        if not cargo_norm:
-            return (
-                no_update,
-                no_update,
-                no_update,
-                no_update,
-                no_update,
-                no_update,
-                no_update,
-                no_update,
-                no_update,
-                no_update,
-                no_update,
-                no_update,
-                no_update,
-                "Selecione pelo menos um tipo de colaborador.",
-                {
-                    "display": "block",
-                    "marginTop": "12px",
-                    "color": "#b00020",
-                    "fontWeight": "bold",
-                    "fontFamily": "VW Text",
-                    "textAlign": "center",
-                },
-            )
         areas_norm = _normalizar_areas_prefiltro(areas)
         escopo_set = set(escopo or [])
         desligados = "left" if "desligados" in escopo_set else "right"
@@ -360,8 +333,6 @@ def register(app):
             areas_store,
             True,
             "/",
-            "",
-            {"display": "none"},
         )
 
     @app.callback(

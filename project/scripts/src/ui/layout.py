@@ -332,8 +332,6 @@ def tela_inicial_filtros() -> html.Div:
                     ], className='prefiltro-field prefiltro-field-wide prefiltro-field-shell'),
                 ], className='prefiltro-form-grid'),
 
-                html.Div(id='prefiltro-aviso', children='', style={'display': 'none'}),
-
                 html.Div([
                     html.Button(
                         "Confirmar",
@@ -372,7 +370,7 @@ def tela_inicial_filtros() -> html.Div:
 LAYOUT = html.Div([
     dcc.Location(id='url', refresh=False),
     dcc.Store(id='prefiltro-aplicado', data=True),
-    dcc.Store(id='cargo-selecionado', data=['E', 'H', 'M', 'T']),
+    dcc.Store(id='cargo-selecionado', data=[]),
     dcc.Store(id='areas-prefiltro', data=[]),
     tela_inicial_filtros(),
 

@@ -32,7 +32,6 @@ DEFAULT_PORT: Final[int] = 8050
 DEFAULT_FERIAS: Final[tuple[tuple[dt.datetime, dt.datetime], ...]] = (
     (dt.datetime(2023, 12, 18), dt.datetime(2024, 1, 7)),
     (dt.datetime(2024, 12, 23), dt.datetime(2025, 1, 12)),
-    (dt.datetime(2025, 12, 22), dt.datetime(2026, 1, 11)),
 )
 DEFAULT_AREAS_FORA: Final[tuple[str, ...]] = ("B-SNP", "B-V")
 PANDAS_CHAINED_ASSIGNMENT: Final[str] = "mode.chained_assignment"
