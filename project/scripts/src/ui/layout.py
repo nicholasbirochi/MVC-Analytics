@@ -292,7 +292,7 @@ def tela_inicial_filtros() -> html.Div:
                                     'value': 'T',
                                 },
                             ],
-                            value=['E', 'H', 'M', 'T'],
+                            value=['E', 'M'],
                         ),
                     ], className='prefiltro-field prefiltro-field-shell'),
 
@@ -369,9 +369,9 @@ def tela_inicial_filtros() -> html.Div:
 
 LAYOUT = html.Div([
     dcc.Location(id='url', refresh=False),
-    dcc.Store(id='prefiltro-aplicado', data=True),
-    dcc.Store(id='cargo-selecionado', data=[]),
-    dcc.Store(id='areas-prefiltro', data=[]),
+    dcc.Store(id='prefiltro-aplicado', data=True, storage_type='session'),
+    dcc.Store(id='cargo-selecionado', data=['E', 'M'], storage_type='session'),
+    dcc.Store(id='areas-prefiltro', data=[], storage_type='session'),
     tela_inicial_filtros(),
 
     # '''~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Geral ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'''

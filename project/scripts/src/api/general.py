@@ -83,7 +83,7 @@ def _normalizar_cadastro(valor: object) -> str:
 
 def _normalizar_cargo_prefiltro(cargo) -> list[str]:
     if not cargo:
-        return []
+        return ["E", "M"]
     valores = [cargo] if isinstance(cargo, str) else list(cargo)
     normalizados: list[str] = []
     for valor in valores:
