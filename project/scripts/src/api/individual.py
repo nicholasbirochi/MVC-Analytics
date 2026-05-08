@@ -50,7 +50,6 @@ from ..domain.periods import (
     LT_C1_MIN,
     LT_C2_MAX,
     LT_C2_MIN,
-    listar_segundas_periodo,
     periodo_limites,
 )
 from ..domain.tenure import obter_periodo_admissao
@@ -665,46 +664,16 @@ def register(app):
             df_chapa_semana['Ano'].astype(str) + "-" + df_chapa_semana['Semana por Ano'].astype(str).str.zfill(2)
         )
 
-        # Presenças por semana
-        dias_presenca_raw = df_chapa_semana.groupby('Semana_Ano')['Contagem Presença'].mean()
-        semanas_periodo = listar_segundas_periodo(periodo_ini_calc, periodo_fim_calc)
-        semana_index = [
-            f"{dia.isocalendar().year}-{dia.isocalendar().week:02d}"
-            for dia in semanas_periodo
-        ]
-        if not semana_index:
-            return None, estilo_oculto, estilo_exibir, no_update
-        dias_presenca_por_semana = dias_presenca_raw.reindex(semana_index, fill_value=0.0)
-        media_presenca_semana = round(dias_presenca_por_semana.mean(), 2)
-        min_req_por_semana = dias_presenca_por_semana.index.to_series().apply(min_presencial_exigido)
-        media_min_req = (
-            round(min_req_por_semana.mean(), 2)
-            if len(min_req_por_semana)
-            else MIN_PRESENCIAL_APOS_MUDANCA
-        )
-        if pd.isna(media_min_req) or media_min_req <= 0:
-            media_min_req = MIN_PRESENCIAL_APOS_MUDANCA
-
-        percentual_da_media = round(((media_presenca_semana / media_min_req) * 100) - 100, 2)
-        percentuais_presenca = calcular_percentual_presenca(dias_presenca_por_semana)
-
-        # Distribuição de presenças (0..7) baseada na fonte canônica SQL do colaborador.
-        distribuicao_presencas = dias_presenca_por_semana.round().astype(int).value_counts().sort_index()
-        x = sorted(set(distribuicao_presencas.index))
-        y_presencas = distribuicao_presencas.reindex(x, fill_value=0)
-
-        # Série temporal (ordenada)
-        dias_presenca_por_semana_ordenado = dias_presenca_por_semana.sort_index()
-        x_semanas = list(range(1, len(dias_presenca_por_semana_ordenado) + 1))
-        y_presenca_por_semana = dias_presenca_por_semana_ordenado.values
-
         # Datas reais da chapa em df_datas
         df_chapa_data = dw_fetch_diarios(
             [str(chapa_input)],
             dt_ini=periodo_ini_calc,
             dt_fim=periodo_fim_calc,
         )[['Data', 'Cadastro']].copy()
-        df_chapa_data['Data'] = pd.to_datetime(df_chapa_data['Data'], errors='coerce')
+        df_chapa_data['Data'] = pd.to_datetime(
+            df_chapa_data['Data'], errors='coerce'
+        ).dt.normalize()
+        df_chapa_data = df_chapa_data.dropna(subset=['Data']).drop_duplicates(['Data'])
 
         min_real = periodo_ini_calc
         max_real = periodo_fim_calc
@@ -781,6 +750,47 @@ def register(app):
             aggfunc="count",
             fill_value=0
         ).reindex(columns=ordenacao_dias)
+
+        semana_labels = tabela_heatmap.index.to_series().astype(str)
+        semana_codigos = (
+            semana_labels
+            .str.split(" | ", regex=False)
+            .str[0]
+            .str.replace(" ", "-", regex=False)
+        )
+        dias_presenca_por_semana = tabela_heatmap.sum(axis=1).astype(float)
+        dias_presenca_por_semana.index = semana_codigos
+        dias_presenca_por_semana = dias_presenca_por_semana.sort_index()
+
+        if dias_presenca_por_semana.empty:
+            return None, estilo_oculto, estilo_exibir, no_update
+
+        media_presenca_semana = round(float(dias_presenca_por_semana.mean()), 2)
+        min_req_por_semana = (
+            dias_presenca_por_semana.index.to_series().apply(min_presencial_exigido)
+        )
+        media_min_req = (
+            round(float(min_req_por_semana.mean()), 2)
+            if len(min_req_por_semana)
+            else MIN_PRESENCIAL_APOS_MUDANCA
+        )
+        if pd.isna(media_min_req) or media_min_req <= 0:
+            media_min_req = MIN_PRESENCIAL_APOS_MUDANCA
+
+        percentual_da_media = round(
+            ((media_presenca_semana / media_min_req) * 100) - 100,
+            2,
+        )
+        percentuais_presenca = calcular_percentual_presenca(dias_presenca_por_semana)
+
+        # Distribuição e tendência usam a mesma série semanal exibida no heatmap.
+        distribuicao_presencas = dias_presenca_por_semana.round().astype(int).value_counts().sort_index()
+        x = sorted(set(distribuicao_presencas.index))
+        y_presencas = distribuicao_presencas.reindex(x, fill_value=0)
+
+        dias_presenca_por_semana_ordenado = dias_presenca_por_semana.sort_index()
+        x_semanas = list(range(1, len(dias_presenca_por_semana_ordenado) + 1))
+        y_presenca_por_semana = dias_presenca_por_semana_ordenado.values
 
         # ======= Figura (Matplotlib) =======
         fig = plt.figure(figsize=(28, 45))
@@ -1011,8 +1021,10 @@ def register(app):
             dt_ini=periodo_ini_calc,
             dt_fim=periodo_fim_calc,
         )[['Data']].copy()
-        df_chapa_data['Data'] = pd.to_datetime(df_chapa_data['Data'], errors='coerce')
-        df_chapa_data = df_chapa_data.dropna(subset=['Data'])
+        df_chapa_data['Data'] = pd.to_datetime(
+            df_chapa_data['Data'], errors='coerce'
+        ).dt.normalize()
+        df_chapa_data = df_chapa_data.dropna(subset=['Data']).drop_duplicates(['Data'])
 
         if df_chapa_data.empty:
             ax_heatmap2.axis('off')
