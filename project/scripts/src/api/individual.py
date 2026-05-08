@@ -728,8 +728,14 @@ def register(app):
         mes_ano_fim    = max_real.strftime("%b %Y").capitalize()
         periodo_label_curto = f"{mes_ano_inicio} a {mes_ano_fim}"
 
-        # Gera TODAS as datas no período [min_real .. max_real]
+        # Gera as datas das mesmas semanas que entram na média do relatório.
         todas_datas = pd.date_range(min_real.normalize(), max_real.normalize(), freq='D')
+        semanas_do_relatorio = set(semana_index)
+        todas_datas = pd.DatetimeIndex([
+            data
+            for data in todas_datas
+            if f"{data.isocalendar().year}-{data.isocalendar().week:02d}" in semanas_do_relatorio
+        ])
 
         # Monta dataframe de referência (com rótulos ISO semanais e dias em PT)
         _dias_pt = {0:'Segunda',1:'Terça',2:'Quarta',3:'Quinta',4:'Sexta',5:'Sábado',6:'Domingo'}
