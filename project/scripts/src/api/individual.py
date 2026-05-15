@@ -583,7 +583,7 @@ def _build_pdf_bytes_with_consulta(fig_base, consulta_info: dict, cadastro: str,
 def _mensagem_individual(chapa: str, mensagem: str):
     return html.Div(
         [
-            html.Button("Voltar", id='botao-voltar', n_clicks=0, style={
+            html.Button("↩", id='botao-voltar', n_clicks=0, style={
                 'color': 'Black', 'fontFamily': 'VW Text', 'fontWeight': 'bold',
                 'display': 'block', 'marginTop': '10px', 'marginLeft': '10px',
                 'marginRight': 'auto', 'padding': '10px 20px', 'fontSize': '14px',
@@ -1171,7 +1171,7 @@ def register(app):
         pdf_b64 = "data:application/pdf;base64," + base64.b64encode(pdf_bytes).decode()
 
         conteudo = html.Div([
-            html.Button("Voltar", id='botao-voltar', n_clicks=0, style={
+            html.Button("↩", id='botao-voltar', n_clicks=0, style={
                 'color': 'Black', 'fontFamily': 'VW Text', 'fontWeight': 'bold', 'marginTop': '20px',
                 'display': 'block', 'marginTop': '10px', 'marginLeft': '10px', 'marginRight': 'auto',
                 'padding': '10px 20px', 'fontSize': '14px', 'backgroundColor': '#e0e0e0', 'border': 'none',

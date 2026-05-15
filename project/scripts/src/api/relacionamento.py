@@ -843,7 +843,7 @@ def register(app):
 
                 # Cabeçalho
                 html.Div([
-                    html.Button(" ↩ ", id='botao-voltar-relacionamento', n_clicks=0, style={
+                    html.Button("↩", id='botao-voltar-relacionamento', n_clicks=0, style={
                         'color': 'Black', 'fontFamily': 'VW Text', 'fontWeight': 'bold', 'margin': '0',
                         'display': 'inline-block', 'padding': '5px 10px', 'fontSize': '20px',
                         'backgroundColor': '#e0e0e0', 'border': 'none', 'borderRadius': '5px',

@@ -372,8 +372,8 @@ LANGUAGE_JS = r"""
   const translations = {
     pt: {
       html_lang: "pt-BR",
-      title: "Relatório Presencial - Volkswagen",
-      main_title: "Relatório Presencial Geral de toda a Volkswagen",
+      title: "Monitoramento Comportamental - Volkswagen",
+      main_title: "Monitoramento Comportamental Geral de toda a Volkswagen",
       selected_period_prefix: "Período selecionado",
       selected_period_to: "a",
       show_inactive: "Mostrar as pessoas desligadas?",
