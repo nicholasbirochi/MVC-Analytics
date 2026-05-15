@@ -90,10 +90,13 @@ def _periodo_label(dt_ini, dt_fim) -> str:
     return f"{_fmt_mes_ano(dt_ini)} a {_fmt_mes_ano(dt_fim)}"
 
 
+AREA_DEFAULT_MESES = 5
+
+
 def _area_default_period_indices(min_i: int = 0, max_i: int | None = None) -> list[int]:
     max_i = (len(LT_MONTHS) - 1) if max_i is None else int(max_i)
     min_i = int(min_i)
-    default_i0, default_i1 = ultimos_meses_catraca_indices(3)
+    default_i0, default_i1 = ultimos_meses_catraca_indices(AREA_DEFAULT_MESES)
     if default_i1 < min_i or default_i0 > max_i:
         return [min_i, max_i]
     default_i0 = min(max(default_i0, min_i), max_i)
@@ -632,8 +635,11 @@ def register(app):
                     )
                 fig_cache[fig_key] = (fig_men_full, fig_exec_full)
 
-            fig_men_full.update_layout(uirevision="area-vis-men")
-            fig_exec_full.update_layout(uirevision="area-vis-exec")
+            # uirevision precisa variar conforme o modo: trocar heatmap <-> teia
+            # mantendo o mesmo uirevision faz o Plotly preservar trace state de uma
+            # visualizacao na outra, criando radareszinhos fantasmas.
+            fig_men_full.update_layout(uirevision=f"area-vis-men-{vis_mode}")
+            fig_exec_full.update_layout(uirevision=f"area-vis-exec-{vis_mode}")
 
             fig_men_out = fig_men_full
             fig_exec_out = fig_exec_full
@@ -695,7 +701,7 @@ def register(app):
         # ======= FIGURAS INICIAIS LEVES =======
         # Os gráficos pesados carregam pelo callback para a página abrir imediatamente.
         if is_almoco:
-            dt_ini_inicial, dt_fim_inicial = dw_almoco_ultimos_meses_limites(3)
+            dt_ini_inicial, dt_fim_inicial = dw_almoco_ultimos_meses_limites(AREA_DEFAULT_MESES)
             if dt_ini_inicial is None or dt_fim_inicial is None:
                 dt_ini_inicial, dt_fim_inicial = periodo_limites(_area_default_period_indices())
             periodo_inicial = _periodo_label(dt_ini_inicial, dt_fim_inicial)
@@ -863,7 +869,8 @@ def register(app):
                         "O que essa página mostra?\n"
                         "Entradas no refeitório e saídas da planta durante o horário de almoço, "
                         "considerando diferenças de até 1 minuto para o refeitório e 3 minutos "
-                        "para as saídas da fábrica, além de estar sendo analisado apenas os últimos 3 meses.",
+                        "para as saídas da fábrica, além de estar sendo analisado apenas os últimos "
+                        f"{AREA_DEFAULT_MESES} meses.",
                         style={
                             'fontFamily': 'VW Text',
                             'fontSize': '14px',
@@ -888,7 +895,7 @@ def register(app):
                     html.Div(
                         [
                             html.Button(
-                                " ↩ ",
+                                "↩",
                                 id='botao-voltar-area',
                                 n_clicks=0,
                                 style={

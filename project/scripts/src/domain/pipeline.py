@@ -1274,8 +1274,12 @@ def build_dataframe_almoco_area_sql(
         if clusters.empty:
             return pd.DataFrame(columns=empty_cols)
 
+        # Cada cluster id ja contem "|" internamente (ex.: 2026-02-15|E|ref|3).
+        # Serializar com "|" como separador entre clusters quebraria isso quando o
+        # heatmap divide a string em pecas e gera "encontros" falsos. Mantemos como
+        # frozenset; _normalizar_planta_cell sabe lidar com sets sem dividir.
         clusters["Planta"] = clusters["Clusters"].map(
-            lambda value: "|".join(sorted(_parse_cluster_set(value)))
+            lambda value: frozenset(_parse_cluster_set(value))
         )
         out = clusters.merge(cad_df, on="CadastroNorm", how="left", suffixes=("", "_cad"))
         out["Cadastro"] = out["Cadastro_cad"].where(
