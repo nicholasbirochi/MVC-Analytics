@@ -207,20 +207,6 @@ def tela_inicial_filtros() -> html.Div:
             html.Div([
                 html.Div([
                     html.Div([
-                        html.Div(
-                            "Dashboard MVC",
-                            style={
-                                'display': 'inline-block',
-                                'padding': '5px 10px',
-                                'marginBottom': '10px',
-                                'border': '1px solid rgba(0,0,0,0.18)',
-                                'borderRadius': '999px',
-                                'backgroundColor': '#e0e0e0',
-                                'fontFamily': VW_PLOTLY_FONT,
-                                'fontWeight': 'bold',
-                                'fontSize': '13px',
-                            },
-                        ),
                         html.H1(
                             "Filtros iniciais",
                             style={
@@ -298,14 +284,92 @@ def tela_inicial_filtros() -> html.Div:
 
                     html.Div([
                         html.Label("Área", className='prefiltro-field-title'),
-                        dcc.Dropdown(
-                            id='prefiltro-areas',
-                            options=dropdown_options,
-                            value='GERAL',
-                            clearable=False,
-                            placeholder='Selecione uma área',
-                            style=field_style,
+                        html.Div([
+                            dcc.Dropdown(
+                                id='prefiltro-areas',
+                                options=dropdown_options,
+                                value='GERAL',
+                                clearable=False,
+                                placeholder='Selecione uma área',
+                                style={**field_style, 'flex': '1', 'minWidth': '0'},
+                            ),
+                            html.Button(
+                                '🔍',
+                                id='prefiltro-area-go',
+                                n_clicks=0,
+                                title='Abrir a página completa desta área',
+                                className='prefiltro-go-btn',
+                                style={
+                                    'fontFamily': VW_PLOTLY_FONT,
+                                    'fontSize': '14px',
+                                    'lineHeight': '1',
+                                    'height': '36px',
+                                    'minWidth': '36px',
+                                    'padding': '0 10px',
+                                    'border': '1px solid #cccccc',
+                                    'borderRadius': '4px',
+                                    'background': '#ffffff',
+                                    'cursor': 'pointer',
+                                    'whiteSpace': 'nowrap',
+                                    'flex': '0 0 auto',
+                                    'display': 'inline-flex',
+                                    'alignItems': 'center',
+                                    'justifyContent': 'center',
+                                    'boxSizing': 'border-box',
+                                },
+                            ),
+                        ], style={
+                            'display': 'flex',
+                            'alignItems': 'center',
+                            'gap': '6px',
+                            'marginBottom': '12px',
+                        }),
+
+                        html.Label(
+                            'Colaborador',
+                            className='prefiltro-field-title',
+                            style={'marginTop': '2px'},
                         ),
+                        html.Div([
+                            dcc.Dropdown(
+                                id='prefiltro-pessoa',
+                                options=[],
+                                value=None,
+                                placeholder='Buscar chapa ou nome...',
+                                searchable=True,
+                                clearable=True,
+                                style={**field_style, 'flex': '1', 'minWidth': '0'},
+                            ),
+                            html.Button(
+                                '🔍',
+                                id='prefiltro-pessoa-go',
+                                n_clicks=0,
+                                title='Abrir a página individual deste colaborador',
+                                className='prefiltro-go-btn',
+                                style={
+                                    'fontFamily': VW_PLOTLY_FONT,
+                                    'fontSize': '14px',
+                                    'lineHeight': '1',
+                                    'height': '36px',
+                                    'minWidth': '36px',
+                                    'padding': '0 10px',
+                                    'border': '1px solid #cccccc',
+                                    'borderRadius': '4px',
+                                    'background': '#ffffff',
+                                    'cursor': 'pointer',
+                                    'whiteSpace': 'nowrap',
+                                    'flex': '0 0 auto',
+                                    'display': 'inline-flex',
+                                    'alignItems': 'center',
+                                    'justifyContent': 'center',
+                                    'boxSizing': 'border-box',
+                                },
+                            ),
+                        ], style={
+                            'display': 'flex',
+                            'alignItems': 'center',
+                            'gap': '6px',
+                        }),
                     ], className='prefiltro-field prefiltro-field-shell'),
 
                     html.Div([
@@ -334,21 +398,29 @@ def tela_inicial_filtros() -> html.Div:
 
                 html.Div([
                     html.Button(
-                        "Confirmar",
+                        "→",
                         id='prefiltro-confirmar',
                         n_clicks=0,
+                        title='Aplicar filtros e abrir o dashboard geral',
+                        **{'aria-label': 'Aplicar filtros e abrir o dashboard geral'},
                         className='prefiltro-confirmar',
                         style={
                             'color': 'Black',
                             'fontFamily': VW_PLOTLY_FONT,
                             'fontWeight': 'bold',
-                            'padding': '10px 24px',
-                            'fontSize': '16px',
+                            'padding': '0',
+                            'fontSize': '22px',
+                            'lineHeight': '1',
+                            'height': '44px',
+                            'width': '64px',
                             'backgroundColor': '#e0e0e0',
                             'border': 'none',
-                            'borderRadius': '5px',
+                            'borderRadius': '8px',
                             'cursor': 'pointer',
                             'boxShadow': '0px 2px 6px rgba(0,0,0,0.25)',
+                            'display': 'inline-flex',
+                            'alignItems': 'center',
+                            'justifyContent': 'center',
                         },
                     )
                 ], className='prefiltro-footer'),
@@ -369,7 +441,7 @@ def tela_inicial_filtros() -> html.Div:
 
 LAYOUT = html.Div([
     dcc.Location(id='url', refresh=False),
-    dcc.Store(id='prefiltro-aplicado', data=True),
+    dcc.Store(id='prefiltro-aplicado', data=False),
     dcc.Store(id='cargo-selecionado', data=[]),
     dcc.Store(id='areas-prefiltro', data=[]),
     tela_inicial_filtros(),

@@ -10,7 +10,7 @@ Padronização:
 - Linhas <= 100 colunas quando possível
 """
 from __future__ import annotations
-from dash import Input, Output, State, callback_context, dcc, html
+from dash import Input, Output, State, callback_context, dcc, html, no_update
 from dash.exceptions import PreventUpdate
 import pandas as pd
 import plotly.graph_objects as go
@@ -148,18 +148,24 @@ def _aplicar_prefiltros_inicio(
     if media_df is None or media_df.empty:
         return media_df
 
-    out = media_df.copy()
     cargos = _normalizar_cargo_prefiltro(cargo_prefiltro)
-    if cargos and "Cargo" in out.columns:
-        out = out[out["Cargo"].astype(str).str.upper().str.strip().isin(cargos)].copy()
-
     areas = _normalizar_areas_prefiltro(areas_prefiltro)
-    if areas and "Área" in out.columns:
+    aplica_cargo = bool(cargos) and "Cargo" in media_df.columns
+    aplica_area = bool(areas) and "Área" in media_df.columns
+    if not aplica_cargo and not aplica_area:
+        return media_df
+
+    out = media_df
+    if aplica_cargo:
+        cargo_norm = out["Cargo"].astype(str).str.upper().str.strip()
+        out = out[cargo_norm.isin(cargos)]
+
+    if aplica_area:
         area_series = out["Área"].astype(str).str.strip()
-        mask = pd.Series(False, index=out.index)
+        mask = area_series.isin(areas)
         for area in areas:
-            mask = mask | area_series.eq(area) | area_series.str.startswith(area)
-        out = out[mask].copy()
+            mask = mask | area_series.str.startswith(area)
+        out = out[mask]
 
     return out
 
@@ -170,6 +176,8 @@ def _media_colaboradores(
     area_selecionada,
     subarea_selecionada,
     periodo_idx,
+    cargo_prefiltro=None,
+    areas_prefiltro=None,
 ) -> pd.DataFrame:
     media_df = carregar_media_colaboradores(
         df_desligados=df_desligados,
@@ -177,6 +185,8 @@ def _media_colaboradores(
         area_selecionada=area_selecionada,
         subarea_selecionada=subarea_selecionada,
         periodo_idx=periodo_idx,
+        cargo_prefiltro=cargo_prefiltro,
+        areas_prefiltro=areas_prefiltro,
     )
     if "Cargo" in media_df.columns:
         media_df = normalize_cargo_columns(
@@ -249,23 +259,46 @@ def _cor_vs_meta(media, meta: float) -> str:
 
 
 def register(app):
+    _PREFILTRO_STYLE_VISIVEL = {
+        'minHeight': '100vh',
+        'display': 'flex',
+        'alignItems': 'center',
+        'justifyContent': 'center',
+        'padding': '20px',
+        'boxSizing': 'border-box',
+        'backgroundColor': 'white',
+        'fontFamily': 'VW Text',
+    }
+
     @app.callback(
         Output('tela-inicial-filtros', 'style'),
-        Input('url', 'pathname')
+        Input('url', 'pathname'),
+        Input('prefiltro-aplicado', 'data'),
     )
-    def rotear_tela_prefiltro(pathname):
-        if pathname and pathname.rstrip('/') == "/prefiltro":
-            return {
-                'minHeight': '100vh',
-                'display': 'flex',
-                'alignItems': 'center',
-                'justifyContent': 'center',
-                'padding': '20px',
-                'boxSizing': 'border-box',
-                'backgroundColor': 'white',
-                'fontFamily': 'VW Text',
-            }
+    def rotear_tela_prefiltro(pathname, prefiltro_aplicado):
+        path = (pathname or '/').rstrip('/') or '/'
+        on_prefiltro = path == '/prefiltro'
+        on_root = path == '/'
+        needs_prefiltro = not bool(prefiltro_aplicado)
+        if on_prefiltro or (on_root and needs_prefiltro):
+            return _PREFILTRO_STYLE_VISIVEL
         return ESTILO_OCULTO
+
+    @app.callback(
+        Output('pagina-geral', 'style', allow_duplicate=True),
+        Input('url', 'pathname'),
+        Input('prefiltro-aplicado', 'data'),
+        prevent_initial_call=True,
+    )
+    def ocultar_geral_sem_prefiltro(pathname, prefiltro_aplicado):
+        """Garante que a Geral nao apareca enquanto o pre-filtro nao foi confirmado."""
+        path = (pathname or '/').rstrip('/') or '/'
+        on_root = path == '/'
+        on_prefiltro = path == '/prefiltro'
+        needs_prefiltro = not bool(prefiltro_aplicado)
+        if on_prefiltro or (on_root and needs_prefiltro):
+            return ESTILO_OCULTO
+        return no_update
 
     @app.callback(
         Output('prefiltro-periodo', 'min'),
@@ -278,6 +311,114 @@ def register(app):
         cenario_norm, periodo = _normalizar_periodo_prefiltro(cenario, periodo_atual)
         min_i, max_i = (LT_C2_MIN, LT_C2_MAX) if cenario_norm == "c2" else (LT_C1_MIN, LT_C1_MAX)
         return min_i, max_i, periodo
+
+    def _opcao_pessoa(base: pd.DataFrame, chapa: str) -> dict | None:
+        if not chapa or base is None or base.empty:
+            return None
+        try:
+            cad_str = base["Cadastro"].map(_normalizar_cadastro).astype(str)
+            linha = base[cad_str == chapa]
+        except Exception:
+            return None
+        if linha.empty:
+            return None
+        nome = str(linha.iloc[0].get("Nome", "")).title().strip() or "(sem nome)"
+        return {"label": f"{chapa} — {nome}", "value": chapa}
+
+    @app.callback(
+        Output('prefiltro-pessoa', 'options'),
+        Input('prefiltro-pessoa', 'search_value'),
+        State('prefiltro-pessoa', 'value'),
+        State('prefiltro-cargo', 'value'),
+        State('prefiltro-areas', 'value'),
+        State('prefiltro-escopo', 'value'),
+    )
+    def buscar_pessoas_prefiltro(search_value, valor_atual, cargo, area, escopo):
+        frames = [df_df_ativos]
+        if "desligados" in set(escopo or []):
+            frames.append(df_df_desligados)
+        try:
+            base = pd.concat(frames, ignore_index=True)
+        except Exception:
+            base = df_df_ativos
+
+        chapa_atual = _normalizar_cadastro(valor_atual) if valor_atual else ""
+        opcao_atual = _opcao_pessoa(base, chapa_atual) if chapa_atual else None
+
+        termo = str(search_value or "").strip()
+        if len(termo) < 2:
+            return [opcao_atual] if opcao_atual else []
+
+        if base.empty or "Cadastro" not in base.columns or "Nome" not in base.columns:
+            return [opcao_atual] if opcao_atual else []
+
+        termo_up = termo.upper()
+        cad_str = base["Cadastro"].map(_normalizar_cadastro).astype(str).str.upper()
+        nome_str = base["Nome"].astype(str).str.upper()
+        mask = cad_str.str.contains(termo_up, regex=False, na=False) | nome_str.str.contains(
+            termo_up, regex=False, na=False
+        )
+
+        cargos_norm = _normalizar_cargo_prefiltro(cargo)
+        if cargos_norm and "Cargo" in base.columns:
+            cargo_col = base["Cargo"].astype(str).str.upper().str.strip()
+            mask = mask & cargo_col.isin(cargos_norm)
+
+        area_norm = str(area or "").strip()
+        if area_norm and area_norm != "GERAL" and "Área" in base.columns:
+            area_series = base["Área"].astype(str).str.strip()
+            mask = mask & (area_series.eq(area_norm) | area_series.str.startswith(area_norm))
+
+        matches = base[mask].head(50)
+        opcoes: list[dict] = []
+        vistos: set[str] = set()
+        if opcao_atual:
+            opcoes.append(opcao_atual)
+            vistos.add(opcao_atual["value"])
+        for _, row in matches.iterrows():
+            chapa = _normalizar_cadastro(row["Cadastro"])
+            if not chapa or chapa in vistos:
+                continue
+            nome = str(row.get("Nome", "")).title().strip() or "(sem nome)"
+            opcoes.append({"label": f"{chapa} — {nome}", "value": chapa})
+            vistos.add(chapa)
+        return opcoes
+
+    @app.callback(
+        Output('url', 'pathname', allow_duplicate=True),
+        Output('url', 'search', allow_duplicate=True),
+        Input('prefiltro-pessoa-go', 'n_clicks'),
+        State('prefiltro-pessoa', 'value'),
+        State('prefiltro-cenario', 'value'),
+        State('prefiltro-periodo', 'value'),
+        prevent_initial_call=True,
+    )
+    def ir_para_pessoa(n_clicks, pessoa, cenario, periodo):
+        # Atalho da lupa: vai direto para a pagina individual sem confirmar o pre-filtro.
+        # Nao setamos prefiltro-aplicado aqui para evitar disparar os callbacks pesados
+        # da Geral em paralelo enquanto o relatorio individual carrega.
+        if not n_clicks:
+            raise PreventUpdate
+        chapa = _normalizar_cadastro(pessoa) if pessoa else ""
+        if not chapa:
+            raise PreventUpdate
+        _, periodo_norm = _normalizar_periodo_prefiltro(cenario, periodo)
+        return f"/pessoa/{chapa}", f"?p0={periodo_norm[0]}&p1={periodo_norm[1]}"
+
+    @app.callback(
+        Output('url', 'pathname', allow_duplicate=True),
+        Output('url', 'search', allow_duplicate=True),
+        Input('prefiltro-area-go', 'n_clicks'),
+        State('prefiltro-areas', 'value'),
+        prevent_initial_call=True,
+    )
+    def ir_para_area(n_clicks, area):
+        if not n_clicks:
+            raise PreventUpdate
+        area_norm = str(area or "").strip()
+        if not area_norm or area_norm == "GERAL":
+            raise PreventUpdate
+        return f"/area/{slug(area_norm)}", ""
 
     @app.callback(
         Output('pagina-geral', 'style', allow_duplicate=True),
@@ -519,6 +660,8 @@ def register(app):
             area_selecionada,
             subarea_selecionada,
             periodo_idx,
+            cargo_prefiltro,
+            areas_prefiltro,
         )
         media_df = _aplicar_prefiltros_inicio(media_df, cargo_prefiltro, areas_prefiltro)
         media_colab = media_df[
@@ -626,6 +769,8 @@ def register(app):
             area_selecionada,
             subarea_selecionada,
             periodo_idx,
+            cargo_prefiltro,
+            areas_prefiltro,
         )
         media_df = _aplicar_prefiltros_inicio(media_df, cargo_prefiltro, areas_prefiltro)
         media_presenca = media_df[['Cadastro', 'Nome', 'Média Presença']].copy()
@@ -672,6 +817,8 @@ def register(app):
             area_selecionada,
             subarea_selecionada,
             periodo_idx,
+            cargo_prefiltro,
+            areas_prefiltro,
         )
         media_df = _aplicar_prefiltros_inicio(media_df, cargo_prefiltro, areas_prefiltro)
         media_presenca_detalhada = media_df[['Cadastro', 'Média Presença']].copy()
@@ -809,6 +956,8 @@ def register(app):
             area_selecionada,
             subarea_selecionada,
             periodo_idx,
+            cargo_prefiltro,
+            areas_prefiltro,
         )
         media_df = _aplicar_prefiltros_inicio(media_df, cargo_prefiltro, areas_prefiltro)
         media_presenca_detalhada = media_df[['Cadastro', 'Média Presença']].copy()
@@ -874,6 +1023,8 @@ def register(app):
             area_selecionada,
             subarea_selecionada,
             periodo_idx,
+            cargo_prefiltro,
+            areas_prefiltro,
         )
         media_df = _aplicar_prefiltros_inicio(media_df, cargo_prefiltro, areas_prefiltro)
         media_presenca_detalhada = media_df[['Cadastro', 'Média Presença', 'Cargo']].copy()
@@ -954,6 +1105,8 @@ def register(app):
             area_selecionada,
             subarea_selecionada,
             periodo_idx,
+            cargo_prefiltro,
+            areas_prefiltro,
         )
         media_df = _aplicar_prefiltros_inicio(media_df, cargo_prefiltro, areas_prefiltro)
         medias_individuais = media_df[['Cadastro', 'Nome', 'Área', 'Média Presença']].copy()
@@ -1051,6 +1204,8 @@ def register(app):
             area_selecionada,
             subarea_selecionada,
             periodo_idx,
+            cargo_prefiltro,
+            areas_prefiltro,
         )
         media_df = _aplicar_prefiltros_inicio(media_df, cargo_prefiltro, areas_prefiltro)
 
@@ -1172,6 +1327,8 @@ def register(app):
             area_selecionada,
             subarea_selecionada,
             periodo_idx,
+            cargo_prefiltro,
+            areas_prefiltro,
         )
         media_df = _aplicar_prefiltros_inicio(media_df, cargo_prefiltro, areas_prefiltro)
         media_colab_resumo = media_df[
