@@ -877,23 +877,22 @@ def _clusterizar_almoco_bruto(df_loc: pd.DataFrame) -> pd.DataFrame:
     parts: list[pd.DataFrame] = []
     tem_desc = "Descricao Coletor" in df.columns
 
+    # Entradas: apenas refeitorio conta como almoco. Entradas pela portaria sao
+    # apenas pessoas voltando para a fabrica e geravam encontros falsos antes.
     df_e = df[df["Dir"] == "E"]
-    if not df_e.empty:
-        if tem_desc:
-            df_e = df_e.copy()
-            df_e["Descricao Agrupada"] = df_e["Descricao Coletor"].apply(
-                _normalizar_coletor
-            )
+    if not df_e.empty and tem_desc:
+        df_e = df_e.copy()
+        df_e["Descricao Agrupada"] = df_e["Descricao Coletor"].apply(
+            _normalizar_coletor
+        )
+        df_e = df_e[df_e["Descricao Agrupada"].astype(str).str.startswith("ref")]
+        if not df_e.empty:
             for (_, _, desc), group in df_e.groupby(
                 ["Data", "Dir", "Descricao Agrupada"], dropna=False
             ):
                 desc_txt = desc if pd.notna(desc) else "NA"
                 prefixo = f"E|{desc_txt}"
-                janela_min = 1 if str(desc_txt).startswith("ref") else 3
-                parts.append(_cluster_por_janela(group, prefixo, janela_min))
-        else:
-            for _, group in df_e.groupby(["Data", "Dir"], dropna=False):
-                parts.append(_cluster_por_janela(group, "E", 3))
+                parts.append(_cluster_por_janela(group, prefixo, janela_min=1))
 
     df_s = df[df["Dir"] == "S"]
     if not df_s.empty:
@@ -1350,5 +1349,20 @@ def build_dataframe_almoco_area_sql(
     df["Contagem Presença"] = (
         pd.to_numeric(df["Contagem Presença"], errors="coerce").fillna(0).astype(int)
     )
-    df["Planta"] = df["Planta"].astype(str).fillna("")
+    # Planta pode chegar como string (caminho SQL) ou como frozenset/set
+    # (caminho fallback de eventos). Nao podemos forcar astype(str), porque isso
+    # vira "frozenset({'2026-...|E|...'})" e quebra a comparacao de encontros.
+    def _normalize_planta_value(value):
+        if value is None:
+            return ""
+        if isinstance(value, (set, frozenset)):
+            return frozenset(str(item).strip() for item in value if str(item).strip())
+        try:
+            if pd.isna(value):
+                return ""
+        except (TypeError, ValueError):
+            pass
+        return str(value)
+
+    df["Planta"] = df["Planta"].map(_normalize_planta_value)
     return _return_cached(df)
