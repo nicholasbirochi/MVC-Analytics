@@ -218,18 +218,59 @@ def tela_inicial_filtros() -> html.Div:
                         ),
                     ], style={'minWidth': '0'}),
                     html.Div([
-                        html.Div("Monitoramento Comportamental", style={
-                            'padding': '9px 14px',
-                            'backgroundColor': '#e0e0e0',
-                            'borderRadius': '8px',
-                            'fontFamily': VW_PLOTLY_FONT,
-                            'fontWeight': 'bold',
-                            'boxShadow': '0px 2px 6px rgba(0,0,0,0.10)',
-                        })
+                        html.Button(
+                            "→",
+                            id='prefiltro-confirmar',
+                            n_clicks=0,
+                            title='Aplicar filtros e abrir o dashboard geral',
+                            **{'aria-label': 'Aplicar filtros e abrir o dashboard geral'},
+                            className='prefiltro-confirmar',
+                            style={
+                                'color': 'Black',
+                                'fontFamily': VW_PLOTLY_FONT,
+                                'fontWeight': 'bold',
+                                'padding': '0',
+                                'fontSize': '22px',
+                                'lineHeight': '1',
+                                'height': '44px',
+                                'width': '64px',
+                                'backgroundColor': '#e0e0e0',
+                                'border': 'none',
+                                'borderRadius': '8px',
+                                'cursor': 'pointer',
+                                'boxShadow': '0px 2px 6px rgba(0,0,0,0.25)',
+                                'display': 'inline-flex',
+                                'alignItems': 'center',
+                                'justifyContent': 'center',
+                            },
+                        )
                     ])
                 ], className='prefiltro-header'),
 
                 html.Div([
+                    html.Div([
+                        html.Label("Período", className='prefiltro-field-title'),
+                        dcc.RadioItems(
+                            id='prefiltro-cenario',
+                            className='prefiltro-cenario-lista',
+                            options=[
+                                {'label': 'Jan/2024 a Abr/2025', 'value': 'c1'},
+                                {'label': 'Mai/2025 em diante', 'value': 'c2'},
+                            ],
+                            value='c1',
+                        ),
+                        dcc.RangeSlider(
+                            id='prefiltro-periodo',
+                            min=LT_C1_MIN,
+                            max=LT_C1_MAX,
+                            value=[LT_C1_MIN, LT_C1_MAX],
+                            marks=LT_MARKS,
+                            allowCross=False,
+                            step=1,
+                            pushable=1,
+                        ),
+                    ], className='prefiltro-field prefiltro-field-wide prefiltro-field-shell'),
+
                     html.Div([
                         html.Label("Incluir na análise", className='prefiltro-field-title'),
                         dcc.Checklist(
@@ -371,59 +412,7 @@ def tela_inicial_filtros() -> html.Div:
                             'gap': '6px',
                         }),
                     ], className='prefiltro-field prefiltro-field-shell'),
-
-                    html.Div([
-                        html.Label("Período", className='prefiltro-field-title'),
-                        dcc.RadioItems(
-                            id='prefiltro-cenario',
-                            className='prefiltro-cenario-lista',
-                            options=[
-                                {'label': 'Jan/2024 a Abr/2025', 'value': 'c1'},
-                                {'label': 'Mai/2025 em diante', 'value': 'c2'},
-                            ],
-                            value='c1',
-                        ),
-                        dcc.RangeSlider(
-                            id='prefiltro-periodo',
-                            min=LT_C1_MIN,
-                            max=LT_C1_MAX,
-                            value=[LT_C1_MIN, LT_C1_MAX],
-                            marks=LT_MARKS,
-                            allowCross=False,
-                            step=1,
-                            pushable=1,
-                        ),
-                    ], className='prefiltro-field prefiltro-field-wide prefiltro-field-shell'),
                 ], className='prefiltro-form-grid'),
-
-                html.Div([
-                    html.Button(
-                        "→",
-                        id='prefiltro-confirmar',
-                        n_clicks=0,
-                        title='Aplicar filtros e abrir o dashboard geral',
-                        **{'aria-label': 'Aplicar filtros e abrir o dashboard geral'},
-                        className='prefiltro-confirmar',
-                        style={
-                            'color': 'Black',
-                            'fontFamily': VW_PLOTLY_FONT,
-                            'fontWeight': 'bold',
-                            'padding': '0',
-                            'fontSize': '22px',
-                            'lineHeight': '1',
-                            'height': '44px',
-                            'width': '64px',
-                            'backgroundColor': '#e0e0e0',
-                            'border': 'none',
-                            'borderRadius': '8px',
-                            'cursor': 'pointer',
-                            'boxShadow': '0px 2px 6px rgba(0,0,0,0.25)',
-                            'display': 'inline-flex',
-                            'alignItems': 'center',
-                            'justifyContent': 'center',
-                        },
-                    )
-                ], className='prefiltro-footer'),
             ], className='prefiltro-panel')
         ],
         style={
@@ -455,7 +444,7 @@ LAYOUT = html.Div([
                 html.Div(style={'flex': '0 0 132px', 'minWidth': '132px'}),
                 html.H1([
                     html.Span(
-                        "Relatório Presencial Geral de toda a Volkswagen",
+                        "Monitoramento Comportamental Geral de toda a Volkswagen",
                         **{"data-i18n": "main_title"},
                     ),
                     html.Br(),
@@ -797,7 +786,7 @@ LAYOUT = html.Div([
             id='conteudo-individual',
             children=[
                 html.Button(
-                    "Voltar",
+                    "↩",
                     id='botao-voltar',
                     n_clicks=0,
                     style={
@@ -827,7 +816,7 @@ LAYOUT = html.Div([
         id='conteudo-analitico-area',
         children=[
             html.Button(
-                "Voltar",
+                "↩",
                 id='botao-voltar-area',
                 n_clicks=0,
                 style={
@@ -847,7 +836,7 @@ LAYOUT = html.Div([
         id='conteudo-relacionamento',
         children=[
             html.Button(
-                "Voltar",
+                "↩",
                 id='botao-voltar-relacionamento',
                 n_clicks=0,
                 style={
