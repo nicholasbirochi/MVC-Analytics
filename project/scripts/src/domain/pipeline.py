@@ -114,6 +114,24 @@ def _load_view(conn: sqlite3.Connection, view_name: str) -> pd.DataFrame:
     return pd.read_sql_query(f"SELECT * FROM {view_name}", conn)
 
 
+def _empty_semana_frame() -> pd.DataFrame:
+    return pd.DataFrame(
+        columns=[
+            "Cadastro",
+            "Nome",
+            "Cargo",
+            "Cargo Especifico",
+            "Área",
+            "Departamento",
+            "Heranca",
+            "Desligado",
+            "Data",
+            "Dia Semana",
+            "Contagem Presença",
+        ]
+    )
+
+
 def _ensure_contract(conn: sqlite3.Connection, sqlite_path: Path) -> None:
     version = _db_version(sqlite_path)
     if _READY_CONTRACT.get(sqlite_path) == version:
@@ -192,14 +210,12 @@ def load_sources(config: Settings | None = None) -> dict[str, pd.DataFrame]:
         vw_sem = _resolve_first_existing(
             conn, ["vw_semana_enriquecida", "vw_df_registros_semanais"]
         )
-        if vw_sem == "vw_semana_enriquecida":
-            df_registros_semanais = _load_view(conn, "vw_df_registros_semanais")
-            # Evita carregar uma view já denormalizada muito grande no bootstrap do app.
-            # A versão enriquecida é buscada sob demanda em `dw_fetch_semana_enriquecida`.
-            df_semana_enriquecida = pd.DataFrame()
-        else:
-            df_registros_semanais = _load_view(conn, "vw_df_registros_semanais")
-            df_semana_enriquecida = pd.DataFrame()
+        if not vw_sem:
+            raise sqlite3.OperationalError("View semanal nao encontrada no DW.")
+        # O dashboard geral busca a base semanal sob demanda, ja com o pre-filtro
+        # aplicado. Evita carregar/processar toda a base antes da escolha inicial.
+        df_registros_semanais = _empty_semana_frame()
+        df_semana_enriquecida = _empty_semana_frame()
 
         df_diarios = pd.DataFrame(columns=["Cadastro", "Planta", "Data"])
         df_almoco = pd.DataFrame(
@@ -494,6 +510,38 @@ def _sql_in_clause(values: Iterable[object]) -> tuple[str, tuple[str, ...]]:
     return f"IN ({placeholders})", tuple(vals)
 
 
+def _cadastro_variants(values: Iterable[object]) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    raw: list[str] = []
+    stripped: list[str] = []
+    for value in values or []:
+        txt = str(value or "").strip()
+        if not txt:
+            continue
+        if txt.endswith(".0") and txt[:-2].isdigit():
+            txt = txt[:-2]
+        if txt not in raw:
+            raw.append(txt)
+        no_zeros = txt.lstrip("0") or "0"
+        if no_zeros not in stripped:
+            stripped.append(no_zeros)
+    return tuple(raw), tuple(stripped)
+
+
+def _sql_cadastro_clause(column_sql: str, values: Iterable[object]) -> tuple[str, tuple[str, ...]]:
+    raw, stripped = _cadastro_variants(values)
+    if not raw:
+        return "1=0", ()
+
+    in_raw, params_raw = _sql_in_clause(raw)
+    in_stripped, params_stripped = _sql_in_clause(stripped)
+    col_clean = f"REPLACE(TRIM(CAST({column_sql} AS TEXT)), '.0', '')"
+    return (
+        f"({column_sql} {in_raw} OR {col_clean} {in_raw} "
+        f"OR LTRIM({col_clean}, '0') {in_stripped})",
+        tuple(params_raw) + tuple(params_raw) + tuple(params_stripped),
+    )
+
+
 def dw_fetch_semana_enriquecida(
     cadastro: str | None = None,
     dt_ini=None,
@@ -503,8 +551,9 @@ def dw_fetch_semana_enriquecida(
     where = []
     params: list[str] = []
     if cadastro is not None:
-        where.append('"Cadastro" = ?')
-        params.append(str(cadastro))
+        clause, clause_params = _sql_cadastro_clause('"Cadastro"', [cadastro])
+        where.append(clause)
+        params.extend(clause_params)
     if dt_ini is not None and dt_fim is not None:
         where.append('"Data" BETWEEN ? AND ?')
         params.extend(
@@ -526,9 +575,9 @@ def dw_fetch_diarios(
 ) -> pd.DataFrame:
     where = []
     params: list[str] = []
-    in_sql, in_params = _sql_in_clause(cadastros)
-    where.append(f'"Cadastro" {in_sql}')
-    params.extend(in_params)
+    clause, clause_params = _sql_cadastro_clause('"Cadastro"', cadastros)
+    where.append(clause)
+    params.extend(clause_params)
     if dt_ini is not None and dt_fim is not None:
         where.append('"Data" BETWEEN ? AND ?')
         params.extend(
@@ -553,9 +602,9 @@ def dw_fetch_almoco(
 ) -> pd.DataFrame:
     where = []
     params: list[str] = []
-    in_sql, in_params = _sql_in_clause(cadastros)
-    where.append(f'"Cadastro" {in_sql}')
-    params.extend(in_params)
+    clause, clause_params = _sql_cadastro_clause('"Cadastro"', cadastros)
+    where.append(clause)
+    params.extend(clause_params)
     if dt_ini is not None and dt_fim is not None:
         where.append('"Data" BETWEEN ? AND ?')
         params.extend(
@@ -582,9 +631,9 @@ def dw_fetch_almoco_eventos(
     """Fallback de almoço a partir da base de eventos bruta."""
     where = []
     params: list[str] = []
-    in_sql, in_params = _sql_in_clause(cadastros)
-    where.append(f'cadastro {in_sql}')
-    params.extend(in_params)
+    clause, clause_params = _sql_cadastro_clause("cadastro", cadastros)
+    where.append(clause)
+    params.extend(clause_params)
     if dt_ini is not None and dt_fim is not None:
         where.append('data BETWEEN ? AND ?')
         params.extend(
@@ -609,19 +658,108 @@ def dw_fetch_almoco_eventos(
 
 
 def dw_almoco_min_max(settings: Settings | None = None):
+    limite_fallback = _ultimo_dia_mes_fechado()
     consultas = (
-        'SELECT MIN("Data") AS dmin, MAX("Data") AS dmax FROM vw_df_almoco;',
-        'SELECT MIN("Data") AS dmin, MAX("Data") AS dmax FROM vw_almoco_cluster;',
-        "SELECT MIN(data) AS dmin, MAX(data) AS dmax FROM evento_acesso_flat;",
+        ('SELECT MIN("Data") AS dmin, MAX("Data") AS dmax FROM vw_df_almoco;', ()),
+        ('SELECT MIN("Data") AS dmin, MAX("Data") AS dmax FROM vw_almoco_cluster;', ()),
+        (
+            "SELECT MIN(data) AS dmin, MAX(data) AS dmax "
+            "FROM evento_acesso_flat WHERE data <= ?;",
+            (limite_fallback.strftime("%Y-%m-%d"),),
+        ),
     )
-    for sql in consultas:
+    for sql, params in consultas:
         try:
-            df = query_dw(sql, (), settings=settings)
+            df = query_dw(sql, params, settings=settings)
         except Exception:
             continue
         if df.empty or pd.isna(df.loc[0, "dmax"]):
             continue
         return pd.to_datetime(df.loc[0, "dmin"]), pd.to_datetime(df.loc[0, "dmax"])
+    return None, None
+
+
+def _ultimo_dia_mes_fechado() -> pd.Timestamp:
+    hoje = pd.Timestamp.today().normalize()
+    return hoje.replace(day=1) - pd.Timedelta(days=1)
+
+
+def _month_start_ts(value) -> pd.Timestamp:
+    ts = pd.Timestamp(value).normalize()
+    return pd.Timestamp(year=ts.year, month=ts.month, day=1)
+
+
+def _add_months_ts(value, months: int) -> pd.Timestamp:
+    return _month_start_ts(value) + pd.DateOffset(months=int(months))
+
+
+def dw_almoco_ultimos_meses_limites(
+    n: int = 3,
+    settings: Settings | None = None,
+) -> tuple[pd.Timestamp | None, pd.Timestamp | None]:
+    """Retorna os últimos meses disponíveis na base de almoço/saídas."""
+    limite_fallback = _ultimo_dia_mes_fechado()
+    fontes = (
+        ('vw_df_almoco', '"Data"', None),
+        ('vw_almoco_cluster', '"Data"', None),
+        ('evento_acesso_flat', 'data', limite_fallback),
+    )
+    n = max(1, int(n or 1))
+
+    for tabela, coluna, limite in fontes:
+        where_max = ""
+        params_max: tuple[str, ...] = ()
+        if limite is not None:
+            where_max = f" WHERE {coluna} <= ?"
+            params_max = (pd.Timestamp(limite).strftime("%Y-%m-%d"),)
+
+        try:
+            df_max = query_dw(
+                f"SELECT MAX({coluna}) AS dmax FROM {tabela}{where_max};",
+                params_max,
+                settings=settings,
+            )
+        except Exception:
+            continue
+        if df_max.empty or pd.isna(df_max.loc[0, "dmax"]):
+            continue
+
+        max_ts = pd.to_datetime(df_max.loc[0, "dmax"], errors="coerce")
+        if pd.isna(max_ts):
+            continue
+
+        meses: list[tuple[pd.Timestamp, pd.Timestamp]] = []
+        cursor = _month_start_ts(max_ts)
+        for _ in range(120):
+            prox = _add_months_ts(cursor, 1)
+            sql = (
+                f"SELECT MAX({coluna}) AS dmax FROM {tabela} "
+                f"WHERE {coluna} >= ? AND {coluna} < ?"
+            )
+            params: list[str] = [
+                cursor.strftime("%Y-%m-%d"),
+                prox.strftime("%Y-%m-%d"),
+            ]
+            if limite is not None:
+                sql += f" AND {coluna} <= ?"
+                params.append(pd.Timestamp(limite).strftime("%Y-%m-%d"))
+            sql += ";"
+
+            try:
+                df_mes = query_dw(sql, tuple(params), settings=settings)
+            except Exception:
+                break
+            if not df_mes.empty and pd.notna(df_mes.loc[0, "dmax"]):
+                mes_max = pd.to_datetime(df_mes.loc[0, "dmax"], errors="coerce")
+                if pd.notna(mes_max):
+                    meses.append((cursor, pd.Timestamp(mes_max).normalize()))
+                    if len(meses) >= n:
+                        break
+            cursor = _add_months_ts(cursor, -1)
+
+        if meses:
+            return meses[-1][0], meses[0][1]
+
     return None, None
 
 
@@ -836,11 +974,9 @@ def build_dataframe_almoco_pessoas(
                 dt_ini = datas_local.min().normalize()
                 dt_fim = datas_local.max().normalize()
         if dt_ini is None or dt_fim is None:
-            _, dmax = dw_almoco_min_max(settings=settings)
-            if dmax is None:
+            dt_ini, dt_fim = dw_almoco_ultimos_meses_limites(n=3, settings=settings)
+            if dt_ini is None or dt_fim is None:
                 return empty
-            dt_fim = pd.Timestamp(dmax).normalize()
-            dt_ini = (dt_fim - pd.DateOffset(months=3)).normalize()
     else:
         dt_ini = pd.Timestamp(dt_ini).normalize()
         dt_fim = pd.Timestamp(dt_fim).normalize()
@@ -1042,11 +1178,9 @@ def build_dataframe_almoco_area_sql(
         return pd.DataFrame(columns=empty_cols)
 
     if dt_ini is None or dt_fim is None:
-        dmin, dmax = dw_almoco_min_max()
-        if dmax is None:
+        dt_ini, dt_fim = dw_almoco_ultimos_meses_limites(n=3)
+        if dt_ini is None or dt_fim is None:
             return pd.DataFrame(columns=empty_cols)
-        dt_fim = pd.Timestamp(dmax).normalize()
-        dt_ini = (dt_fim - pd.DateOffset(months=3)).normalize()
     else:
         dt_ini = pd.Timestamp(dt_ini).normalize()
         dt_fim = pd.Timestamp(dt_fim).normalize()

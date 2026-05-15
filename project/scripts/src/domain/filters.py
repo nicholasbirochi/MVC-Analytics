@@ -19,7 +19,7 @@ import pandas as pd
 
 from ..core.config import AREAS_FORA, get_settings
 from ..core import repo_global as repo
-from .cargo import normalize_cargo_columns
+from .cargo import normalize_cargo_code, normalize_cargo_columns, normalize_cargo_series
 from .periods import LT_MONTHS, listar_segundas_periodo, periodo_limites
 from .tenure import carregar_adm_dem_cache, sobrepoe_periodo
 
@@ -194,6 +194,207 @@ def _frame_from_cache(cache: dict, lock: threading.Lock, key: tuple, ttl: int) -
 def _store_frame_cache(cache: dict, lock: threading.Lock, key: tuple, df: pd.DataFrame) -> None:
     with lock:
         cache[key] = (time.time(), df.copy(deep=True))
+
+
+def _normalizar_cargos_prefiltro(cargo) -> tuple[str, ...]:
+    if cargo is None:
+        return ()
+    if isinstance(cargo, str):
+        valores = [cargo]
+    else:
+        try:
+            valores = list(cargo)
+        except TypeError:
+            valores = [cargo]
+
+    normalizados: list[str] = []
+    for valor in valores:
+        cod = normalize_cargo_code(valor)
+        if cod in {"E", "H", "M", "T"} and cod not in normalizados:
+            normalizados.append(cod)
+    return tuple(normalizados)
+
+
+def _normalizar_areas_prefiltro(areas) -> tuple[str, ...]:
+    if areas is None:
+        return ()
+    if isinstance(areas, str):
+        valores = [areas]
+    else:
+        try:
+            valores = list(areas)
+        except TypeError:
+            valores = [areas]
+
+    normalizadas: list[str] = []
+    for area in valores:
+        texto = normaliza_str(area)
+        if not texto or texto == "GERAL":
+            continue
+        if texto not in normalizadas:
+            normalizadas.append(texto)
+    return tuple(normalizadas)
+
+
+def _areas_para_consulta(
+    area_selecionada: str | None,
+    subarea_selecionada: str | None,
+    areas_prefiltro=None,
+) -> tuple[str, ...]:
+    areas: list[str] = []
+
+    alvo = normaliza_str(subarea_selecionada)
+    if not alvo:
+        area = normaliza_str(area_selecionada)
+        if area and area != "GERAL":
+            alvo = area
+    if alvo:
+        areas.append(alvo)
+
+    for area in _normalizar_areas_prefiltro(areas_prefiltro):
+        if area not in areas:
+            areas.append(area)
+    return tuple(areas)
+
+
+def _filtrar_prefiltro_contexto(
+    df: pd.DataFrame,
+    cargo_prefiltro=None,
+    areas_prefiltro=None,
+    area_selecionada: str | None = None,
+    subarea_selecionada: str | None = None,
+) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+
+    out = df
+    cargos = _normalizar_cargos_prefiltro(cargo_prefiltro)
+    if cargos and "Cargo" in out.columns:
+        cargo_norm = normalize_cargo_series(out["Cargo"])
+        if "Cargo Especifico" in out.columns:
+            fallback_norm = normalize_cargo_series(out["Cargo Especifico"])
+            cargo_norm = cargo_norm.where(cargo_norm.astype(str).str.strip().ne(""), fallback_norm)
+        out = out[cargo_norm.isin(cargos)].copy()
+
+    areas = _areas_para_consulta(area_selecionada, subarea_selecionada, areas_prefiltro)
+    if areas and "Área" in out.columns:
+        area_series = out["Área"].astype(str).str.strip()
+        mask = pd.Series(False, index=out.index)
+        for area in areas:
+            mask = mask | area_series.eq(area) | area_series.str.startswith(area, na=False)
+        out = out[mask].copy()
+
+    return out
+
+
+def _sql_cargo_prefiltro_clause(cargos: Sequence[str]) -> tuple[str | None, tuple[str, ...]]:
+    if not cargos:
+        return None, ()
+
+    raw = (
+        'UPPER(TRIM(COALESCE(NULLIF(CAST("Cargo" AS TEXT), \'\'), '
+        'CAST("Cargo Especifico" AS TEXT), \'\')))'
+    )
+    cargo_expr = f"""
+        CASE
+            WHEN {raw} LIKE 'EXEC%' OR {raw} LIKE 'E%' THEN 'E'
+            WHEN {raw} LIKE 'MENS%' OR {raw} LIKE 'M%' THEN 'M'
+            WHEN {raw} LIKE 'HOR%' OR {raw} LIKE 'H%' THEN 'H'
+            WHEN {raw} LIKE 'TERC%' OR {raw} LIKE 'THIRD%' OR {raw} LIKE 'OUTSOUR%'
+                 OR {raw} LIKE '3R%' OR {raw} LIKE 'T%' THEN 'T'
+            ELSE SUBSTR({raw}, 1, 1)
+        END
+    """
+    placeholders = ",".join(["?"] * len(cargos))
+    return f"({cargo_expr}) IN ({placeholders})", tuple(cargos)
+
+
+def _sql_area_prefiltro_clause(areas: Sequence[str]) -> tuple[str | None, tuple[str, ...]]:
+    clauses: list[str] = []
+    params: list[str] = []
+    for area in areas:
+        if not area:
+            continue
+        clauses.append(
+            '(TRIM("Área") = ? OR SUBSTR(TRIM("Área"), 1, LENGTH(?)) = ?)'
+        )
+        params.extend([area, area, area])
+    if not clauses:
+        return None, ()
+    return "(" + " OR ".join(clauses) + ")", tuple(params)
+
+
+def _sql_prefix_exclusion_clause(
+    column_sql: str,
+    prefixes: Iterable[str],
+) -> tuple[str | None, tuple[str, ...]]:
+    clauses: list[str] = []
+    params: list[str] = []
+    for prefix in prefixes:
+        prefix_norm = normaliza_str(prefix)
+        if not prefix_norm:
+            continue
+        clauses.append(
+            f"COALESCE(SUBSTR(TRIM(CAST({column_sql} AS TEXT)), 1, LENGTH(?)), '') <> ?"
+        )
+        params.extend([prefix_norm, prefix_norm])
+    if not clauses:
+        return None, ()
+    return "(" + " AND ".join(clauses) + ")", tuple(params)
+
+
+def _sql_media_prefiltro_clauses(
+    df_desligados: str,
+    viajam: str,
+    area_selecionada: str | None,
+    subarea_selecionada: str | None,
+    cargo_prefiltro=None,
+    areas_prefiltro=None,
+    her_df: pd.DataFrame | None = None,
+) -> tuple[list[str], tuple[str, ...]]:
+    clauses: list[str] = []
+    params: list[str] = []
+
+    cargo_clause, cargo_params = _sql_cargo_prefiltro_clause(
+        _normalizar_cargos_prefiltro(cargo_prefiltro)
+    )
+    if cargo_clause:
+        clauses.append(cargo_clause)
+        params.extend(cargo_params)
+
+    area_clause, area_params = _sql_area_prefiltro_clause(
+        _areas_para_consulta(area_selecionada, subarea_selecionada, areas_prefiltro)
+    )
+    if area_clause:
+        clauses.append(area_clause)
+        params.extend(area_params)
+
+    if df_desligados == "right":
+        clauses.append(
+            'COALESCE(NULLIF(UPPER(TRIM(CAST("Desligado" AS TEXT))), \'\'), \'NAO\') '
+            "NOT IN ('SIM', 'S', 'TRUE', '1', 'YES')"
+        )
+
+    if viajam == "right":
+        areas_prefixos, herancas_prefixos = resolver_areas_viajantes(
+            her_df if her_df is not None else getattr(repo, "her", pd.DataFrame())
+        )
+        area_excl_clause, area_excl_params = _sql_prefix_exclusion_clause(
+            '"Área"',
+            sorted(areas_prefixos),
+        )
+        if area_excl_clause:
+            clauses.append(area_excl_clause)
+            params.extend(area_excl_params)
+        her_excl_clause, her_excl_params = _sql_prefix_exclusion_clause(
+            '"Heranca"',
+            sorted(herancas_prefixos),
+        )
+        if her_excl_clause:
+            clauses.append(her_excl_clause)
+            params.extend(her_excl_params)
+
+    return clauses, tuple(params)
 
 
 def _cadastros_elegiveis(
@@ -412,6 +613,8 @@ def carregar_media_colaboradores(
     area_selecionada: str | None,
     subarea_selecionada: str | None,
     periodo_idx,
+    cargo_prefiltro=None,
+    areas_prefiltro=None,
     df_semana_merged: pd.DataFrame | None = None,
     her_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
@@ -425,6 +628,8 @@ def carregar_media_colaboradores(
         str(area_selecionada or ""),
         str(subarea_selecionada or ""),
         periodo_key,
+        _normalizar_cargos_prefiltro(cargo_prefiltro),
+        _normalizar_areas_prefiltro(areas_prefiltro),
         bool(getattr(repo, "USING_DW_SQLITE", False)),
         "media_colab",
     )
@@ -442,6 +647,17 @@ def carregar_media_colaboradores(
 
         semanas_sql = [pd.Timestamp(dia).strftime("%Y-%m-%d") for dia in semanas_periodo]
         placeholders = ",".join(["?"] * len(semanas_sql))
+        where_clauses = [f'"Data" IN ({placeholders})']
+        extra_clauses, extra_params = _sql_media_prefiltro_clauses(
+            df_desligados=df_desligados,
+            viajam=viajam,
+            area_selecionada=area_selecionada,
+            subarea_selecionada=subarea_selecionada,
+            cargo_prefiltro=cargo_prefiltro,
+            areas_prefiltro=areas_prefiltro,
+            her_df=her_df,
+        )
+        where_clauses.extend(extra_clauses)
         sql = """
         SELECT
             "Cadastro",
@@ -456,12 +672,12 @@ def carregar_media_colaboradores(
             SUM(COALESCE("Contagem Presença", 0)) AS "Dias Presenca",
             COUNT(1) AS "Dias Monitorados"
         FROM vw_semana_enriquecida
-        WHERE "Data" IN (__SEMANAS__)
+        WHERE __WHERE__
         GROUP BY "Cadastro";
-        """.replace("__SEMANAS__", placeholders)
+        """.replace("__WHERE__", " AND ".join(where_clauses))
         df_media = query_dw(
             sql,
-            params=tuple(semanas_sql),
+            params=tuple(semanas_sql) + extra_params,
             cache_ttl=_cache_ttl(),
         )
         if "Cadastro" in df_media.columns:
@@ -474,6 +690,24 @@ def carregar_media_colaboradores(
         if "Data" in base.columns:
             base["Data"] = pd.to_datetime(base["Data"], errors="coerce").dt.normalize()
             base = base[base["Data"].isin(semanas_set)].copy()
+        base = _filtrar_prefiltro_contexto(
+            base,
+            cargo_prefiltro=cargo_prefiltro,
+            areas_prefiltro=areas_prefiltro,
+            area_selecionada=area_selecionada,
+            subarea_selecionada=subarea_selecionada,
+        )
+        if df_desligados == "right" and "Desligado" in base.columns:
+            base = base[base["Desligado"] != "Sim"].copy()
+        if viajam == "right":
+            areas_prefixos, herancas_prefixos = resolver_areas_viajantes(her_df)
+            if "Área" in base.columns:
+                mask_area = base["Área"].apply(lambda a: startswith_any(a, areas_prefixos))
+                base = base[~mask_area].copy()
+            if "Heranca" in base.columns and herancas_prefixos:
+                mask_her = base["Heranca"].apply(lambda h: startswith_any(h, herancas_prefixos))
+                base = base[~mask_her].copy()
+        base = aplicar_filtro_por_area(base, area_selecionada, subarea_selecionada, her_df)
         elegiveis = _cadastros_elegiveis(base, dt_ini, dt_fim, df_semana_merged)
         base = base[base["Cadastro"].astype(str).isin(elegiveis)]
         df_media = _agrupar_media_colaboradores(base)

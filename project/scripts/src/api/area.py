@@ -37,9 +37,10 @@ from ..domain.periods import (
     LT_C1_MIN, LT_C1_MAX, LT_C2_MIN, LT_C2_MAX,
     LT_FIM_ABS, lt_idx_of,
     periodo_limites,
+    ultimos_meses_catraca_indices,
 )
 from ..domain.filters import slug
-from ..domain.pipeline import dw_almoco_min_max
+from ..domain.pipeline import dw_almoco_ultimos_meses_limites
 from ..domain.cargo import normalize_cargo_series
 from ..ui.figures import (
     grafico_heatmap_encontros_men,
@@ -87,6 +88,19 @@ def _fmt_mes_ano(dt) -> str:
 
 def _periodo_label(dt_ini, dt_fim) -> str:
     return f"{_fmt_mes_ano(dt_ini)} a {_fmt_mes_ano(dt_fim)}"
+
+
+def _area_default_period_indices(min_i: int = 0, max_i: int | None = None) -> list[int]:
+    max_i = (len(LT_MONTHS) - 1) if max_i is None else int(max_i)
+    min_i = int(min_i)
+    default_i0, default_i1 = ultimos_meses_catraca_indices(3)
+    if default_i1 < min_i or default_i0 > max_i:
+        return [min_i, max_i]
+    default_i0 = min(max(default_i0, min_i), max_i)
+    default_i1 = min(max(default_i1, min_i), max_i)
+    if default_i0 > default_i1:
+        return [min_i, max_i]
+    return [default_i0, default_i1]
 
 
 def _titulos_graficos_area(periodo: str, is_almoco: bool) -> tuple[str, str]:
@@ -352,8 +366,10 @@ def register(app):
         qs = parse_qs((search or '').lstrip('?'))
         modo = (qs.get('modo', ['geral'])[0] or 'geral').lower()
         is_almoco = (modo == 'almoco')
-        ctx = callback_context
-        trig = (ctx.triggered_id or 'initial') if ctx else 'initial'
+        try:
+            trig = callback_context.triggered_id or 'initial'
+        except Exception:
+            trig = 'initial'
 
         # --- 1) limites baseados no cenário ---
         if   cenario == 'c1':
@@ -367,11 +383,13 @@ def register(app):
             except Exception:
                 max_i = len(LT_MONTHS) - 1
 
+        default_period = _area_default_period_indices(min_i, max_i)
+
         # valor atual do slider, também “clampado”
-        if slider_val_state:
+        if slider_val_state and trig != 'initial':
             v0, v1 = slider_val_state
         else:
-            v0, v1 = min_i, max_i
+            v0, v1 = default_period
         v0 = min(max(v0, min_i), max_i)
         v1 = min(max(v1, min_i), max_i)
         if v0 > v1:
@@ -384,20 +402,9 @@ def register(app):
         i0 = i1 = None
 
         if is_almoco:
-            # 🔹 Calcula período real com base no df_almoco
-            if 'df_almoco' in globals() and isinstance(df_almoco, pd.DataFrame) and not df_almoco.empty:
-                datas_validas = pd.to_datetime(df_almoco['Data'], errors='coerce').dropna()
-                if not datas_validas.empty:
-                    dt_ini = datas_validas.min()
-                    dt_fim = datas_validas.max()
-                else:
-                    _, dmax_almoco = dw_almoco_min_max()
-                    dt_fim = pd.Timestamp(dmax_almoco).normalize() if dmax_almoco is not None else pd.Timestamp.today()
-                    dt_ini = (dt_fim - pd.DateOffset(months=3)).normalize()
-            else:
-                _, dmax_almoco = dw_almoco_min_max()
-                dt_fim = pd.Timestamp(dmax_almoco).normalize() if dmax_almoco is not None else pd.Timestamp.today()
-                dt_ini = (dt_fim - pd.DateOffset(months=3)).normalize()
+            dt_ini, dt_fim = dw_almoco_ultimos_meses_limites(3)
+            if dt_ini is None or dt_fim is None:
+                dt_ini, dt_fim = periodo_limites(slider_val_out)
         else:
             # 🔹 Mantém lógica normal (usando o slider)
             i0, i1 = slider_val_out
@@ -405,7 +412,7 @@ def register(app):
 
         # --- Criação do texto do período ---
         periodo = _periodo_label(dt_ini, dt_fim)
-        periodo_txt_out = ""
+        periodo_txt_out = f"Período analisado: {periodo}"
         periodo_data_out = [i0, i1] if not is_almoco else None
 
         # -------------------- 2) SUBÁREA (options + manter seleção) -------------
@@ -655,8 +662,13 @@ def register(app):
         Input('url','search')
     )
     def exibir_conteudo_area(pathname, n_clicks, search):
+        try:
+            trig = callback_context.triggered_id
+        except Exception:
+            trig = None
+
         # Ação de voltar
-        if n_clicks and n_clicks > 0:
+        if trig == 'botao-voltar-area' and n_clicks and n_clicks > 0:
             return None, estilo_oculto, estilo_exibir, "/"
 
         # Rota inválida
@@ -683,16 +695,17 @@ def register(app):
         # ======= FIGURAS INICIAIS LEVES =======
         # Os gráficos pesados carregam pelo callback para a página abrir imediatamente.
         if is_almoco:
-            _, dmax_almoco = dw_almoco_min_max()
-            dt_fim_inicial = pd.Timestamp(dmax_almoco).normalize() if dmax_almoco is not None else pd.Timestamp.today()
-            dt_ini_inicial = (dt_fim_inicial - pd.DateOffset(months=3)).normalize()
+            dt_ini_inicial, dt_fim_inicial = dw_almoco_ultimos_meses_limites(3)
+            if dt_ini_inicial is None or dt_fim_inicial is None:
+                dt_ini_inicial, dt_fim_inicial = periodo_limites(_area_default_period_indices())
             periodo_inicial = _periodo_label(dt_ini_inicial, dt_fim_inicial)
         else:
             try:
                 max_i_inicial = lt_idx_of(LT_FIM_ABS.year, LT_FIM_ABS.month)
             except Exception:
                 max_i_inicial = len(LT_MONTHS) - 1
-            dt_ini_inicial, dt_fim_inicial = periodo_limites([0, max_i_inicial])
+            periodo_inicial_idx = _area_default_period_indices(0, max_i_inicial)
+            dt_ini_inicial, dt_fim_inicial = periodo_limites(periodo_inicial_idx)
             periodo_inicial = _periodo_label(dt_ini_inicial, dt_fim_inicial)
 
         fig_heatmap_men = figura_vazia_linha("Carregando informações de relacionamento da área...")
@@ -750,7 +763,7 @@ def register(app):
                 dcc.RangeSlider(
                     id='periodo-slider-area',
                     min=0, max=len(LT_MONTHS)-1,
-                    value=[0, len(LT_MONTHS)-1],
+                    value=_area_default_period_indices(),
                     marks=LT_MARKS, allowCross=False, step=1, pushable=1
                 )
             ], style={'flex':'0 0 540px'}),
@@ -1016,7 +1029,7 @@ def register(app):
             ),
 
             # ===================== STORES =====================
-            dcc.Store(id='periodo-indices-area', data=[LT_C1_MIN, LT_C1_MAX]),
+            dcc.Store(id='periodo-indices-area', data=_area_default_period_indices()),
             dcc.Store(id='area-atual-area', data=area)
 
         ],

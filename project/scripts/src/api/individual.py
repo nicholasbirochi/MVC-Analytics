@@ -10,7 +10,7 @@ Padronização:
 - Linhas <= 100 colunas quando possível
 """
 from __future__ import annotations
-from dash import Input, Output, State, dcc, html, no_update
+from dash import Input, Output, State, callback_context, dcc, html, no_update
 
 import base64
 import io
@@ -67,7 +67,7 @@ dias_portugues = DIAS_PORTUGUES
 
 CONSULTA_BASE_URL_DEFAULT = os.getenv(
     "CONSULTA_PESSOAL_BASE_URL",
-    "https://example.invalid/consulta-pessoal/default.htm",
+    "https://vwbransvprve1.sa.vwg/recursos.humanos.consultapessoal/",
 ).strip()
 CONSULTA_COR_DESTAQUE = "#123B82"
 CONSULTA_COR_CAMPO = "#D4E1F2"
@@ -196,18 +196,25 @@ def _consulta_info_por_cadastro(chapa: str, nome: str) -> tuple[dict, object | N
         "nome_solicitado": str(nome or "").strip(),
     }
 
-    mod = _load_relatorio_consulta_module()
-    if mod is None:
-        out["mensagem"] = "Modulo da consulta pessoal nao encontrado no repositorio."
-        return out, None
-
     base_url = str(
         os.getenv("CONSULTA_PESSOAL_URL", os.getenv("CONSULTA_PESSOAL_EMAIL", CONSULTA_BASE_URL_DEFAULT))
     ).strip()
     user = str(os.getenv("CONSULTA_PESSOAL_USER", "")).strip()
     password = str(os.getenv("CONSULTA_PESSOAL_PASSWORD", "")).strip()
+    if not user or not password:
+        out["mensagem"] = (
+            "Consulta pessoal desabilitada no MVC. Defina CONSULTA_PESSOAL_USER "
+            "e CONSULTA_PESSOAL_PASSWORD no .env."
+        )
+        return out, None
+
+    mod = _load_relatorio_consulta_module()
+    if mod is None:
+        out["mensagem"] = "Modulo da consulta pessoal nao encontrado no repositorio."
+        return out, None
+
     try:
-        timeout_s = int(max(0, int(str(os.getenv("CONSULTA_PESSOAL_TIMEOUT_S", "0")).strip() or "0")))
+        timeout_s = int(max(0, int(str(os.getenv("CONSULTA_PESSOAL_TIMEOUT_S", "12")).strip() or "12")))
     except Exception:
         timeout_s = 0
     verify_ssl = _env_bool("CONSULTA_PESSOAL_VERIFY_SSL", default=False)
@@ -573,6 +580,38 @@ def _build_pdf_bytes_with_consulta(fig_base, consulta_info: dict, cadastro: str,
     return buf.read()
 
 
+def _mensagem_individual(chapa: str, mensagem: str):
+    return html.Div(
+        [
+            html.Button("Voltar", id='botao-voltar', n_clicks=0, style={
+                'color': 'Black', 'fontFamily': 'VW Text', 'fontWeight': 'bold',
+                'display': 'block', 'marginTop': '10px', 'marginLeft': '10px',
+                'marginRight': 'auto', 'padding': '10px 20px', 'fontSize': '14px',
+                'backgroundColor': '#e0e0e0', 'border': 'none', 'borderRadius': '5px',
+                'cursor': 'pointer', 'boxShadow': '0px 2px 6px rgba(0, 0, 0, 0.25)'
+            }),
+            html.Div(
+                [
+                    html.H3("Relatório individual indisponível", style={'marginTop': '0'}),
+                    html.P(f"Chapa: {chapa or '-'}"),
+                    html.P(mensagem),
+                ],
+                style={
+                    'maxWidth': '720px',
+                    'margin': '80px auto',
+                    'padding': '24px',
+                    'fontFamily': 'VW Text',
+                    'backgroundColor': '#fff',
+                    'border': '1px solid #ddd',
+                    'borderRadius': '8px',
+                    'boxShadow': '0 2px 8px rgba(0,0,0,0.08)',
+                },
+            ),
+        ],
+        style={'display': 'block', 'backgroundColor': 'white', 'padding': '1px 0 40px'},
+    )
+
+
 def register(app):
     @app.callback(
         Output('conteudo-individual', 'children'),
@@ -588,8 +627,13 @@ def register(app):
         prevent_initial_call=True
     )
     def exibir_conteudo_individual(pathname, n_clicks, search, periodo_idx_state, cenario_state, periodo_slider_state):
+        try:
+            trig = callback_context.triggered_id
+        except Exception:
+            trig = None
+
         # Voltar
-        if n_clicks is not None and n_clicks > 0:
+        if trig == 'botao-voltar' and n_clicks is not None and n_clicks > 0:
             return None, estilo_oculto, estilo_exibir, "/"
 
         # Roteamento
@@ -601,7 +645,8 @@ def register(app):
         if chapa_input.endswith(".0") and chapa_input[:-2].isdigit():
             chapa_input = chapa_input[:-2]
         if not chapa_input:
-            return None, estilo_oculto, estilo_exibir, no_update
+            conteudo = _mensagem_individual("", "Nao foi possivel identificar a chapa na URL.")
+            return conteudo, {'display': 'block'}, {'display': 'none'}, no_update
 
         dt_ini = None
         dt_fim = None
@@ -635,7 +680,11 @@ def register(app):
             dt_fim=dt_fim,
         )
         if df_chapa_semana.empty:
-            return None, estilo_oculto, estilo_exibir, no_update
+            conteudo = _mensagem_individual(
+                chapa_input,
+                "Nao encontrei dados semanais dessa chapa no periodo selecionado.",
+            )
+            return conteudo, {'display': 'block'}, {'display': 'none'}, no_update
 
         nome_input = df_chapa_semana['Nome'].iloc[0].title()
 
@@ -649,7 +698,11 @@ def register(app):
         if pd.notna(dem_ts):
             periodo_fim_calc = min(periodo_fim_calc, dem_ts.normalize())
         if periodo_ini_calc > periodo_fim_calc:
-            return None, estilo_oculto, estilo_exibir, no_update
+            conteudo = _mensagem_individual(
+                chapa_input,
+                "O periodo selecionado fica fora da admissao/demissao cadastrada para a pessoa.",
+            )
+            return conteudo, {'display': 'block'}, {'display': 'none'}, no_update
 
         # Semana-Ano
         df_chapa_semana["Data"] = pd.to_datetime(df_chapa_semana["Data"], errors="coerce").dt.normalize()
@@ -658,7 +711,11 @@ def register(app):
             & (df_chapa_semana["Data"] <= periodo_fim_calc)
         ].copy()
         if df_chapa_semana.empty:
-            return None, estilo_oculto, estilo_exibir, no_update
+            conteudo = _mensagem_individual(
+                chapa_input,
+                "Nao ha registros da pessoa depois dos ajustes de admissao/demissao no periodo.",
+            )
+            return conteudo, {'display': 'block'}, {'display': 'none'}, no_update
 
         df_chapa_semana['Semana_Ano'] = (
             df_chapa_semana['Ano'].astype(str) + "-" + df_chapa_semana['Semana por Ano'].astype(str).str.zfill(2)
@@ -763,7 +820,11 @@ def register(app):
         dias_presenca_por_semana = dias_presenca_por_semana.sort_index()
 
         if dias_presenca_por_semana.empty:
-            return None, estilo_oculto, estilo_exibir, no_update
+            conteudo = _mensagem_individual(
+                chapa_input,
+                "Nao ha semanas validas com dados de presenca para montar o relatorio.",
+            )
+            return conteudo, {'display': 'block'}, {'display': 'none'}, no_update
 
         media_presenca_semana = round(float(dias_presenca_por_semana.mean()), 2)
         min_req_por_semana = (
@@ -1015,18 +1076,14 @@ def register(app):
         # ~~~~~~~~~~~~~~~~~~~~~ Subplot 6 - Heatmap TOTAL do colaborador (dias) ~~~~~~~~~~~~~~~~~~~~~
         ax_heatmap2 = fig.add_subplot(gs_heatmaps[1])
 
-        # Fonte diária de presença
-        df_chapa_data = dw_fetch_diarios(
-            [str(chapa_input)],
-            dt_ini=periodo_ini_calc,
-            dt_fim=periodo_fim_calc,
-        )[['Data']].copy()
-        df_chapa_data['Data'] = pd.to_datetime(
-            df_chapa_data['Data'], errors='coerce'
+        # Fonte diária de presença, reaproveitando a busca feita para o heatmap semanal.
+        df_chapa_data_total = df_chapa_data[['Data']].copy()
+        df_chapa_data_total['Data'] = pd.to_datetime(
+            df_chapa_data_total['Data'], errors='coerce'
         ).dt.normalize()
-        df_chapa_data = df_chapa_data.dropna(subset=['Data']).drop_duplicates(['Data'])
+        df_chapa_data_total = df_chapa_data_total.dropna(subset=['Data']).drop_duplicates(['Data'])
 
-        if df_chapa_data.empty:
+        if df_chapa_data_total.empty:
             ax_heatmap2.axis('off')
         else:
             # Dia da semana em PT (mantém PT se já estiver)
@@ -1034,11 +1091,11 @@ def register(app):
                 'Monday':'Segunda','Tuesday':'Terça','Wednesday':'Quarta',
                 'Thursday':'Quinta','Friday':'Sexta','Saturday':'Sábado','Sunday':'Domingo'
             }
-            nomes_en = df_chapa_data['Data'].dt.day_name()
-            df_chapa_data['Dia Semana'] = nomes_en.map(_dias_pt).fillna(nomes_en)
+            nomes_en = df_chapa_data_total['Data'].dt.day_name()
+            df_chapa_data_total['Dia Semana'] = nomes_en.map(_dias_pt).fillna(nomes_en)
 
             # Contagem por dia da semana, na ordem desejada
-            counts = (df_chapa_data['Dia Semana']
+            counts = (df_chapa_data_total['Dia Semana']
                     .value_counts()
                     .reindex(ordenacao_dias, fill_value=0)
                     .astype(int))
