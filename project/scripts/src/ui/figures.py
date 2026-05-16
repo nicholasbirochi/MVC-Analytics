@@ -25,7 +25,14 @@ from ..core import repo_global as repo
 
 
 def _safe_hashable(value):
-    """Converte objetos potencialmente não-hashable em strings/escalares seguros."""
+    """Converte objetos potencialmente não-hashable em escalares seguros.
+
+    frozenset e tuple ja sao hashable e devem ser preservados — em especial a
+    coluna "Planta" usa frozenset de cluster IDs (que internamente contem "|"),
+    entao serializar com "|" como separador quebraria a comparacao de
+    encontros. list/set sao convertidos para frozenset para virarem hashable
+    sem perder a semantica.
+    """
     try:
         if isinstance(value, np.ndarray):
             try:
@@ -33,18 +40,16 @@ def _safe_hashable(value):
                     return value.item()
             except Exception:
                 pass
-            return "|".join(map(str, np.ravel(value).tolist()))
+            return frozenset(map(str, np.ravel(value).tolist()))
     except Exception:
         pass
 
-    if isinstance(value, (list, tuple, set, frozenset)):
+    if isinstance(value, (frozenset, tuple)):
+        return value
+
+    if isinstance(value, (list, set)):
         try:
-            if len(value) == 1:
-                return next(iter(value))
-        except Exception:
-            pass
-        try:
-            return "|".join(map(str, list(value)))
+            return frozenset(value)
         except Exception:
             return str(value)
 
@@ -1693,6 +1698,10 @@ def grafico_heatmap_encontros_men(
         ],
         dtype=bool,
     )
+    # Pares permitidos sem encontros entram como 0% para nao ficar celula em branco.
+    # Pares nao permitidos (fora da relacao de area/hierarquia) ficam NaN e nao
+    # sao desenhados.
+    percent = np.where(allowed & np.isnan(percent), 0.0, percent)
     percent = np.where(allowed, percent, np.nan)
     if np.isnan(percent).all():
         return _final(fig)
@@ -2233,6 +2242,12 @@ def grafico_heatmap_encontros_exec(
                 where=(denom > 0),
             ) * 100.0
 
+    # Pares sem encontros entram como 0% para nao ficar em branco. So a diagonal
+    # (mesma pessoa) fica NaN propositalmente para nao ser desenhada.
+    np.fill_diagonal(percent, np.nan)
+    nan_off_diag = np.isnan(percent)
+    np.fill_diagonal(nan_off_diag, False)
+    percent[nan_off_diag] = 0.0
     np.fill_diagonal(percent, np.nan)
 
     areas = [meta.loc[c, "ÁreaNorm"] for c in cads]
