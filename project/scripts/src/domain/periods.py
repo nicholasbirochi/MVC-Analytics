@@ -35,8 +35,21 @@ def _add_months(data: dt.date, months: int) -> dt.date:
     return dt.date(year, month_idx + 1, 1)
 
 
+def _ultimo_dia_mes_anterior(referencia: dt.date) -> dt.date:
+    """Retorna o ultimo dia do mes anterior a referencia."""
+    primeiro = dt.date(referencia.year, referencia.month, 1)
+    return primeiro - dt.timedelta(days=1)
+
+
 def _max_data_dw() -> dt.date | None:
-    """Usa a última data presente no DW, sem cortar pelo calendário do Windows."""
+    """Usa a última data presente no DW, limitada ao mes corrente.
+
+    O DW pode conter dados futuros (carga de teste, eventos agendados). Para
+    a analise faz sentido cortar no final do mes anterior ao mes corrente, ou
+    no maximo no dia de hoje, evitando que o slider abra em meses futuros sem
+    dados reais. Se o DW tiver MAX(data) menor que isso, mantemos o que veio
+    do DW.
+    """
     dw_path_config = getattr(SETTINGS, "dw_path", None)
     if not dw_path_config:
         return None
@@ -54,6 +67,8 @@ def _max_data_dw() -> dt.date | None:
         ('vw_df_diarios', '"Data"'),
         ('evento_acesso_flat', 'data'),
     )
+    hoje = dt.date.today()
+    teto = _ultimo_dia_mes_anterior(hoje)
 
     def executar(
         conn: sqlite3.Connection,
@@ -63,7 +78,8 @@ def _max_data_dw() -> dt.date | None:
         for tabela, coluna in consultas:
             try:
                 row = conn.execute(
-                    f"SELECT MAX({coluna}) FROM {tabela}",
+                    f"SELECT MAX({coluna}) FROM {tabela} WHERE {coluna} <= ?",
+                    (teto.strftime("%Y-%m-%d"),),
                 ).fetchone()
             except sqlite3.Error:
                 continue
@@ -98,12 +114,16 @@ def _ultimos_meses_presentes_dw(n: int = 3) -> tuple[dt.date, dt.date] | None:
         ('vw_df_diarios', '"Data"'),
     )
     n = max(1, int(n or 1))
+    teto = _ultimo_dia_mes_anterior(dt.date.today())
 
     try:
         with sqlite3.connect(str(dw_path)) as conn:
             for tabela, coluna in consultas:
                 try:
-                    row = conn.execute(f"SELECT MAX({coluna}) FROM {tabela}").fetchone()
+                    row = conn.execute(
+                        f"SELECT MAX({coluna}) FROM {tabela} WHERE {coluna} <= ?",
+                        (teto.strftime("%Y-%m-%d"),),
+                    ).fetchone()
                 except sqlite3.Error:
                     continue
                 if not row or row[0] is None:

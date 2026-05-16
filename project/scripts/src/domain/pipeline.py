@@ -659,13 +659,22 @@ def dw_fetch_almoco_eventos(
 
 def dw_almoco_min_max(settings: Settings | None = None):
     limite_fallback = _ultimo_dia_mes_fechado()
+    teto = limite_fallback.strftime("%Y-%m-%d")
     consultas = (
-        ('SELECT MIN("Data") AS dmin, MAX("Data") AS dmax FROM vw_df_almoco;', ()),
-        ('SELECT MIN("Data") AS dmin, MAX("Data") AS dmax FROM vw_almoco_cluster;', ()),
+        (
+            'SELECT MIN("Data") AS dmin, MAX("Data") AS dmax '
+            'FROM vw_df_almoco WHERE "Data" <= ?;',
+            (teto,),
+        ),
+        (
+            'SELECT MIN("Data") AS dmin, MAX("Data") AS dmax '
+            'FROM vw_almoco_cluster WHERE "Data" <= ?;',
+            (teto,),
+        ),
         (
             "SELECT MIN(data) AS dmin, MAX(data) AS dmax "
             "FROM evento_acesso_flat WHERE data <= ?;",
-            (limite_fallback.strftime("%Y-%m-%d"),),
+            (teto,),
         ),
     )
     for sql, params in consultas:
@@ -698,10 +707,13 @@ def dw_almoco_ultimos_meses_limites(
     settings: Settings | None = None,
 ) -> tuple[pd.Timestamp | None, pd.Timestamp | None]:
     """Retorna os últimos meses disponíveis na base de almoço/saídas."""
+    # Mesmo para vw_df_almoco/vw_almoco_cluster aplicamos o teto do ultimo dia
+    # do mes fechado: o DW pode conter eventos futuros (carga de teste) que
+    # nao representam dados reais e nao devem aparecer no slider de periodo.
     limite_fallback = _ultimo_dia_mes_fechado()
     fontes = (
-        ('vw_df_almoco', '"Data"', None),
-        ('vw_almoco_cluster', '"Data"', None),
+        ('vw_df_almoco', '"Data"', limite_fallback),
+        ('vw_almoco_cluster', '"Data"', limite_fallback),
         ('evento_acesso_flat', 'data', limite_fallback),
     )
     n = max(1, int(n or 1))

@@ -90,7 +90,7 @@ def _periodo_label(dt_ini, dt_fim) -> str:
     return f"{_fmt_mes_ano(dt_ini)} a {_fmt_mes_ano(dt_fim)}"
 
 
-AREA_DEFAULT_MESES = 5
+AREA_DEFAULT_MESES = 3
 
 
 def _area_default_period_indices(min_i: int = 0, max_i: int | None = None) -> list[int]:
