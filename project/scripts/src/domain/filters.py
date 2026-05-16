@@ -27,6 +27,8 @@ _FILTER_CACHE: dict[tuple, tuple[float, pd.DataFrame]] = {}
 _FILTER_CACHE_LOCK = threading.Lock()
 _MEDIA_CACHE: dict[tuple, tuple[float, pd.DataFrame]] = {}
 _MEDIA_CACHE_LOCK = threading.Lock()
+_SEMANAS_ATIVAS_CACHE: dict[tuple, tuple[float, dict[str, int]]] = {}
+_SEMANAS_ATIVAS_LOCK = threading.Lock()
 
 
 def normaliza_str(value: object) -> str:
@@ -515,6 +517,80 @@ def _dias_monitorados_colaborador(
     return len(listar_segundas_periodo(inicio, fim))
 
 
+def _carregar_semanas_ativas(dt_ini, dt_fim) -> dict[str, int]:
+    """Retorna {cadastro: semanas com qualquer evento} no periodo.
+
+    Inclui marcacoes remotas (Captura Ponto) para nao penalizar quem trabalhou
+    fora do escritorio. So nao conta semanas onde a pessoa ficou totalmente
+    ausente (ferias, atestado integral). Usado como denominador da Media
+    Presenca para nao inflar o "abaixo da meta" com semanas vazias.
+    """
+    if not getattr(repo, "USING_DW_SQLITE", False):
+        return {}
+
+    try:
+        from .pipeline import query_dw
+    except Exception:
+        return {}
+
+    inicio = pd.Timestamp(dt_ini).normalize()
+    fim = pd.Timestamp(dt_fim).normalize()
+    if inicio > fim:
+        return {}
+
+    cache_key = (inicio.strftime("%Y-%m-%d"), fim.strftime("%Y-%m-%d"))
+    ttl = _cache_ttl()
+    now = time.time()
+    with _SEMANAS_ATIVAS_LOCK:
+        cached = _SEMANAS_ATIVAS_CACHE.get(cache_key)
+        if cached is not None and (now - cached[0]) <= ttl:
+            return cached[1]
+
+    try:
+        df = query_dw(
+            """
+            SELECT cadastro, COUNT(DISTINCT strftime('%Y-%W', data)) AS semanas
+            FROM evento_acesso_flat
+            WHERE data BETWEEN ? AND ?
+            GROUP BY cadastro
+            """,
+            params=(inicio.strftime("%Y-%m-%d"), fim.strftime("%Y-%m-%d")),
+            cache_ttl=ttl,
+        )
+    except Exception:
+        return {}
+
+    if df is None or df.empty:
+        ativas: dict[str, int] = {}
+    else:
+        cad_series = df["cadastro"].astype(str)
+        sem_series = pd.to_numeric(df["semanas"], errors="coerce").fillna(0).astype(int)
+        ativas = dict(zip(cad_series.tolist(), sem_series.tolist()))
+
+    with _SEMANAS_ATIVAS_LOCK:
+        _SEMANAS_ATIVAS_CACHE[cache_key] = (time.time(), ativas)
+    return ativas
+
+
+def _denominador_monitorado(
+    cadastro: object,
+    dt_ini,
+    dt_fim,
+    adm_cache: dict[str, pd.Timestamp],
+    dem_cache: dict[str, pd.Timestamp],
+    semanas_ativas: dict[str, int],
+) -> int:
+    """Denominador realista: semanas ativas, com teto no periodo de vinculo."""
+    potencial = _dias_monitorados_colaborador(cadastro, dt_ini, dt_fim, adm_cache, dem_cache)
+    if potencial <= 0:
+        return 0
+    cad = str(cadastro)
+    ativas = int(semanas_ativas.get(cad, 0))
+    if ativas <= 0:
+        return potencial
+    return min(potencial, ativas)
+
+
 def _ajustar_media_para_periodo(
     df_media: pd.DataFrame,
     dt_ini,
@@ -533,8 +609,11 @@ def _ajustar_media_para_periodo(
     if "Dias Presenca" not in out.columns:
         out["Dias Presenca"] = 0.0
     out["Dias Presenca"] = pd.to_numeric(out["Dias Presenca"], errors="coerce").fillna(0.0)
+    semanas_ativas = _carregar_semanas_ativas(dt_ini, dt_fim)
     out["Dias Monitorados"] = out["Cadastro"].apply(
-        lambda cad: _dias_monitorados_colaborador(cad, dt_ini, dt_fim, adm_cache, dem_cache)
+        lambda cad: _denominador_monitorado(
+            cad, dt_ini, dt_fim, adm_cache, dem_cache, semanas_ativas
+        )
     )
     monitorados = pd.to_numeric(out["Dias Monitorados"], errors="coerce").fillna(0.0)
     out["Média Presença"] = (out["Dias Presenca"] / monitorados.where(monitorados > 0)).fillna(0.0)
