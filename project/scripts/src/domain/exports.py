@@ -41,15 +41,20 @@ def fig_to_bytes(fig, fmt: str = "png") -> bytes:
 
 
 def min_presencial_exigido(semana_ano: str) -> int:
-    """Retorna o minimo de dias presenciais exigido para a semana ISO "AAAA-SS"."""
+    """Retorna o minimo de dias presenciais exigido para a semana ISO "AAAA-SS".
+
+    A regra nova vale para semanas que comecam a partir de
+    DATA_MUDANCA_REGRA_PRESENCIAL. Semanas que apenas terminam dentro do
+    novo regime ainda contam como anteriores — alinha com a percepcao do
+    negocio (a semana 2025-18 comeca em 28/04 e ainda eh meta 2).
+    """
     try:
         ano_str, sem_str = str(semana_ano).split("-")
         ano, sem = int(ano_str), int(sem_str)
         dt_ini_semana = datetime.fromisocalendar(ano, sem, 1)
-        dt_fim_semana = dt_ini_semana + timedelta(days=6)
         return (
             MIN_PRESENCIAL_APOS_MUDANCA
-            if pd.Timestamp(dt_fim_semana) >= DATA_MUDANCA_REGRA_PRESENCIAL
+            if pd.Timestamp(dt_ini_semana) >= DATA_MUDANCA_REGRA_PRESENCIAL
             else MIN_PRESENCIAL_ANTES_MUDANCA
         )
     except Exception:

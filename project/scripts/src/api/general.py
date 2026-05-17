@@ -231,7 +231,7 @@ def _meta_presencial_periodo(periodo_idx) -> float:
     semanas = pd.period_range(dt_ini, dt_fim, freq="W")
     metas = [
         MIN_PRESENCIAL_APOS_MUDANCA
-        if pd.Timestamp(semana.end_time).normalize() >= DATA_MUDANCA_REGRA_PRESENCIAL
+        if pd.Timestamp(semana.start_time).normalize() >= DATA_MUDANCA_REGRA_PRESENCIAL
         else MIN_PRESENCIAL_ANTES_MUDANCA
         for semana in semanas
     ]
