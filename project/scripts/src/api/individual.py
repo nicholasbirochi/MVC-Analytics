@@ -50,6 +50,7 @@ from ..domain.periods import (
     LT_C1_MIN,
     LT_C2_MAX,
     LT_C2_MIN,
+    esta_em_ferias,
     periodo_limites,
 )
 from ..domain.tenure import obter_periodo_admissao
@@ -807,6 +808,24 @@ def register(app):
             aggfunc="count",
             fill_value=0
         ).reindex(columns=ordenacao_dias)
+
+        # Remove semanas de ferias coletivas do heatmap (a meta nao se aplica).
+        # Mesma regra do calculo de monitoramento: corta quando a segunda da
+        # semana cai dentro de uma ferias coletiva.
+        def _label_em_ferias(label: str) -> bool:
+            try:
+                inicio_str = str(label).split(" | ", 1)[1].split("-", 1)[0]
+                inicio_dt = pd.to_datetime(inicio_str, format="%d/%m/%Y", errors="coerce")
+            except (IndexError, ValueError):
+                return False
+            if pd.isna(inicio_dt):
+                return False
+            return esta_em_ferias(inicio_dt)
+
+        labels_validos = [
+            label for label in tabela_heatmap.index if not _label_em_ferias(label)
+        ]
+        tabela_heatmap = tabela_heatmap.loc[labels_validos]
 
         semana_labels = tabela_heatmap.index.to_series().astype(str)
         semana_codigos = (

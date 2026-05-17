@@ -42,13 +42,13 @@ def _ultimo_dia_mes_anterior(referencia: dt.date) -> dt.date:
 
 
 def _max_data_dw() -> dt.date | None:
-    """Usa a última data presente no DW, limitada ao mes corrente.
+    """Usa a última data presente no DW com cobertura continua de fato.
 
-    O DW pode conter dados futuros (carga de teste, eventos agendados). Para
-    a analise faz sentido cortar no final do mes anterior ao mes corrente, ou
-    no maximo no dia de hoje, evitando que o slider abra em meses futuros sem
-    dados reais. Se o DW tiver MAX(data) menor que isso, mantemos o que veio
-    do DW.
+    O DW pode conter dados futuros (carga de teste, eventos agendados) ou ter
+    rabicho de dados esparsos depois do fim real da catraca. Procuramos a
+    ultima data D em que a janela [D-13, D] tem pelo menos 8 dias com
+    movimento minimo (5k pessoas/dia) — isso descarta carregas pontuais e
+    cortes administrativos sem disfarçar feriados/finais de semana.
     """
     dw_path_config = getattr(SETTINGS, "dw_path", None)
     if not dw_path_config:
@@ -58,43 +58,64 @@ def _max_data_dw() -> dt.date | None:
     if not dw_path.exists():
         return None
 
-    consultas_principais = (
-        ("agg_diarios_unico", "data"),
-        ('vw_df_diarios_unico', '"Data"'),
-        ('vw_semana_enriquecida', '"Data"'),
-    )
-    consultas_fallback = (
-        ('vw_df_diarios', '"Data"'),
-        ('evento_acesso_flat', 'data'),
-    )
     hoje = dt.date.today()
     teto = _ultimo_dia_mes_anterior(hoje)
 
-    def executar(
+    consultas_principais = ("agg_diarios_unico", "data")
+    consultas_fallback = ("evento_acesso_flat", "data")
+
+    def _ultima_data_continua(
         conn: sqlite3.Connection,
-        consultas: Iterable[tuple[str, str]],
+        tabela: str,
+        coluna: str,
+        teto_str: str,
     ) -> dt.date | None:
-        datas: list[dt.date] = []
-        for tabela, coluna in consultas:
-            try:
-                row = conn.execute(
-                    f"SELECT MAX({coluna}) FROM {tabela} WHERE {coluna} <= ?",
-                    (teto.strftime("%Y-%m-%d"),),
-                ).fetchone()
-            except sqlite3.Error:
-                continue
-            if not row or row[0] is None:
-                continue
+        try:
+            cur = conn.execute(
+                f"""
+                SELECT {coluna} AS d, COUNT(DISTINCT cadastro) AS pessoas
+                FROM {tabela}
+                WHERE {coluna} <= ?
+                GROUP BY {coluna}
+                HAVING pessoas >= 5000
+                ORDER BY {coluna} DESC
+                LIMIT 60
+                """,
+                (teto_str,),
+            )
+            linhas = cur.fetchall()
+        except sqlite3.Error:
+            return None
+        if not linhas:
+            return None
+
+        datas = []
+        for row in linhas:
             valor = pd.to_datetime(row[0], errors="coerce")
-            if not pd.isna(valor):
-                datas.append(pd.Timestamp(valor).date())
-        return max(datas) if datas else None
+            if pd.isna(valor):
+                continue
+            datas.append(pd.Timestamp(valor).date())
+        if not datas:
+            return None
+        datas.sort(reverse=True)
+
+        for candidato in datas:
+            janela_ini = candidato - dt.timedelta(days=13)
+            dias_validos = sum(1 for d in datas if janela_ini <= d <= candidato)
+            if dias_validos >= 8:
+                return candidato
+        return datas[0]
 
     try:
         with sqlite3.connect(str(dw_path)) as conn:
-            return executar(conn, consultas_principais) or executar(conn, consultas_fallback)
+            teto_str = teto.strftime("%Y-%m-%d")
+            for tabela, coluna in (consultas_principais, consultas_fallback):
+                resultado = _ultima_data_continua(conn, tabela, coluna, teto_str)
+                if resultado:
+                    return resultado
     except sqlite3.Error:
         return None
+    return None
 
 
 def _ultimos_meses_presentes_dw(n: int = 3) -> tuple[dt.date, dt.date] | None:
