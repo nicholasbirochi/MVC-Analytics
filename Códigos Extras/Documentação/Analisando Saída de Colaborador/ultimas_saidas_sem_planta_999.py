@@ -12,16 +12,33 @@ from matplotlib.ticker import FuncFormatter
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_DIR = SCRIPT_DIR.parent
-BASE = PROJECT_DIR / "database" / "df_ronda.parquet"
-OUT_DIR = SCRIPT_DIR
-PDF = OUT_DIR / "ultimas_saidas_sem_planta_999.pdf"
-EMAIL = OUT_DIR / "email_folli_gabriela_reverdini_ultimas_saidas_sem_planta_999.txt"
 
-CAD = ""
-NOME = ""
+CAD = "2048728"
+NOME = "GLAUCIA GONZALES DE FREITAS"
 TODAY = pd.Timestamp("2026-04-30")
 
+PERIOD_START = pd.Timestamp("2024-01-01")
+PERIOD_END = pd.Timestamp("2025-06-30")
+
+def find_project_root(start: Path) -> Path:
+    for folder in [start, *start.parents]:
+        parquet_path = folder / "database" / "df_ronda.parquet"
+        if parquet_path.exists():
+            return folder
+
+    raise FileNotFoundError(
+        "Não encontrei o arquivo database/df_ronda.parquet em nenhuma pasta acima de:\n"
+        f"{start}\n\n"
+        "Confirme se o arquivo existe em: <raiz do projeto>/database/df_ronda.parquet"
+    )
+
+
+PROJECT_DIR = find_project_root(SCRIPT_DIR)
+BASE = PROJECT_DIR / "database" / "df_ronda.parquet"
+
+OUT_DIR = SCRIPT_DIR
+PDF = OUT_DIR / f"{CAD}_ultimas_saidas_sem_planta_999_jan24_jun25.pdf"
+EMAIL = OUT_DIR / f"email_folli_{CAD}_ultimas_saidas_sem_planta_999_jan24_jun25.txt"
 
 def hora_to_minutes(value):
     if pd.isna(value):
@@ -95,7 +112,7 @@ def prepare_daily_last_exits():
     ]
     df = pq.read_table(str(BASE), columns=cols, filters=[("cadastro", "==", CAD)]).to_pandas()
     if df.empty:
-        raise RuntimeError("Nenhum registro encontrado para a chapa 4008223.")
+        raise RuntimeError(f"Nenhum registro encontrado para a chapa {CAD}.")
 
     data = pd.to_datetime(df["data"], errors="coerce")
     dt = data.dt
@@ -109,9 +126,19 @@ def prepare_daily_last_exits():
     df = df.dropna(subset=["data_corrigida", "hora_min"]).copy()
     df["data_corrigida"] = pd.to_datetime(df["data_corrigida"]).dt.normalize()
 
-    end = min(df["data_corrigida"].max(), TODAY).normalize()
-    start = (end - pd.DateOffset(months=12) + pd.DateOffset(days=1)).normalize()
-    period_all = df[(df["data_corrigida"] >= start) & (df["data_corrigida"] <= end)].copy()
+    start = PERIOD_START.normalize()
+    end = PERIOD_END.normalize()
+
+    period_all = df[
+        (df["data_corrigida"] >= start)
+        & (df["data_corrigida"] <= end)
+    ].copy()
+
+    if period_all.empty:
+        raise RuntimeError(
+            f"Sem registros no período de {start:%d/%m/%Y} a {end:%d/%m/%Y} "
+            f"para a chapa {CAD}."
+        )
     period_all["planta_norm"] = period_all["planta"].astype(str).str.strip()
     period = period_all[~period_all["planta_norm"].eq("999")].copy()
     period["dir_norm"] = period["dir"].astype(str).str.strip().str.upper()
@@ -523,11 +550,11 @@ def main():
         plt.close(fig)
 
     EMAIL.write_text(
-        f"""Assunto: Ultimas saidas sem planta 999 - Gabriela Reverdini (4008223)
+        f"""Assunto: Ultimas saidas sem planta 999 - {NOME} ({CAD})
 
 Folli, bom dia.
 
-Refiz a analise da GABRIELA REVERDINI DADIAN MASCHERETTI, chapa 4008223, considerando somente a ultima marcacao S de cada dia e excluindo todos os registros da planta 999 antes da consolidacao.
+Refiz a analise de {NOME}, chapa {CAD}, considerando somente a ultima marcacao S de cada dia e excluindo todos os registros da planta 999 antes da consolidacao.
 
 Periodo validado: {period_label}.
 
