@@ -23,6 +23,41 @@ GLOBAL_CSS = f"""
 * {{
   font-family: {VW_FONT_FAMILY} !important;
 }}
+html,
+body {{
+  -webkit-print-color-adjust: exact !important;
+  print-color-adjust: exact !important;
+}}
+@media print {{
+  * {{
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }}
+  body {{
+    background: #ffffff !important;
+  }}
+  .modebar,
+  .dash-debug-menu {{
+    display: none !important;
+  }}
+  .dash-table-container *,
+  .dash-spreadsheet-container *,
+  .dash-cell-value,
+  .dash-cell-value *,
+  .js-plotly-plot,
+  .js-plotly-plot *,
+  svg,
+  svg *,
+  [style*="background"],
+  [style*="background-color"],
+  [style*="color:"] {{
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+    forced-color-adjust: none !important;
+  }}
+}}
 .lang-wrap {{
   display: grid;
   justify-items: end;

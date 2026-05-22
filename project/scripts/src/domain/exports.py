@@ -13,8 +13,13 @@ from __future__ import annotations
 
 import base64
 import io
+import os
 from datetime import datetime, timedelta
 
+os.environ.setdefault("MPLBACKEND", "Agg")
+import matplotlib
+
+matplotlib.use("Agg", force=True)
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
