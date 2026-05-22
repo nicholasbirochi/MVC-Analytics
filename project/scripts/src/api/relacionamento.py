@@ -15,6 +15,7 @@ from dash import Input, Output, State, dcc, html, dash_table, no_update, ALL
 from dash.exceptions import PreventUpdate
 import time
 from collections import deque
+from functools import lru_cache
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -30,6 +31,17 @@ estilo_exibir = ESTILO_EXIBIR
 estilo_oculto = ESTILO_OCULTO
 
 
+@lru_cache(maxsize=4096)
+def _norm_cad_cached(value: str) -> str:
+    """Versao memoizada de _norm_cad para reuso entre callbacks."""
+    txt = str(value).strip().replace(" ", "")
+    if not txt:
+        return ""
+    if txt.endswith(".0") and txt[:-2].isdigit():
+        txt = txt[:-2]
+    return txt.lstrip("0") or "0"
+
+
 def _semana_inicio(s: pd.Series) -> pd.Series:
     """Retorna a segunda-feira ISO de cada data, preservando índice."""
     s = pd.to_datetime(s, errors="coerce")
@@ -42,12 +54,49 @@ def _semana_inicio(s: pd.Series) -> pd.Series:
 
 
 def register(app):
+    # Caches vivos pela duracao do app (computados sob demanda na primeira
+    # chamada). Evitam reconstruir mapas pesados a cada callback.
+    _cache: dict = {
+        "cad_to_nome": None,
+        "dropdown_options": None,
+    }
+
     def _people_base_df() -> pd.DataFrame:
         if {"Cadastro", "Nome"}.issubset(df_semana_merged.columns) and not df_semana_merged.empty:
-            return df_semana_merged[["Cadastro", "Nome"]].copy()
+            return df_semana_merged[["Cadastro", "Nome"]]
         if {"Cadastro", "Nome"}.issubset(df_df_ativos.columns) and not df_df_ativos.empty:
-            return df_df_ativos[["Cadastro", "Nome"]].copy()
+            return df_df_ativos[["Cadastro", "Nome"]]
         return pd.DataFrame(columns=["Cadastro", "Nome"])
+
+    def _get_cad_to_nome() -> dict:
+        """Mapa Cadastro normalizado -> Nome, construido uma unica vez."""
+        if _cache["cad_to_nome"] is None:
+            base = _people_base_df().dropna().drop_duplicates()
+            if base.empty:
+                _cache["cad_to_nome"] = {}
+            else:
+                cad_norm = base["Cadastro"].astype(str).map(_norm_cad_cached)
+                _cache["cad_to_nome"] = dict(zip(cad_norm, base["Nome"]))
+        return _cache["cad_to_nome"]
+
+    def _get_dropdown_options() -> list[dict]:
+        """Opcoes do dropdown de pessoas, ordenadas por nome, em cache."""
+        if _cache["dropdown_options"] is None:
+            base = _people_base_df().dropna().drop_duplicates()
+            if base.empty:
+                _cache["dropdown_options"] = []
+            else:
+                cad_strs = base["Cadastro"].astype(str).to_numpy()
+                nomes = base["Nome"].astype(str).to_numpy()
+                idx_sort = np.argsort([n.lower() for n in nomes])
+                _cache["dropdown_options"] = [
+                    {
+                        "label": f"{cad_strs[i]} - {nomes[i]}",
+                        "value": f"PESSOA::{cad_strs[i]}",
+                    }
+                    for i in idx_sort
+                ]
+        return _cache["dropdown_options"]
 
     @app.callback(
         Output('tabela-gptw-rel', 'children'),
@@ -413,18 +462,9 @@ def register(app):
         Input('url', 'pathname')
     )
     def carregar_opcoes_pessoas(_):
-        df_p = (_people_base_df()
-                .dropna()
-                .drop_duplicates())
-        df_p['Cadastro'] = df_p['Cadastro'].astype(str)
-        df_p = df_p.sort_values('Nome')
-
-        # Exclusivo de pessoas, com rótulo "CHAPA - NOME"
-        return [
-            {'label': f"{row['Cadastro']} - {row['Nome']}",
-             'value': f"PESSOA::{row['Cadastro']}"}
-            for _, row in df_p.iterrows()
-        ]
+        # Opcoes em cache — evita iterrows() e drop_duplicates() em cada
+        # navegacao.
+        return _get_dropdown_options()
 
     @app.callback(
         Output('cores-pessoas-container', 'children'),
@@ -437,19 +477,20 @@ def register(app):
         if not pessoas_ids:
             return []
 
-        cad_to_nome = (_people_base_df()
-                       .drop_duplicates()
-                       .assign(Cadastro=lambda d: d['Cadastro'].astype(str))
-                       .set_index('Cadastro')['Nome']
-                       .to_dict())
+        cad_to_nome = _get_cad_to_nome()
         adm_cache, dem_cache = carregar_adm_dem_cache()
         ref_dt = pd.Timestamp.today().normalize()
 
         def label_pessoa(pid):
-            cad = pid.split("PESSOA::",1)[1]
-            nome = cad_to_nome.get(cad, cad)
-            tenure_txt = tempo_de_casa_str(adm_cache.get(cad), ref=ref_dt, dem_ts=dem_cache.get(cad))
-            return f"{nome} ({cad}) - {tenure_txt}"
+            cad_raw = pid.split("PESSOA::", 1)[1]
+            cad_norm = _norm_cad_cached(cad_raw)
+            nome = cad_to_nome.get(cad_norm, cad_raw)
+            tenure_txt = tempo_de_casa_str(
+                adm_cache.get(cad_raw) or adm_cache.get(cad_norm),
+                ref=ref_dt,
+                dem_ts=dem_cache.get(cad_raw) or dem_cache.get(cad_norm),
+            )
+            return f"{nome} ({cad_raw}) - {tenure_txt}"
 
         return [
             html.Div([
@@ -507,10 +548,47 @@ def register(app):
         if 'df_datas' not in globals() or not isinstance(globals()['df_datas'], pd.DataFrame):
             globals()['df_datas'] = pd.DataFrame(columns=["Cadastro", "Planta", "Data"])
 
-        dfp = globals()['df_datas'].copy()
+        _norm_cad = _norm_cad_cached  # alias local para reuso
+        cad_norm = [c for c in (_norm_cad(c) for c in cad_list) if c]
+        cad_norm_set = set(cad_norm)
+        # Variantes pre-normalizacao para filtragem rapida no df_datas global,
+        # cobrindo dtype int/float/str sem precisar fazer astype na coluna toda.
+        cad_variants: set = set()
+        for c in cad_norm:
+            cad_variants.add(c)
+            cad_variants.add(c.zfill(8))
+            cad_variants.add(c + ".0")
+            try:
+                ci = int(c)
+                cad_variants.add(ci)
+                cad_variants.add(float(ci))
+                cad_variants.add(str(ci))
+            except ValueError:
+                pass
+
+        df_datas_global = globals()['df_datas']
+        dfp = pd.DataFrame(columns=["Cadastro", "Planta", "Data"])
+        if not df_datas_global.empty and 'Cadastro' in df_datas_global.columns:
+            try:
+                # isin funciona com dtype misto sem precisar converter a coluna
+                mask = df_datas_global['Cadastro'].isin(cad_variants)
+                if mask.any():
+                    dfp = df_datas_global.loc[mask].copy()
+            except Exception:
+                dfp = pd.DataFrame(columns=["Cadastro", "Planta", "Data"])
+
         if dfp.empty:
-            # Lazy load: busca apenas pessoas selecionadas no DW
-            dfp = dw_fetch_diarios(cad_list).copy()
+            # Lazy load: busca apenas pessoas selecionadas no DW, limitando
+            # a janela aos ultimos 12 meses para o callback nao travar quando
+            # o colaborador tem historico longo.
+            _hoje = pd.Timestamp.today().normalize()
+            _dt_ini_diario = (_hoje - pd.DateOffset(months=12)).normalize()
+            try:
+                dfp = dw_fetch_diarios(
+                    cad_norm, dt_ini=_dt_ini_diario, dt_fim=_hoje
+                ).copy()
+            except Exception:
+                dfp = pd.DataFrame(columns=["Cadastro", "Planta", "Data"])
 
         if 'Data' not in dfp.columns:
             info = fig_msg("df_datas sem coluna 'Data'")
@@ -519,29 +597,21 @@ def register(app):
             info = fig_msg("df_datas sem coluna 'Cadastro'")
             return info, fig_msg("—")
 
-        dfp['Cadastro'] = dfp['Cadastro'].astype(str)
+        # Apos o filtro inicial dfp ja tem so as 2-3 pessoas — normalizacao
+        # leve agora opera sobre poucas linhas.
+        dfp = dfp.copy()
+        dfp['Cadastro'] = dfp['Cadastro'].astype(str).map(_norm_cad)
         dfp['Data'] = pd.to_datetime(dfp['Data'], errors='coerce').dt.normalize()
         dfp = dfp.dropna(subset=['Data'])
-        dfp = dfp[dfp['Cadastro'].isin(cad_list)]
+        dfp = dfp[dfp['Cadastro'].isin(cad_norm_set)]
         if dfp.empty:
             info = fig_msg("Sem registros de presença para as pessoas selecionadas")
             return info, fig_msg("—")
+        # mantemos a forma normalizada como cad_list para tudo abaixo
+        cad_list = cad_norm
 
-        # ------------------ nomes ------------------
-        if {"Cadastro", "Nome"}.issubset(df_semana_merged.columns) and not df_semana_merged.empty:
-            cad_to_nome = (
-                df_semana_merged[['Cadastro', 'Nome']]
-                .drop_duplicates()
-                .assign(Cadastro=lambda d: d['Cadastro'].astype(str))
-                .set_index('Cadastro')['Nome']
-                .to_dict()
-            )
-        else:
-            cad_to_nome = (_people_base_df()
-                           .drop_duplicates()
-                           .assign(Cadastro=lambda d: d['Cadastro'].astype(str))
-                           .set_index('Cadastro')['Nome']
-                           .to_dict())
+        # ------------------ nomes (cache de modulo) ------------------
+        cad_to_nome = _get_cad_to_nome()
 
         # ------------------ semana ISO ------------------
         dfp['SemIni'] = _semana_inicio(dfp['Data'])
@@ -558,17 +628,17 @@ def register(app):
 
         # ------------------ FIG 1 ------------------
         fig_pres = go.Figure()
-        cores_map_by_pid = {}
+        cores_map_by_cad = {}
         if isinstance(cores, list):
             for i, pid in enumerate(pessoas_ids):
                 c = cores[i] if i < len(cores) else None
                 if isinstance(c, str) and c.strip():
-                    cores_map_by_pid[pid] = c.strip()
+                    cad_raw = pid.split("PESSOA::", 1)[1]
+                    cores_map_by_cad[_norm_cad(cad_raw)] = c.strip()
 
         for cad in cad_list:
-            pid = f"PESSOA::{cad}"
-            nome = cad_to_nome.get(cad, cad)
-            cor = cores_map_by_pid.get(pid, None)
+            nome = cad_to_nome.get(cad) or cad
+            cor = cores_map_by_cad.get(cad, None)
             hover = (nome + "<br>Semana: %{x|%Y-%m-%d}"
                      + "<br>Dias presentes: %{y:.0f}<extra></extra>")
             fig_pres.add_trace(go.Scatter(
@@ -596,17 +666,27 @@ def register(app):
         outros = cad_list[1:]
 
         if modo_rel == 'almoco':
-            dt_ini_ref = pd.Timestamp(dfp['Data'].min()).normalize()
             dt_fim_ref = pd.Timestamp(dfp['Data'].max()).normalize()
+            dt_ini_full = pd.Timestamp(dfp['Data'].min()).normalize()
+            # Limita a janela do almoço aos últimos 12 meses para manter a
+            # consulta no DW dentro de um tempo razoável (caso contrário,
+            # quando o histórico completo do colaborador é longo, o fallback
+            # em evento_acesso_flat trava o callback).
+            dt_ini_ref = max(dt_ini_full, dt_fim_ref - pd.DateOffset(months=12))
 
-            dfal = build_dataframe_almoco_pessoas(
-                cad_list,
-                dt_ini=dt_ini_ref,
-                dt_fim=dt_fim_ref,
-            )
+            try:
+                dfal = build_dataframe_almoco_pessoas(
+                    cad_list,
+                    dt_ini=dt_ini_ref,
+                    dt_fim=dt_fim_ref,
+                )
+            except Exception as exc:
+                dfal = None
+                fig_mini_movel = fig_msg(f"Erro ao carregar dados de almoço: {exc}")
 
             if dfal is None or dfal.empty:
-                fig_mini_movel = fig_msg("Sem dados de almoço para as pessoas selecionadas")
+                if 'fig_mini_movel' not in locals():
+                    fig_mini_movel = fig_msg("Sem dados de almoço para as pessoas selecionadas")
             else:
                 def _cad_candidates(value: str) -> list[str]:
                     txt = str(value).strip()
