@@ -896,11 +896,16 @@ def register(app):
         ax_clock.set_theta_direction(-1)
         current_val = float(media_presenca_semana)
         meta_gauge = max(0.0, float(media_min_req))
+        # Quando o periodo cruza a mudanca de regra (mai/2025), media_min_req
+        # pode ser fracionaria (ex.: 2.98). Usamos o teto para a coloracao
+        # discreta — assim a faixa abaixo da meta cobre ate o degrau correto.
+        meta_int = int(np.ceil(meta_gauge - 1e-9)) if meta_gauge > 0 else 0
         colors = [
-            '#ffb3b3' if (i + 1) <= meta_gauge - 1 else
-            '#f4cccc' if (i + 1) <= meta_gauge else
+            '#ee9999' if (i + 1) <= meta_int - 2 else
+            '#ffb3b3' if (i + 1) <= meta_int - 1 else
+            '#f4cccc' if (i + 1) <= meta_int else
             '#fff9a9' if i >= 5 else
-            '#d9ead3' if i == int(meta_gauge) else
+            '#d9ead3' if i == meta_int else
             '#b6e6c5'
             for i in range(7)
         ]
@@ -1029,6 +1034,7 @@ def register(app):
                 meta_semana = float(min_presencial_exigido(semana_codigo))
                 cor_destaque = (
                     "#d9ead3" if qtd_float >= meta_semana else
+                    "#ee9999" if qtd_float <= 0.0 else
                     "#ffb3b3" if qtd_float <= max(0.0, meta_semana - 2.0) else
                     "#f4cccc"
                 )
@@ -1068,7 +1074,7 @@ def register(app):
             height = (num_linhas / linhas_base) * altura_base
             top = 0.410; bottom = top - height
             ax_heatmap3 = fig.add_axes([left, bottom, width, height])
-            sns.heatmap(tabela_heatmap_baixa, cmap=ListedColormap(['#ffb3b3', '#f4cccc']),
+            sns.heatmap(tabela_heatmap_baixa, cmap=ListedColormap(['#ee9999', '#ffb3b3', '#f4cccc']),
                         linewidths=1, linecolor='gray', annot=True, annot_kws={'size': 13},
                         cbar=False, ax=ax_heatmap3)
             for y_idx, semana_label in enumerate(tabela_heatmap_baixa.index):
@@ -1078,6 +1084,7 @@ def register(app):
                     qtd_float = 0.0 if pd.isna(qtd_presenca) else float(qtd_presenca)
                     meta_semana = float(min_presencial_exigido(semana_codigo))
                     cor_destaque = (
+                        "#ee9999" if qtd_float <= 0.0 else
                         "#ffb3b3" if qtd_float <= max(0.0, meta_semana - 2.0) else
                         "#f4cccc"
                     )
