@@ -6,6 +6,8 @@ __pycache__/
 # Ambientes virtuais
 venv/
 .venv/
+.venv_test/
+python-runtime/
 
 # Configuracoes locais de editor/OS
 .vscode/
@@ -62,6 +64,7 @@ Thumbs.db
 
 # Caches e logs
 .cache/
+mplconfig/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
