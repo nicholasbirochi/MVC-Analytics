@@ -714,9 +714,12 @@ Ao reintroduzir testes automatizados, priorize equivalência entre notebook e MV
 - O MVC agora lê `RONDA_DW_PATH` externamente para reproduzir o notebook sem copiar base para dentro do repo.
 
 ## 🧠 Cache & Performance
-- Cache leve (Flask-Caching) para DataFrames semanais  
-- TTL configurável via `ND_CACHE_TTL` (padrão: 900 s)  
-- Funções puras menores podem usar `functools.lru_cache`  
+- Cache leve (Flask-Caching) para DataFrames semanais
+- TTL configurável via `ND_CACHE_TTL` (padrão: 900 s)
+- Funções puras menores usam `functools.lru_cache` (ex.: normalização de `Cadastro` em `api/relacionamento.py`)
+- Caches de escopo `register(app)` em `relacionamento.py` para o mapa `Cadastro→Nome` e opções de dropdown (evita refazer `drop_duplicates`/`iterrows` em cada disparo de callback)
+- Filtragem do `df_datas` global feita por `isin` com variantes int/float/str — não converte a coluna inteira para string a cada callback
+- Janelas curtas para o lazy-load do DW na aba Relacionamento (12 meses) e para a consulta de almoço (12 meses) — mantém o callback responsivo mesmo com histórico longo
 - Renderização dos gráficos é progressiva (`dcc.Store` + `dcc.Interval`)
 
 ## 🪄 Estilo Visual e UX
@@ -738,10 +741,10 @@ Ao reintroduzir testes automatizados, priorize equivalência entre notebook e MV
 
 | Arquivo | Função | Descrição |
 |:-------- |:--------|:-----------|
-| `general.py` | Aba inicial | KPIs, boxplots e indicadores gerais |
+| `general.py` | Aba inicial | KPIs, boxplots e indicadores gerais (meta semanal aplica regra vigente por período, com mudança em mai/2025) |
 | `area.py` | Aba por área | Heatmaps e filtros dinâmicos por departamento |
-| `relacionamento.py` | Aba de relacionamentos | Séries semanais, tags e comparativos |
-| `individual.py` | Relatório individual | Termômetro, histórico e exportação PDF/JPG |
+| `relacionamento.py` | Aba de relacionamentos | Séries semanais, tags, modo Almoço, comparativos — com caches em `register(app)` para lookups pesados |
+| `individual.py` | Relatório individual | Termômetro (gauge), histórico, gradiente de severidade por semana (0/1/2 dias) e exportação PDF/JPG |
 | `router.py` | Roteamento Dash | Redireciona `dcc.Location` → layout correto |
 
 ### 🛠️ **Services** (`services/*.py`) — Camada de lógica e regras de negócio
@@ -783,6 +786,8 @@ Ao reintroduzir testes automatizados, priorize equivalência entre notebook e MV
 | Nenhum dado no gráfico | Coluna ausente | Confirme `Planta` e `Data` em `df_datas` |
 | Tags não aparecem | Store vazio | Adicione tags via interface lateral |
 | Slider bugado | Coluna `Data` inválida | Verifique `df_datas['Data']` coerente |
+| `/relacionamento` "Updating..." infinito | Histórico longo + DW frio | Janela é capada em 12 meses; reinicie o servidor Dash para refletir as mudanças |
+| Cores no `Imprimir` saem em cinza | `print-color-adjust` ausente | `ui/theme.py` força `-webkit-print-color-adjust: exact` para Plotly/DataTable/SVG |
 
 ## 🔐 Segurança e Acesso
 - Login controlado via SQLite + Flask Session
