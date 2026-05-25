@@ -15,7 +15,7 @@
   text-align:center;
 ">
   <img
-    src="project/website/images/logo_white.png"
+    src="project/images/logo_white.png"
     alt="VW"
     style="
       width:clamp(88px, 12vw, 130px);

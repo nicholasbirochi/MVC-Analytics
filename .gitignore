@@ -48,8 +48,6 @@ Thumbs.db
 *.ico
 *.png
 *.jpg
-!project/website/images/
-!project/website/images/**
 
 # Chaves e certificados
 *.pem
