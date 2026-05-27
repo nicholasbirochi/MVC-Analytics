@@ -376,64 +376,49 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 │ │ ├── 🗄️ dw_ronda.sqlite-shm
 │ │ └── 🗄️ dw_ronda.sqlite-wal
 │ │
-│ ├── 📂 scripts/
-│ │ │ ├── 📂 api/
-│ │ │ │ ├── 🐍 area.py
-│ │ │ │ ├── 🐍 general.py
-│ │ │ │ ├── 🐍 individual.py
-│ │ │ │ ├── 🐍 relacionamento.py
-│ │ │ │ └── 🐍 router.py
-│ │ │ │
-│ │ │ ├── 📂 core/
-│ │ │ │ ├── 🐍 config.py
-│ │ │ │ └── 🐍 repo_global.py
-│ │ │ │
-│ │ │ ├── 📂 data/
-│ │ │ │ └── 🐍 datasets.py
-│ │ │ │
-│ │ │ ├── 📂 domain/
-│ │ │ │ ├── 🐍 builders.py
-│ │ │ │ ├── 🐍 cache_utils.py
-│ │ │ │ ├── 🐍 cargo.py
-│ │ │ │ ├── 🐍 copresenca.py
-│ │ │ │ ├── 🐍 exports.py
-│ │ │ │ ├── 🐍 filters.py
-│ │ │ │ ├── 🐍 gptw.py
-│ │ │ │ ├── 🐍 periods.py
-│ │ │ │ ├── 🐍 pipeline.py
-│ │ │ │ └── 🐍 tenure.py
-│ │ │ │
-│ │ │ ├── 📂 ui/
-│ │ │ │ ├── 🐍 figures.py
-│ │ │ │ ├── 🐍 gptw.py
-│ │ │ │ ├── 🐍 layout.py
-│ │ │ │ ├── 🐍 tables.py
-│ │ │ │ └── 🐍 theme.py
-│ │ │ │
-│ │ │ ├── 🐍 main.py
-│ │ │ └── 🐍 sample_runner.py
-│ │ │
-│ │ └── 🐍 security_login.py
+│ ├── 📂 images/
+│ │ ├── 🧊 logo_blue.ico
+│ │ └── 🖼️ logo_white.png
 │ │
-│ └── 📂 website/
-│   ├── 📂 images/
-│   │ ├── 🖼️ logo_white.png
-│   │ └── 🧊 logo_blue.ico
+│ └── 📂 src/
+│   ├── 📂 api/
+│   │ ├── 🐍 area.py
+│   │ ├── 🐍 general.py
+│   │ ├── 🐍 individual.py
+│   │ ├── 🐍 relacionamento.py
+│   │ └── 🐍 router.py
 │   │
-│   ├── 📂 javascript/
-│   │ ├── ⚡ app.js
-│   │ └── ⚡ login.js
+│   ├── 📂 core/
+│   │ ├── 🐍 config.py
+│   │ └── 🐍 repo_global.py
 │   │
-│   ├── 📂 style/
-│   │ ├── 🎨 login.css
-│   │ └── 🎨 styles.css
+│   ├── 📂 data/
+│   │ ├── 🐍 datasets.py
+│   │ ├── 🐍 fix_terceiros_dw.py
+│   │ ├── 🐍 rebuild_dw_from_parquet.py
+│   │ └── 🐍 reduce_terceiros_quarter.py
 │   │
-│   └── 📂 views/
-│     ├── 🧱 index.html
-│     └── 🧱 login.html
-│  
-├── 📂 tests
-│ └── 🐍 test_equivalence_notebook_vs_mvc.py
+│   ├── 📂 domain/
+│   │ ├── 🐍 builders.py
+│   │ ├── 🐍 cache_utils.py
+│   │ ├── 🐍 cargo.py
+│   │ ├── 🐍 copresenca.py
+│   │ ├── 🐍 exports.py
+│   │ ├── 🐍 filters.py
+│   │ ├── 🐍 gptw.py
+│   │ ├── 🐍 periods.py
+│   │ ├── 🐍 pipeline.py
+│   │ └── 🐍 tenure.py
+│   │
+│   ├── 📂 ui/
+│   │ ├── 🐍 figures.py
+│   │ ├── 🐍 gptw.py
+│   │ ├── 🐍 layout.py
+│   │ ├── 🐍 tables.py
+│   │ └── 🐍 theme.py
+│   │
+│   ├── 🐍 main.py
+│   └── 🐍 sample_runner.py
 │  
 ├── ⚙️ .gitignore
 ├── 📖 readme.md
@@ -676,7 +661,7 @@ pip install -r requirements.txt
 # 3) Configurar .env local (baseado no .env.example)
 
 # 4) Subir o MVC
-py -3 -m project.scripts.src.main
+py -3 -m project.src.main
 ```
 
 App: `http://localhost:8050`
@@ -684,7 +669,7 @@ App: `http://localhost:8050`
 Comando unico alternativo (bootstrap rapido):
 
 ```powershell
-py -3 -c "import project.scripts.src.main as m; m.create_app(); print('ok')"
+py -3 -c "import project.src.main as m; m.create_app(); print('ok')"
 ```
 
 ## 🧪 Testes e Validação
@@ -698,7 +683,7 @@ Validações mínimas recomendadas:
 py -3 -m compileall project "Códigos Extras"
 
 # Bootstrap do app, quando as variáveis de dados estiverem configuradas
-py -3 -c "import project.scripts.src.main as m; m.create_app(); print('ok')"
+py -3 -c "import project.src.main as m; m.create_app(); print('ok')"
 ```
 
 Ao reintroduzir testes automatizados, priorize equivalência entre notebook e MVC:
