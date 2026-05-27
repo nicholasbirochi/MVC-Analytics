@@ -39,8 +39,8 @@ def _load_env_value(path: Path, key: str) -> str:
 def _startup_port() -> int:
     raw = os.getenv("ND_PORT", "").strip()
     if not raw:
-        repo_root = Path(__file__).resolve().parents[4]
-        project_dir = Path(__file__).resolve().parents[3]
+        project_dir = Path(__file__).resolve().parent.parent
+        repo_root = project_dir.parent
         for candidate in (
             repo_root / ".env",
             repo_root / ".env.local",
@@ -127,18 +127,18 @@ def create_app() -> Dash:
         from .ui.layout import LAYOUT
         from .ui.theme import GLOBAL_CSS, LANGUAGE_JS
     else:
-        # Suporta execucao direta: `py .\scripts\src\main.py`
+        # Suporta execucao direta: `py .\project\src\main.py`
         import sys
 
-        scripts_dir = Path(__file__).resolve().parent.parent
-        if str(scripts_dir) not in sys.path:
-            sys.path.insert(0, str(scripts_dir))
+        repo_root = Path(__file__).resolve().parent.parent.parent
+        if str(repo_root) not in sys.path:
+            sys.path.insert(0, str(repo_root))
 
-        from src.api.router import register_all
-        from src.core.config import SETTINGS, configure_runtime, validate_data_files
-        from src.domain.cache_utils import CacheOptions, as_dict
-        from src.ui.layout import LAYOUT
-        from src.ui.theme import GLOBAL_CSS, LANGUAGE_JS
+        from project.src.api.router import register_all
+        from project.src.core.config import SETTINGS, configure_runtime, validate_data_files
+        from project.src.domain.cache_utils import CacheOptions, as_dict
+        from project.src.ui.layout import LAYOUT
+        from project.src.ui.theme import GLOBAL_CSS, LANGUAGE_JS
 
     configure_runtime(SETTINGS)
     validate_data_files(settings=SETTINGS)

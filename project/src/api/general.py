@@ -552,7 +552,7 @@ def register(app):
                     # preserva a seleção anterior se ainda existir nas opções
                     valores = {o['value'] for o in sub_opts}
                     sub_val = sub_val_atual if sub_val_atual in valores else None
-                    sub_style = {'width': '300px', 'marginTop': '10px', 'display': 'block'}
+                    sub_style = {'width': '100%', 'display': 'block'}
             except Exception:
                 sub_opts, sub_style, sub_val = [], {'display': 'none'}, None
 

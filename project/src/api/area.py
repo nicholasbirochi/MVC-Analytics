@@ -718,11 +718,7 @@ def register(app):
         fig_heatmap_exec = figura_vazia_linha("Carregando informações de relacionamento da área...")
 
         # ======= BARRA DE FILTROS (mesmo conteúdo, mas pode ficar oculta no modo almoço) =======
-        filter_block_style = {
-            'flex':'1','padding':'16px','boxSizing':'border-box','backgroundColor':"#e0e0e0",
-            'borderRadius':'16px','margin':'10px','boxShadow':'0px 3px 6px rgba(0,0,0,0.1)',
-            'display':'flex','flexWrap':'wrap','alignItems':'flex-start','gap':'24px'
-        }
+        filter_block_style = {}
         if is_almoco:
             # Esconder completamente no modo almoço (mantém IDs e callbacks)
             filter_block_style['display'] = 'none'
@@ -738,7 +734,7 @@ def register(app):
                         value='left',
                         labelStyle={'display': 'inline-block', 'marginRight': '10px'}
                     ),
-                ], style={'display': 'flex', 'flexDirection': 'column', 'alignItems': 'center'}),
+                ], className='filtro-toggle-card'),
 
                 html.Div([
                     html.Label("Mostrar as áreas que viajam?"),
@@ -748,8 +744,8 @@ def register(app):
                         value='left',
                         labelStyle={'display': 'inline-block', 'marginRight': '10px'}
                     ),
-                ], style={'display': 'flex', 'flexDirection': 'column', 'alignItems': 'center'}),
-            ], style={'display':'flex','gap':'30px','alignItems':'center'}),
+                ], className='filtro-toggle-card'),
+            ], className='filtro-toggles'),
 
             # Cenário + RangeSlider
             html.Div([
@@ -764,7 +760,7 @@ def register(app):
                         value='all',
                         labelStyle={'display': 'inline-block'}
                     )
-                ], style={'textAlign': 'center', 'marginBottom': '6px'}),
+                ], className='filtro-radio-center'),
 
                 dcc.RangeSlider(
                     id='periodo-slider-area',
@@ -772,7 +768,7 @@ def register(app):
                     value=_area_default_period_indices(),
                     marks=LT_MARKS, allowCross=False, step=1, pushable=1
                 )
-            ], style={'flex':'0 0 540px'}),
+            ], className='filtro-periodo'),
 
             # Subárea local (dentro da mesma herança)
             html.Div([
@@ -782,10 +778,10 @@ def register(app):
                     value=subarea,  # já entra com a subárea atual, se houver
                     placeholder='Selecione uma subárea',
                     clearable=True,
-                    style={'width': '270px', 'marginTop': '6px'}
+                    style={'width': '100%'}
                 ),
-            ], style={'marginLeft':'auto'})
-        ], style=filter_block_style)
+            ], className='filtro-selectores')
+        ], className='filtro-box filtro-box-area', style=filter_block_style)
 
         bloco_duplo = html.Div(
             [

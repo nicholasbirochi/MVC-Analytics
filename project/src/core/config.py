@@ -119,8 +119,8 @@ def _freshest_database_dir(candidates: Iterable[Path]) -> Path | None:
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     """Carrega configuracoes a partir de .env + defaults."""
-    repo_root = Path(__file__).resolve().parents[4]
-    project_dir = Path(__file__).resolve().parents[3]
+    project_dir = Path(__file__).resolve().parents[2]
+    repo_root = project_dir.parent
 
     for candidate in (
         repo_root / ".env",

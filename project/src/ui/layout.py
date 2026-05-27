@@ -486,7 +486,7 @@ LAYOUT = html.Div([
                             value='left',
                             labelStyle={'display': 'inline-block', 'marginRight': '10px', 'fontFamily': VW_PLOTLY_FONT}
                         ),
-                    ], style={'display': 'flex', 'flexDirection': 'column', 'alignItems': 'center', 'fontFamily': VW_PLOTLY_FONT}),
+                    ], className='filtro-toggle-card'),
 
                     html.Div([
                         html.Label(
@@ -502,8 +502,8 @@ LAYOUT = html.Div([
                             value='left',
                             labelStyle={'display': 'inline-block', 'marginRight': '10px', 'fontFamily': VW_PLOTLY_FONT}
                         ),
-                    ], style={'display': 'flex', 'flexDirection': 'column', 'alignItems': 'center', 'fontFamily': VW_PLOTLY_FONT}),
-                ], style={'display': 'flex', 'gap': '30px', 'alignItems': 'center', 'fontFamily': VW_PLOTLY_FONT}),
+                    ], className='filtro-toggle-card'),
+                ], className='filtro-toggles'),
 
                 # --- Bloco B: Linha do tempo ---
                 html.Div([
@@ -529,7 +529,7 @@ LAYOUT = html.Div([
                             value='c1',
                             labelStyle={'display': 'inline-block', 'fontFamily': VW_PLOTLY_FONT}
                         )
-                    ], style={'textAlign': 'center', 'marginBottom': '6px', 'fontFamily': VW_PLOTLY_FONT}),
+                    ], className='filtro-radio-center'),
 
                     dcc.RangeSlider(
                         id='periodo-slider',
@@ -541,7 +541,7 @@ LAYOUT = html.Div([
                         step=1,
                         pushable=1
                     )
-                ], style={'flex': '0 0 560px', 'fontFamily': VW_PLOTLY_FONT}),
+                ], className='filtro-periodo'),
 
                 # --- Bloco C: Dropdown ---
                 html.Div([
@@ -550,7 +550,7 @@ LAYOUT = html.Div([
                         options=dropdown_options,
                         value='GERAL',
                         clearable=False,
-                        style={'width': '270px', 'fontFamily': VW_PLOTLY_FONT}
+                        style={'width': '100%', 'fontFamily': VW_PLOTLY_FONT}
                     ),
                     html.Div([
                         dcc.Dropdown(
@@ -559,26 +559,11 @@ LAYOUT = html.Div([
                             value=None,
                             placeholder='Selecione uma subárea',
                             clearable=True,
-                            style={'width': '270px', 'marginTop': '10px', 'display': 'none', 'fontFamily': VW_PLOTLY_FONT}
+                            style={'width': '100%', 'display': 'none', 'fontFamily': VW_PLOTLY_FONT}
                         )
-                    ], id='subarea-container')
-                ], style={'marginLeft': 'auto', 'fontFamily': VW_PLOTLY_FONT})
-            ], style={
-                'flex': '1',
-                'padding': '20px',
-                'boxSizing': 'border-box',
-                'backgroundColor': "#e0e0e0",
-                'borderRadius': '20px',
-                'height': 'fit-content',
-                'marginTop': '30px',
-                'marginRight': '10px',
-                'boxShadow': '0px 3px 6px rgba(0,0,0,0.1)',
-                'display': 'flex',
-                'flexWrap': 'wrap',
-                'alignItems': 'flex-start',
-                'marginBottom': '30px',
-                'fontFamily': VW_PLOTLY_FONT,
-            }),
+                    ], id='subarea-container', className='filtro-subarea')
+                ], className='filtro-selectores')
+            ], className='filtro-box filtro-box-geral'),
             # ======================================================
 
             # ====== Heatmap + Info ======

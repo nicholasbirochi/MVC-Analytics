@@ -209,8 +209,8 @@ body {{
 .prefiltro-form-grid {{
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.85fr);
-  gap: 18px;
-  padding: 22px 28px 8px;
+  gap: 20px;
+  padding: 22px 28px;
 }}
 .prefiltro-field {{
   min-width: 0;
@@ -222,7 +222,7 @@ body {{
   background: rgba(255, 255, 255, 0.70);
   border: 1px solid rgba(0, 0, 0, 0.10);
   border-radius: 10px;
-  padding: 14px;
+  padding: 16px;
 }}
 .prefiltro-field-title {{
   display: block;
@@ -308,6 +308,87 @@ body {{
 .prefiltro-confirmar {{
   min-width: 150px;
 }}
+.filtro-box {{
+  flex: 1;
+  width: auto;
+  max-width: 100%;
+  box-sizing: border-box;
+  background: #e0e0e0;
+  border-radius: 20px;
+  height: fit-content;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.10);
+  display: grid;
+  grid-template-columns: minmax(240px, 0.9fr) minmax(360px, 1.4fr) minmax(260px, 0.8fr);
+  gap: 20px;
+  align-items: center;
+  font-family: {VW_FONT_FAMILY};
+}}
+.filtro-box-geral {{
+  margin: 30px 10px 30px 0;
+  padding: 20px;
+}}
+.filtro-box-area {{
+  margin: 10px;
+  padding: 16px;
+  border-radius: 16px;
+}}
+.filtro-toggles {{
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  align-items: stretch;
+  min-width: 0;
+}}
+.filtro-toggle-card {{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 72px;
+  text-align: center;
+}}
+.filtro-toggle-card > label {{
+  margin: 0;
+  font-weight: 700;
+  line-height: 1.2;
+}}
+.filtro-radio-center {{
+  text-align: center;
+  margin-bottom: 12px;
+}}
+.filtro-radio-center label {{
+  margin-right: 12px;
+}}
+.filtro-radio-center label:last-child {{
+  margin-right: 0;
+}}
+.filtro-periodo {{
+  min-width: 0;
+  padding: 0 4px;
+}}
+.filtro-periodo .rc-slider {{
+  margin-left: 12px;
+  margin-right: 12px;
+}}
+.filtro-selectores {{
+  display: grid;
+  align-content: center;
+  gap: 12px;
+  min-width: 0;
+  width: 100%;
+}}
+.filtro-subarea {{
+  display: grid;
+  gap: 12px;
+}}
+@media (max-width: 1180px) {{
+  .filtro-box {{
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }}
+}}
 @media (max-width: 1120px) {{
   .prefiltro-panel {{
     width: min(980px, calc(100vw - 28px));
@@ -330,7 +411,7 @@ body {{
   }}
   .prefiltro-form-grid {{
     grid-template-columns: 1fr;
-    padding: 20px 24px 6px;
+    padding: 20px 24px;
   }}
   .prefiltro-cargo-lista {{
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -349,10 +430,19 @@ body {{
   }}
   .prefiltro-form-grid {{
     gap: 14px;
-    padding: 16px 18px 4px;
+    padding: 16px 18px;
   }}
   .prefiltro-field-shell {{
     padding: 12px;
+  }}
+  .filtro-box-geral,
+  .filtro-box-area {{
+    margin: 20px 0;
+    padding: 16px;
+  }}
+  .filtro-toggles {{
+    grid-template-columns: 1fr;
+    gap: 14px;
   }}
   .prefiltro-cargo-lista {{
     grid-template-columns: repeat(2, minmax(0, 1fr));
