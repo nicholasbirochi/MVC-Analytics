@@ -8,45 +8,34 @@ Este diretorio concentra as bases de entrada em formatos `csv`, `parquet` e `xls
 Base de Dados Original/
 ├── readme.md
 ├── csv/
-│   ├── Executivos/
-│   │   ├── Executivos_01-01-2024_03-31-2025.csv
-│   │   ├── Executivos_04-01-2025_09-30-2025.csv
-│   │   └── Executivos_10-01-2025_12-31-2025.csv
+│   ├── Registros/
+│   │   ├── Executivos/
+│   │   ├── Horistas/
+│   │   ├── Mensalistas/
+│   │   └── Terceiros/
 │   │
-│   ├── Horistas/
-│   │   ├── Horistas_01-01-2024_12-31-2024.csv
-│   │   └── Horistas_01-01-2025_12-31-2025.csv
-│   │
-│   └── Mensalistas/
-│       ├── Mensalistas_01-01-2024_03-31-2025.csv
-│       ├── Mensalistas_04-01-2025_09-30-2025.csv
-│       └── Mensalistas_10-01-2025_12-31-2025.csv
+│   └── Ajustes Manuais/
+│       ├── Horistas/
+│       ├── Mensalistas/
+│       └── Terceiros/
 │
 ├── parquet/
 │   ├── Ativos/
-│   │   └── Ativos.parquet
 │   │
 │   ├── Desligados/
-│   │   └── Desligados.parquet
-│   │
-│   ├── Executivos/
-│   │   ├── Executivos_01-01-2024_03-31-2025.parquet
-│   │   ├── Executivos_01-08-2024_03-31-2025.parquet
-│   │   ├── Executivos_04-01-2025_09-30-2025.parquet
-│   │   └── Executivos_10-01-2025_12-31-2025.parquet
 │   │
 │   ├── GPTW/
-│   │   └── GPTW.parquet
 │   │
-│   ├── Horistas/
-│   │   ├── Horistas_01-01-2024_12-31-2024.parquet
-│   │   └── Horistas_01-01-2025_12-31-2025.parquet
+│   ├── Registros/
+│   │   ├── Executivos/
+│   │   ├── Horistas/
+│   │   ├── Mensalistas/
+│   │   └── Terceiros/
 │   │
-│   ├── Mensalistas/
-│   │   ├── Mensalistas_01-01-2024_03-31-2025.parquet
-│   │   ├── Mensalistas_01-08-2024_03-31-2025.parquet
-│   │   ├── Mensalistas_04-01-2025_09-30-2025.parquet
-│   │   └── Mensalistas_10-01-2025_12-31-2025.parquet
+│   ├── Ajustes Manuais/
+│   │   ├── Horistas/
+│   │   ├── Mensalistas/
+│   │   └── Terceiros/
 │   │
 │   └── Movimentacoes/
 │       └── Movimentacoes.parquet
@@ -70,6 +59,7 @@ Base de Dados Original/
 - Bases consolidadas (sem intervalo no nome):
   - `Ativos.parquet`
   - `Desligados.parquet`
+  - `df_ajustes_manuais.parquet`
   - `Movimentacoes.parquet`
   - `GPTW.parquet`
 - Fontes originais em planilha:
@@ -82,3 +72,8 @@ Base de Dados Original/
 - `csv/`: arquivos historicos em texto (origem/extracao).
 - `parquet/`: versao otimizada para processamento analitico.
 - `xlsx/`: planilhas de origem para carga e validacao.
+- `csv/Ajustes Manuais/`: ajustes manuais extraidos do Ronda, separados por categoria.
+- `parquet/Ajustes Manuais/`: mesmos ajustes em parquet e base consolidada
+  `df_ajustes_manuais.parquet`.
+- Os ajustes manuais entram na base final `project/database/df_ronda.parquet`
+  pela coluna `Manual`: `Não` para registros originais e `Sim` para ajustes manuais.

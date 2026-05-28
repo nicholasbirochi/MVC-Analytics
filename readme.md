@@ -130,19 +130,16 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 📁 Projeto Geral/
 ├── 📁 Base de Dados Original/
 │ ├── 📂 csv/
-│ │ ├── 📂 Executivos/
-│ │ │ ├── 🧾 Executivos_01-01-2024_03-31-2025.csv
-│ │ │ ├── 🧾 Executivos_04-01-2025_09-30-2025.csv
-│ │ │ └── 🧾 Executivos_10-01-2025_12-31-2025.csv
+│ │ ├── 📂 Registros/
+│ │ │ ├── 📂 Executivos/
+│ │ │ ├── 📂 Horistas/
+│ │ │ ├── 📂 Mensalistas/
+│ │ │ └── 📂 Terceiros/
 │ │ │
-│ │ ├── 📂 Horistas/
-│ │ │ ├── 🧾 Horistas_01-01-2024_12-31-2024.csv
-│ │ │ └── 🧾 Horistas_01-01-2025_12-31-2025.csv
-│ │ │
-│ │ └── 📂 Mensalistas/
-│ │   ├── 🧾 Mensalistas_01-01-2024_03-31-2025.csv
-│ │   ├── 🧾 Mensalistas_04-01-2025_09-30-2025.csv
-│ │   └── 🧾 Mensalistas_10-01-2025_12-31-2025.csv
+│ │ └── 📂 Ajustes Manuais/
+│ │   ├── 📂 Horistas/
+│ │   ├── 📂 Mensalistas/
+│ │   └── 📂 Terceiros/
 │ │
 │ ├── 📂 parquet/
 │ │ ├── 📂 Ativos/
@@ -151,22 +148,20 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 │ │ ├── 📂 Desligados/
 │ │ │ └── 🪶 Desligados.parquet
 │ │ │
-│ │ ├── 📂 Executivos/
-│ │ │ ├── 🪶 Executivos_01-01-2024_03-31-2025.parquet
-│ │ │ ├── 🪶 Executivos_04-01-2025_09-30-2025.parquet
-│ │ │ └── 🪶 Executivos_10-01-2025_12-31-2025.parquet
-│ │ │
 │ │ ├── 📂 GPTW/
 │ │ │ └── 🪶 GPTW.parquet
 │ │ │
-│ │ ├── 📂 Horistas/
-│ │ │ ├── 🪶 Horistas_01-01-2024_12-31-2024.parquet
-│ │ │ └── 🪶 Horistas_01-01-2025_12-31-2025.parquet
-│ │ │ 
-│ │ ├── 📂 Mensalistas/
-│ │ │ ├── 🪶 Mensalistas_01-01-2024_03-31-2025.parquet
-│ │ │ ├── 🪶 Mensalistas_04-01-2025_09-30-2025.parquet
-│ │ │ └── 🪶 Mensalistas_10-01-2025_12-31-2025.parquet
+│ │ ├── 📂 Registros/
+│ │ │ ├── 📂 Executivos/
+│ │ │ ├── 📂 Horistas/
+│ │ │ ├── 📂 Mensalistas/
+│ │ │ └── 📂 Terceiros/
+│ │ │
+│ │ ├── 📂 Ajustes Manuais/
+│ │ │ ├── 🪶 df_ajustes_manuais.parquet
+│ │ │ ├── 📂 Horistas/
+│ │ │ ├── 📂 Mensalistas/
+│ │ │ └── 📂 Terceiros/
 │ │ │
 │ │ └── 📂 Movimentacoes/
 │ │   └── 🪶 Movimentacoes.parquet
@@ -452,6 +447,18 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 
 > Referência: DW otimizado **serving-only** (sem `evento_acesso_flat` no arquivo final) + `agg_semana_enriquecida` virou **VIEW** (não é mais tabela materializada).
 > Regra geral: **fatos/aggs não carregam dimensão**; enriquecimento acontece via **views** ou `merge` pontual com `df_colaboradores`.
+
+---
+
+### 🪶 `project/database/df_ronda.parquet` — Base final de registros
+
+**Origem:** `Base de Dados Original/parquet/Registros/` + `Base de Dados Original/parquet/Ajustes Manuais/`.
+
+* `Manual = Não`: registros originais do Ronda.
+* `Manual = Sim`: ajustes manuais consolidados a partir dos CSVs em `Base de Dados Original/csv/Ajustes Manuais/`.
+
+Essa coluna permite analisar os ajustes manuais dentro da mesma trajetória dos registros,
+sem separar uma base paralela para auditoria.
 
 ---
 

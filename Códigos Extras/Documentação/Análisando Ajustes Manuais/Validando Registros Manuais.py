@@ -13,7 +13,8 @@ from matplotlib.ticker import FuncFormatter
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-BASE = SCRIPT_DIR / "base" / "parquet" / "df_ronda.parquet"
+PROJECT_ROOT = SCRIPT_DIR.parents[2]
+BASE = PROJECT_ROOT / "project" / "database" / "df_ronda.parquet"
 OUT_DIR = SCRIPT_DIR / "Ocorrências"
 
 TOP_N = 10
@@ -678,7 +679,15 @@ def compute_manual_rankings():
         con.execute(
             f"""
             CREATE TEMP TABLE manual_outside AS
-            WITH raw AS (
+            WITH manual_people AS (
+                SELECT DISTINCT CAST(cadastro AS VARCHAR) AS cadastro
+                FROM read_parquet('{BASE.as_posix()}')
+                WHERE CAST(data AS DATE)
+                    BETWEEN DATE '{PERIOD_START:%Y-%m-%d}' AND DATE '{PERIOD_END:%Y-%m-%d}'
+                  AND upper(trim(CAST("Manual" AS VARCHAR))) = 'SIM'
+                  AND upper(trim(CAST(tipo AS VARCHAR))) IN ('1', 'PONTO')
+            ),
+            raw AS (
                 SELECT
                     CAST(cadastro AS VARCHAR) AS cadastro,
                     CAST(nome AS VARCHAR) AS nome,
@@ -702,6 +711,7 @@ def compute_manual_rankings():
                 FROM read_parquet('{BASE.as_posix()}')
                 WHERE CAST(data AS DATE)
                     BETWEEN DATE '{PERIOD_START:%Y-%m-%d}' AND DATE '{PERIOD_END:%Y-%m-%d}'
+                  AND CAST(cadastro AS VARCHAR) IN (SELECT cadastro FROM manual_people)
             ),
             -- Área/departamento dominante por pessoa (apoia o rótulo dos relatórios).
             area_counts AS (
