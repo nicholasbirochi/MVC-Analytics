@@ -1,4 +1,13 @@
 from pathlib import Path
+import ctypes
+import gc
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+import unicodedata
 
 import duckdb
 import matplotlib.dates as mdates
@@ -6,6 +15,7 @@ import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import pyarrow as pa
 import pyarrow.parquet as pq
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.colors import LinearSegmentedColormap
@@ -17,6 +27,492 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]
 BASE = PROJECT_ROOT / "project" / "database" / "df_ronda.parquet"
 OUT_DIR = SCRIPT_DIR / "Ocorrências"
 REGISTRO_MANUAL_COL = "registro_manual"
+
+RAW_BASE_DIR = PROJECT_ROOT / "Base de Dados Original"
+CSV_DIR = RAW_BASE_DIR / "csv" / "Ajustes Manuais"
+PARQUET_DIR = RAW_BASE_DIR / "parquet" / "Ajustes Manuais"
+AJUSTES_PATH = PARQUET_DIR / "df_ajustes_manuais.parquet"
+RONDA_FINAL_PATH = BASE
+RONDA_TEMP_PATH = RONDA_FINAL_PATH.with_name(f"{RONDA_FINAL_PATH.name}.tmp")
+
+# Saidas mantidas por compatibilidade com a analise desta pasta.
+LEGACY_PARQUET_DIR = SCRIPT_DIR / "base" / "parquet"
+LEGACY_AJUSTES_PATH = LEGACY_PARQUET_DIR / "df_ajustes_manuais.parquet"
+LEGACY_RONDA_PATH = LEGACY_PARQUET_DIR / "df_ronda.parquet"
+UPDATE_ENV_FLAG = "AJUSTES_MANUAIS_SKIP_UPDATE"
+
+CHAPAS_VALIDACAO = [
+    "2038897",
+    "3000011",
+    "4021525",
+    "4034525",
+    "4065785",
+    "4065787",
+]
+
+CSV_KEY_TO_OUTPUT = {
+    "CHAPA": "CHAPA",
+    "CODIGO_RELOGIO": "CODIGO_RELOGIO",
+    "DESCRICAO_RELOGIO": "DESCRICAO_RELOGIO",
+    "DESCRI_AO_RELOGIO": "DESCRICAO_RELOGIO",
+    "DESCRIAO_RELOGIO": "DESCRICAO_RELOGIO",
+    "NOME_FUNCIONARIO": "NOME_COLABORADOR",
+    "NOME_COLABORADOR": "NOME_COLABORADOR",
+    "FILIAL": "FILIAL",
+    "DATA_ACESSO": "DATA_ACESSO",
+    "HORA_ACESSO": "HORA_ACESSO",
+    "SEQUENCIA_ACESSO": "SEQUENCIA_ACESSO",
+    "DIRACAO_ACESSO": "DIRECAO_ACESSO",
+    "DIRECAO_ACESSO": "DIRECAO_ACESSO",
+    "TIPO_ACESSO": "TIPO_ACESSO",
+    "USO_MARCACAO": "USO_MARCACAO",
+    "USO_MARCA_O": "USO_MARCACAO",
+    "USU_MARCACAO": "USO_MARCACAO",
+    "USU_MARCA_O": "USO_MARCACAO",
+    "PLANTA": "CODIGO_PLANTA",
+    "CODIGO_PLANTA": "CODIGO_PLANTA",
+}
+
+OUTPUT_COLUMNS = [
+    "CHAPA",
+    "CODIGO_RELOGIO",
+    "DESCRICAO_RELOGIO",
+    "NOME_COLABORADOR",
+    "FILIAL",
+    "DATA_ACESSO",
+    "HORA_ACESSO",
+    "SEQUENCIA_ACESSO",
+    "DIRECAO_ACESSO",
+    "TIPO_ACESSO",
+    "USO_MARCACAO",
+    "CODIGO_PLANTA",
+]
+REQUIRED_OUTPUT_COLUMNS = {"CHAPA", "DATA_ACESSO", "HORA_ACESSO"}
+
+CATEGORY_CARGO = {
+    "Executivos": "E",
+    "Mensalistas": "M",
+    "Horistas": "H",
+    "Terceiros": "T",
+}
+
+CHUNK_SIZE = 500_000
+ARROW_SCHEMA = pa.schema([(column, pa.string()) for column in OUTPUT_COLUMNS])
+
+BASE_FIELDS = [
+    ("cadastro", pa.string()),
+    ("nome", pa.string()),
+    ("filial", pa.string()),
+    ("data", pa.timestamp("ns")),
+    ("hora", pa.time64("us")),
+    ("dir", pa.string()),
+    ("tipo", pa.string()),
+    ("acesso", pa.string()),
+    ("planta", pa.string()),
+    ("coletor", pa.string()),
+    ("descricao_coletor", pa.string()),
+    ("uso_acesso", pa.string()),
+    ("cargo", pa.string()),
+    ("desligado", pa.string()),
+    ("area", pa.string()),
+    ("departamento", pa.string()),
+    ("heranca", pa.string()),
+    ("cargo_especifico", pa.string()),
+]
+BASE_COLS = [name for name, _ in BASE_FIELDS]
+LEGACY_MANUAL_COL = "Manual"
+FULL_SCHEMA = pa.schema(BASE_FIELDS + [(REGISTRO_MANUAL_COL, pa.string())])
+
+
+def normalize_windows_file_attributes(path):
+    if os.name != "nt" or not path.exists():
+        return
+    try:
+        # FILE_ATTRIBUTE_NORMAL evita bloqueios gerados por atributos Hidden/System.
+        ctypes.windll.kernel32.SetFileAttributesW(str(path), 0x80)
+    except Exception:
+        pass
+
+
+def unlink_if_exists(path):
+    if path.exists():
+        normalize_windows_file_attributes(path)
+        path.unlink()
+
+
+def replace_parquet_file(source_path, target_path, retries=5):
+    for attempt in range(retries + 1):
+        normalize_windows_file_attributes(source_path)
+        normalize_windows_file_attributes(target_path)
+        try:
+            source_path.replace(target_path)
+            normalize_windows_file_attributes(target_path)
+            return
+        except PermissionError:
+            if attempt == retries:
+                raise
+            time.sleep(1)
+
+
+def normalize_column_key(value):
+    text = str(value).strip().upper()
+    text = unicodedata.normalize("NFKD", text)
+    text = text.encode("ascii", "ignore").decode("ascii")
+    text = re.sub(r"[^A-Z0-9]+", "_", text)
+    return text.strip("_")
+
+
+def normalize_chunk(chunk, csv_file):
+    rename_map = {}
+    for column in chunk.columns:
+        output = CSV_KEY_TO_OUTPUT.get(normalize_column_key(column))
+        if output:
+            rename_map[column] = output
+
+    frame = chunk.rename(columns=rename_map)
+    missing = [column for column in OUTPUT_COLUMNS if column not in frame.columns]
+    missing_required = [column for column in missing if column in REQUIRED_OUTPUT_COLUMNS]
+    if missing_required:
+        raise ValueError(
+            f"Colunas obrigatorias ausentes em {csv_file.name}: {missing_required}. "
+            f"Colunas encontradas: {list(chunk.columns)}"
+        )
+    for column in missing:
+        frame[column] = ""
+    return frame.reindex(columns=OUTPUT_COLUMNS).astype("string")
+
+
+def write_adjustment_parquet(csv_file, output_path):
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    unlink_if_exists(output_path)
+
+    writer = pq.ParquetWriter(
+        output_path,
+        ARROW_SCHEMA,
+        compression="snappy",
+        use_dictionary=True,
+    )
+    total = 0
+    try:
+        reader = pd.read_csv(
+            csv_file,
+            encoding="latin1",
+            dtype=str,
+            keep_default_na=False,
+            chunksize=CHUNK_SIZE,
+        )
+        for chunk in reader:
+            frame = normalize_chunk(chunk, csv_file)
+            table = pa.Table.from_pandas(frame, schema=ARROW_SCHEMA, preserve_index=False)
+            writer.write_table(table)
+            total += table.num_rows
+    finally:
+        writer.close()
+    return total
+
+
+def discover_categories():
+    categories = []
+    for category in CATEGORY_CARGO:
+        folder = CSV_DIR / category
+        if folder.exists() and any(folder.glob("*.csv")):
+            categories.append(category)
+    return categories
+
+
+def clear_category_outputs(active_categories):
+    PARQUET_DIR.mkdir(parents=True, exist_ok=True)
+    for category in CATEGORY_CARGO:
+        category_dir = PARQUET_DIR / category
+        if category_dir.exists():
+            for file_path in category_dir.rglob("*.parquet"):
+                unlink_if_exists(file_path)
+
+    for legacy_path in [LEGACY_AJUSTES_PATH, LEGACY_RONDA_PATH]:
+        unlink_if_exists(legacy_path)
+
+    for category in CATEGORY_CARGO:
+        legacy_category_dir = LEGACY_PARQUET_DIR / category
+        if legacy_category_dir.exists() and category not in active_categories:
+            for file_path in legacy_category_dir.rglob("*.parquet"):
+                unlink_if_exists(file_path)
+
+
+def convert_all_adjustment_csvs():
+    categories = discover_categories()
+    if not categories:
+        raise FileNotFoundError(f"Nenhum CSV de ajuste manual encontrado em {CSV_DIR}")
+
+    clear_category_outputs(categories)
+
+    summary = {}
+    for category in categories:
+        source_files = sorted((CSV_DIR / category).glob("*.csv"))
+        summary[category] = {}
+        print(f"\nConvertendo {category}")
+        for csv_file in source_files:
+            output_path = PARQUET_DIR / category / f"{csv_file.stem}.parquet"
+            count = write_adjustment_parquet(csv_file, output_path)
+            summary[category][output_path.name] = count
+            print(f"- {csv_file.name}: {count:,} linhas")
+    return summary
+
+
+def consolidate_adjustments(categories):
+    selects = []
+    for category in categories:
+        cargo = CATEGORY_CARGO[category]
+        files = sorted((PARQUET_DIR / category).glob("*.parquet"))
+        if not files:
+            continue
+        source_glob = (PARQUET_DIR / category / "*.parquet").resolve().as_posix()
+        selects.append(
+            f"""
+            SELECT
+              REGEXP_REPLACE(TRIM(CAST(CHAPA AS VARCHAR)), '\\\\.0$', '') AS cadastro,
+              CAST(NOME_COLABORADOR AS VARCHAR) AS nome,
+              CAST(FILIAL AS VARCHAR) AS filial,
+              COALESCE(
+                TRY_STRPTIME(TRIM(CAST(DATA_ACESSO AS VARCHAR)), '%m/%d/%Y'),
+                TRY_STRPTIME(TRIM(CAST(DATA_ACESSO AS VARCHAR)), '%d/%m/%Y'),
+                TRY_CAST(DATA_ACESSO AS TIMESTAMP)
+              ) AS data,
+              CAST(
+                TIME '00:00:00'
+                + (
+                    (TRY_CAST(HORA_ACESSO AS BIGINT) % 1440)
+                    * INTERVAL 1 MINUTE
+                  )
+                AS TIME
+              ) AS hora,
+              CAST(DIRECAO_ACESSO AS VARCHAR) AS dir,
+              CAST(TIPO_ACESSO AS VARCHAR) AS tipo,
+              CAST(SEQUENCIA_ACESSO AS VARCHAR) AS acesso,
+              CAST(CODIGO_PLANTA AS VARCHAR) AS planta,
+              CAST(CODIGO_RELOGIO AS VARCHAR) AS coletor,
+              CAST(DESCRICAO_RELOGIO AS VARCHAR) AS descricao_coletor,
+              CAST(USO_MARCACAO AS VARCHAR) AS uso_acesso,
+              '{cargo}' AS cargo,
+              CAST(NULL AS VARCHAR) AS desligado,
+              CAST(NULL AS VARCHAR) AS area,
+              CAST(NULL AS VARCHAR) AS departamento,
+              CAST(NULL AS VARCHAR) AS heranca,
+              CAST(NULL AS VARCHAR) AS cargo_especifico
+            FROM read_parquet('{source_glob}', union_by_name=true)
+            WHERE DATA_ACESSO IS NOT NULL
+              AND HORA_ACESSO IS NOT NULL
+              AND TRY_CAST(HORA_ACESSO AS BIGINT) IS NOT NULL
+            """
+        )
+
+    if not selects:
+        raise FileNotFoundError(f"Nenhum parquet de ajuste manual encontrado em {PARQUET_DIR}")
+
+    manual_sql = "\nUNION ALL\n".join(selects)
+    temp_path = AJUSTES_PATH.with_name(f"{AJUSTES_PATH.name}.tmp")
+    unlink_if_exists(temp_path)
+
+    with duckdb.connect(":memory:") as con:
+        con.execute("PRAGMA threads=4")
+        con.execute(
+            f"""
+            COPY (
+              SELECT *
+              FROM ({manual_sql})
+              WHERE cadastro IS NOT NULL
+                AND cadastro <> ''
+                AND data IS NOT NULL
+                AND hora IS NOT NULL
+            ) TO '{temp_path.as_posix()}' (FORMAT PARQUET, COMPRESSION SNAPPY)
+            """
+        )
+
+    unlink_if_exists(AJUSTES_PATH)
+    replace_parquet_file(temp_path, AJUSTES_PATH)
+
+
+def manual_column_name(path):
+    names = pq.ParquetFile(path).schema_arrow.names
+    if REGISTRO_MANUAL_COL in names:
+        return REGISTRO_MANUAL_COL
+    if LEGACY_MANUAL_COL in names:
+        return LEGACY_MANUAL_COL
+    return None
+
+
+def sql_select_base_without_manual(source_path):
+    fields = []
+    for name, field_type in BASE_FIELDS:
+        if pa.types.is_timestamp(field_type):
+            fields.append(f"CAST({name} AS TIMESTAMP) AS {name}")
+        elif pa.types.is_time64(field_type):
+            fields.append(f"CAST({name} AS TIME) AS {name}")
+        else:
+            fields.append(f"CAST({name} AS VARCHAR) AS {name}")
+
+    where = ""
+    source_manual_col = manual_column_name(source_path)
+    if source_manual_col:
+        where = f"""
+        WHERE COALESCE(UPPER(TRIM(CAST("{source_manual_col}" AS VARCHAR))), '') <> 'SIM'
+        """
+
+    return f"""
+        SELECT
+          {", ".join(fields)},
+          'Não' AS "{REGISTRO_MANUAL_COL}"
+        FROM read_parquet('{source_path.resolve().as_posix()}', union_by_name=true)
+        {where}
+    """
+
+
+def sql_select_manual_adjustments():
+    fields = []
+    for name, field_type in BASE_FIELDS:
+        if pa.types.is_timestamp(field_type):
+            fields.append(f"CAST({name} AS TIMESTAMP) AS {name}")
+        elif pa.types.is_time64(field_type):
+            fields.append(f"CAST({name} AS TIME) AS {name}")
+        else:
+            fields.append(f"CAST({name} AS VARCHAR) AS {name}")
+
+    return f"""
+        SELECT
+          {", ".join(fields)},
+          'Sim' AS "{REGISTRO_MANUAL_COL}"
+        FROM read_parquet('{AJUSTES_PATH.resolve().as_posix()}', union_by_name=true)
+    """
+
+
+def build_ronda_with_manual():
+    if not RONDA_FINAL_PATH.exists():
+        raise FileNotFoundError(f"Base final df_ronda nao encontrada: {RONDA_FINAL_PATH}")
+    unlink_if_exists(RONDA_TEMP_PATH)
+
+    base_sql = sql_select_base_without_manual(RONDA_FINAL_PATH)
+    manual_sql = sql_select_manual_adjustments()
+
+    with duckdb.connect(":memory:") as con:
+        con.execute("PRAGMA threads=4")
+        con.execute(
+            f"""
+            COPY (
+              {base_sql}
+              UNION ALL
+              {manual_sql}
+            ) TO '{RONDA_TEMP_PATH.resolve().as_posix()}'
+            (FORMAT PARQUET, COMPRESSION SNAPPY)
+            """
+        )
+
+    replace_parquet_file(RONDA_TEMP_PATH, RONDA_FINAL_PATH)
+
+    with duckdb.connect(":memory:") as con:
+        original_rows, manual_rows = con.execute(
+            f"""
+            SELECT
+              SUM(CASE WHEN UPPER(TRIM(CAST("{REGISTRO_MANUAL_COL}" AS VARCHAR))) = 'SIM' THEN 0 ELSE 1 END),
+              SUM(CASE WHEN UPPER(TRIM(CAST("{REGISTRO_MANUAL_COL}" AS VARCHAR))) = 'SIM' THEN 1 ELSE 0 END)
+            FROM read_parquet('{RONDA_FINAL_PATH.resolve().as_posix()}')
+            """
+        ).fetchone()
+    return int(original_rows or 0), int(manual_rows or 0)
+
+
+def sync_legacy_outputs(categories):
+    LEGACY_PARQUET_DIR.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(AJUSTES_PATH, LEGACY_AJUSTES_PATH)
+    shutil.copy2(RONDA_FINAL_PATH, LEGACY_RONDA_PATH)
+
+    for category in categories:
+        source = PARQUET_DIR / category
+        if source.exists():
+            destination = LEGACY_PARQUET_DIR / category
+            shutil.copytree(source, destination, dirs_exist_ok=True)
+
+
+def validate_updated_chapas():
+    chapas_sql = ",".join(f"'{chapa}'" for chapa in CHAPAS_VALIDACAO)
+    with duckdb.connect(":memory:") as con:
+        print("\nChapas no df_ajustes_manuais.parquet:")
+        print(
+            con.execute(
+                f"""
+                SELECT cadastro, any_value(nome) AS nome, cargo,
+                       count(*) AS linhas,
+                       min(CAST(data AS DATE)) AS primeira_data,
+                       max(CAST(data AS DATE)) AS ultima_data
+                FROM read_parquet('{AJUSTES_PATH.resolve().as_posix()}')
+                WHERE CAST(cadastro AS VARCHAR) IN ({chapas_sql})
+                GROUP BY cadastro, cargo
+                ORDER BY cadastro, cargo
+                """
+            ).fetchdf().to_string(index=False)
+        )
+
+        print("\nregistro_manual no df_ronda.parquet final:")
+        print(
+            con.execute(
+                f"""
+                SELECT cadastro, "{REGISTRO_MANUAL_COL}", any_value(nome) AS nome, cargo,
+                       count(*) AS linhas,
+                       min(CAST(data AS DATE)) AS primeira_data,
+                       max(CAST(data AS DATE)) AS ultima_data
+                FROM read_parquet('{RONDA_FINAL_PATH.resolve().as_posix()}')
+                WHERE CAST(cadastro AS VARCHAR) IN ({chapas_sql})
+                GROUP BY cadastro, "{REGISTRO_MANUAL_COL}", cargo
+                ORDER BY cadastro, "{REGISTRO_MANUAL_COL}", cargo
+                """
+            ).fetchdf().to_string(index=False)
+        )
+
+
+def print_file_stats():
+    for path in [AJUSTES_PATH, RONDA_FINAL_PATH, LEGACY_RONDA_PATH]:
+        pf = pq.ParquetFile(path)
+        print(
+            f"{path}: {pf.metadata.num_rows:,} linhas, "
+            f"{path.stat().st_size / 1024 / 1024:.2f} MB"
+        )
+
+
+def atualizar_parquets_ajustes_manuais():
+    if not CSV_DIR.exists():
+        raise FileNotFoundError(f"Pasta de CSV nao encontrada: {CSV_DIR}")
+
+    summary = convert_all_adjustment_csvs()
+    categories = list(summary)
+
+    print("\nConsolidando Base de Dados Original/parquet/Ajustes Manuais/df_ajustes_manuais.parquet...")
+    consolidate_adjustments(categories)
+
+    print("Reconstruindo project/database/df_ronda.parquet com coluna registro_manual...")
+    linhas_original, linhas_manual = build_ronda_with_manual()
+    print(f"- Original registro_manual=Nao: {linhas_original:,} linhas")
+    print(f"- Ajustes registro_manual=Sim: {linhas_manual:,} linhas")
+
+    print("Sincronizando copias legadas da analise de ajustes manuais...")
+    sync_legacy_outputs(categories)
+
+    print_file_stats()
+    validate_updated_chapas()
+
+
+def clear_report_outputs():
+    if not OUT_DIR.exists():
+        return
+
+    for file_path in OUT_DIR.rglob("*"):
+        if file_path.is_file():
+            unlink_if_exists(file_path)
+
+    directories = [path for path in OUT_DIR.rglob("*") if path.is_dir()]
+    for directory in sorted(directories, key=lambda path: len(path.parts), reverse=True):
+        try:
+            directory.rmdir()
+        except OSError:
+            pass
+
 
 TOP_N = 10
 PERIOD_START = pd.Timestamp("2024-01-01")
@@ -679,16 +1175,8 @@ def compute_manual_rankings():
         con.execute(f"SET temp_directory='{spill_dir.as_posix()}'")
         con.execute(
             f"""
-            CREATE TEMP TABLE manual_outside AS
-            WITH manual_people AS (
-                SELECT DISTINCT CAST(cadastro AS VARCHAR) AS cadastro
-                FROM read_parquet('{BASE.as_posix()}')
-                WHERE CAST(data AS DATE)
-                    BETWEEN DATE '{PERIOD_START:%Y-%m-%d}' AND DATE '{PERIOD_END:%Y-%m-%d}'
-                  AND upper(trim(CAST("registro_manual" AS VARCHAR))) = 'SIM'
-                  AND upper(trim(CAST(tipo AS VARCHAR))) IN ('1', 'PONTO')
-            ),
-            raw AS (
+            CREATE TEMP TABLE manual_points AS
+            WITH raw_manual AS (
                 SELECT
                     CAST(cadastro AS VARCHAR) AS cadastro,
                     CAST(nome AS VARCHAR) AS nome,
@@ -699,67 +1187,103 @@ def compute_manual_rankings():
                         + date_part('minute', CAST(hora AS TIME))
                         + date_part('second', CAST(hora AS TIME)) / 60.0
                     ) AS minuto_dia,
-                    upper(trim(CAST("registro_manual" AS VARCHAR))) AS manual_norm,
                     upper(trim(CAST(dir AS VARCHAR))) AS dir_norm,
                     upper(trim(CAST(tipo AS VARCHAR))) AS tipo_norm,
                     trim(CAST(planta AS VARCHAR)) AS planta_norm,
                     upper(coalesce(CAST(descricao_coletor AS VARCHAR), '')) AS desc_norm,
                     upper(coalesce(CAST(uso_acesso AS VARCHAR), '')) AS uso_norm,
                     upper(coalesce(CAST(coletor AS VARCHAR), '')) AS coletor_norm,
-                    upper(coalesce(CAST(acesso AS VARCHAR), '')) AS acesso_norm,
+                    upper(coalesce(CAST(acesso AS VARCHAR), '')) AS acesso_norm
+                FROM read_parquet('{BASE.as_posix()}')
+                WHERE CAST(data AS DATE)
+                    BETWEEN DATE '{PERIOD_START:%Y-%m-%d}' AND DATE '{PERIOD_END:%Y-%m-%d}'
+                  AND upper(trim(CAST("registro_manual" AS VARCHAR))) = 'SIM'
+                  AND upper(trim(CAST(tipo AS VARCHAR))) IN ('1', 'PONTO')
+            )
+            SELECT *
+            FROM raw_manual r
+            WHERE {homeoffice_filter}
+            """
+        )
+
+        con.execute(
+            """
+            CREATE TEMP TABLE manual_days AS
+            SELECT DISTINCT cadastro, data_ref
+            FROM manual_points
+            """
+        )
+
+        con.execute(
+            f"""
+            CREATE TEMP TABLE physical_events AS
+            WITH raw_physical AS (
+                SELECT
+                    CAST(cadastro AS VARCHAR) AS cadastro,
+                    CAST(data AS DATE) AS data_ref,
+                    (
+                        date_part('hour', CAST(hora AS TIME)) * 60.0
+                        + date_part('minute', CAST(hora AS TIME))
+                        + date_part('second', CAST(hora AS TIME)) / 60.0
+                    ) AS minuto_dia,
+                    upper(trim(CAST(dir AS VARCHAR))) AS dir_norm,
+                    trim(CAST(planta AS VARCHAR)) AS planta_norm,
+                    upper(coalesce(CAST(descricao_coletor AS VARCHAR), '')) AS desc_norm,
                     nullif(trim(CAST(area AS VARCHAR)), '') AS area_clean,
                     nullif(trim(CAST(departamento AS VARCHAR)), '') AS dept_clean
                 FROM read_parquet('{BASE.as_posix()}')
                 WHERE CAST(data AS DATE)
                     BETWEEN DATE '{PERIOD_START:%Y-%m-%d}' AND DATE '{PERIOD_END:%Y-%m-%d}'
-                  AND CAST(cadastro AS VARCHAR) IN (SELECT cadastro FROM manual_people)
-            ),
-            -- Área/departamento dominante por pessoa (apoia o rótulo dos relatórios).
-            area_counts AS (
+                  AND coalesce(upper(trim(CAST("registro_manual" AS VARCHAR))), '') <> 'SIM'
+                  AND trim(CAST(planta AS VARCHAR)) <> '999'
+                  AND upper(trim(CAST(dir AS VARCHAR))) IN ('S', 'E')
+            )
+            SELECT p.*
+            FROM raw_physical p
+            INNER JOIN manual_days md
+                ON md.cadastro = p.cadastro AND md.data_ref = p.data_ref
+            """
+        )
+
+        con.execute(
+            """
+            CREATE TEMP TABLE person_area AS
+            WITH area_counts AS (
                 SELECT cadastro, area_clean, dept_clean, count(*) AS qtd
-                FROM raw
-                WHERE manual_norm <> 'SIM'
-                  AND area_clean IS NOT NULL
+                FROM physical_events
+                WHERE area_clean IS NOT NULL
                 GROUP BY cadastro, area_clean, dept_clean
-            ),
-            person_area AS (
+            )
+            SELECT
+                cadastro,
+                area_clean AS area,
+                coalesce(dept_clean, 'Sem departamento') AS departamento
+            FROM (
                 SELECT
-                    cadastro,
-                    area_clean AS area,
-                    coalesce(dept_clean, 'Sem departamento') AS departamento
-                FROM (
-                    SELECT
-                        *,
-                        row_number() OVER (
-                            PARTITION BY cadastro
-                            ORDER BY qtd DESC, area_clean, dept_clean
-                        ) AS rn
-                    FROM area_counts
-                )
-                WHERE rn = 1
-            ),
-            -- Reduz o volume antes de cruzar com as âncoras físicas. Sem esse filtro
-            -- antecipado, o DuckDB precisa comparar todos os acessos da base com o
-            -- calendário diário de entrada/saída.
-            manual_points AS (
-                SELECT *
-                FROM raw r
-                WHERE r.manual_norm = 'SIM'
-                  AND r.tipo_norm IN ('1', 'PONTO')
-                  AND {homeoffice_filter}
-            ),
-            -- Saída física diária: último S do dia, preferindo PORT; fallback para qualquer S físico.
-            port_exit AS (
+                    *,
+                    row_number() OVER (
+                        PARTITION BY cadastro
+                        ORDER BY qtd DESC, area_clean, dept_clean
+                    ) AS rn
+                FROM area_counts
+            )
+            WHERE rn = 1
+            """
+        )
+
+        con.execute(
+            """
+            CREATE TEMP TABLE manual_outside AS
+            WITH port_exit AS (
                 SELECT cadastro, data_ref, max(minuto_dia) AS ref_min
-                FROM raw
-                WHERE manual_norm <> 'SIM' AND planta_norm <> '999'
-                  AND dir_norm = 'S' AND contains(desc_norm, 'PORT')
+                FROM physical_events
+                WHERE dir_norm = 'S' AND contains(desc_norm, 'PORT')
                 GROUP BY cadastro, data_ref
             ),
             any_exit AS (
                 SELECT cadastro, data_ref, max(minuto_dia) AS ref_min
-                FROM raw
-                WHERE manual_norm <> 'SIM' AND planta_norm <> '999' AND dir_norm = 'S'
+                FROM physical_events
+                WHERE dir_norm = 'S'
                 GROUP BY cadastro, data_ref
             ),
             daily_exit AS (
@@ -771,18 +1295,16 @@ def compute_manual_rankings():
                 FULL OUTER JOIN port_exit p
                     ON p.cadastro = a.cadastro AND p.data_ref = a.data_ref
             ),
-            -- Entrada física diária: primeiro E do dia, preferindo PORT; fallback para qualquer E físico.
             port_entry AS (
                 SELECT cadastro, data_ref, min(minuto_dia) AS ref_min
-                FROM raw
-                WHERE manual_norm <> 'SIM' AND planta_norm <> '999'
-                  AND dir_norm = 'E' AND contains(desc_norm, 'PORT')
+                FROM physical_events
+                WHERE dir_norm = 'E' AND contains(desc_norm, 'PORT')
                 GROUP BY cadastro, data_ref
             ),
             any_entry AS (
                 SELECT cadastro, data_ref, min(minuto_dia) AS ref_min
-                FROM raw
-                WHERE manual_norm <> 'SIM' AND planta_norm <> '999' AND dir_norm = 'E'
+                FROM physical_events
+                WHERE dir_norm = 'E'
                 GROUP BY cadastro, data_ref
             ),
             daily_entry AS (
@@ -804,8 +1326,6 @@ def compute_manual_rankings():
                 FULL OUTER JOIN daily_entry e
                     ON e.cadastro = s.cadastro AND e.data_ref = s.data_ref
             ),
-            -- O ponto manual é um "ponto normal", não entrada/saída. A classificação
-            -- compara apenas o horário do ponto com as âncoras físicas do dia.
             manual_candidates AS (
                 SELECT
                     r.cadastro,
@@ -814,9 +1334,6 @@ def compute_manual_rankings():
                     r.data_ref,
                     r.minuto_dia,
                     CASE
-                        -- Turno virado: entrada à noite e saída pela manhã.
-                        -- O registro só é suspeito no intervalo fora da fábrica
-                        -- entre a saída da manhã e a próxima entrada da noite.
                         WHEN a.saida_min IS NOT NULL
                          AND a.entrada_min IS NOT NULL
                          AND a.entrada_min > a.saida_min
@@ -827,12 +1344,10 @@ def compute_manual_rankings():
                                     THEN 'apos_saida'
                                 ELSE 'antes_entrada'
                             END
-                        -- Dia normal ou dia com apenas saída física disponível.
                         WHEN a.saida_min IS NOT NULL
                          AND (a.entrada_min IS NULL OR a.entrada_min <= a.saida_min)
                          AND r.minuto_dia > a.saida_min
                             THEN 'apos_saida'
-                        -- Dia normal ou dia com apenas entrada física disponível.
                         WHEN a.entrada_min IS NOT NULL
                          AND (a.saida_min IS NULL OR a.entrada_min <= a.saida_min)
                          AND r.minuto_dia < a.entrada_min
@@ -2244,6 +2759,20 @@ def export_audit_excel(rows, output_path=None):
 
 
 def main():
+    if os.environ.pop(UPDATE_ENV_FLAG, None) != "1":
+        atualizar_parquets_ajustes_manuais()
+        gc.collect()
+        os.environ[UPDATE_ENV_FLAG] = "1"
+        sys.stdout.flush()
+        sys.stderr.flush()
+        # Reabre o mesmo script em processo limpo para gerar PDFs sem herdar memoria da carga.
+        result = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]],
+            check=False,
+        )
+        raise SystemExit(result.returncode)
+
+    clear_report_outputs()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     category_rankings, person_rankings = compute_manual_rankings()
     if category_rankings.empty and person_rankings.empty:

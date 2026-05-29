@@ -204,24 +204,36 @@ def build_manual_summary(people, all_rows, manual_module):
             continue
 
         cases = manual_module.build_manual_cases(manual_after_exit, manual_before_entry)
+        if daily_suspicious.empty:
+            diferenca_servico_real_horas = float(stats.get("diferenca_horas_servico_reais", 0.0))
+        elif "diferenca_servico_real_horas" in daily_suspicious:
+            diferenca_servico_real_horas = float(daily_suspicious["diferenca_servico_real_horas"].sum())
+        elif "diferenca_min" in daily_suspicious:
+            diferenca_servico_real_horas = float(daily_suspicious["diferenca_min"].sum() / 60.0)
+        else:
+            diferenca_servico_real_horas = float(stats.get("diferenca_horas_servico_reais", 0.0))
         summaries.append(
             {
                 **person,
                 **stats,
-                "diferenca_servico_real_horas": (
-                    float(daily_suspicious["diferenca_servico_real_horas"].sum())
-                    if not daily_suspicious.empty
-                    else 0.0
-                ),
+                "diferenca_servico_real_horas": diferenca_servico_real_horas,
                 "maior_diferenca_min": float(cases["minutos_fora"].max()) if not cases.empty else np.nan,
             }
         )
         if not cases.empty:
             cases = cases.copy()
-            cases.insert(0, "cadastro", cadastro)
-            cases.insert(1, "nome", person["nome"])
-            cases.insert(2, "cargo", person["cargo"])
-            cases.insert(3, "area", person["area"])
+            for position, (column, value) in enumerate(
+                [
+                    ("cadastro", cadastro),
+                    ("nome", person["nome"]),
+                    ("cargo", person["cargo"]),
+                    ("area", person["area"]),
+                ]
+            ):
+                if column in cases.columns:
+                    cases[column] = value
+                else:
+                    cases.insert(position, column, value)
             all_cases.append(cases)
 
     summary = pd.DataFrame(summaries)

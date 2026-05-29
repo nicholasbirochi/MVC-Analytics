@@ -20,6 +20,7 @@ from ..domain.cargo import normalize_cargo_series
 
 DEFAULT_RAW_BASE = Path("Base de Dados Original/parquet")
 DEFAULT_OUT_DW = Path("project/database/dw_ronda_rebuilt.sqlite")
+REGISTRO_MANUAL_COL = "registro_manual"
 
 
 def _norm_col_name(name: object) -> str:
@@ -121,6 +122,13 @@ def _load_hr_dimension(raw_base: Path) -> pd.DataFrame:
     return hr
 
 
+def _category_dir(raw_base: Path, source_group: str, folder: str) -> Path:
+    grouped = raw_base / source_group / folder
+    if grouped.exists():
+        return grouped
+    return raw_base / folder
+
+
 def _sql_union_logs(raw_base: Path) -> str:
     folders = [
         ("Executivos", "E"),
@@ -130,19 +138,41 @@ def _sql_union_logs(raw_base: Path) -> str:
     ]
     parts: list[str] = []
     for folder, cargo in folders:
-        glob = (raw_base / folder / "*.parquet").resolve().as_posix()
-        parts.append(
-            f"""
-            SELECT
-              CAST(CHAPA AS VARCHAR) AS cadastro,
-              CAST(NOME_COLABORADOR AS VARCHAR) AS nome,
-              CAST(DATA_ACESSO AS VARCHAR) AS data_raw,
-              CAST(TIPO_ACESSO AS VARCHAR) AS tipo_raw,
-              CAST(CODIGO_PLANTA AS VARCHAR) AS planta_raw,
-              '{cargo}' AS cargo_src
-            FROM read_parquet('{glob}', union_by_name=true)
-            """
-        )
+        registros_dir = _category_dir(raw_base, "Registros", folder)
+        if registros_dir.exists() and any(registros_dir.glob("*.parquet")):
+            glob = (registros_dir / "*.parquet").resolve().as_posix()
+            parts.append(
+                f"""
+                SELECT
+                  CAST(CHAPA AS VARCHAR) AS cadastro,
+                  CAST(NOME_COLABORADOR AS VARCHAR) AS nome,
+                  CAST(DATA_ACESSO AS VARCHAR) AS data_raw,
+                  CAST(TIPO_ACESSO AS VARCHAR) AS tipo_raw,
+                  CAST(CODIGO_PLANTA AS VARCHAR) AS planta_raw,
+                  '{cargo}' AS cargo_src,
+                  'Não' AS {REGISTRO_MANUAL_COL}
+                FROM read_parquet('{glob}', union_by_name=true)
+                """
+            )
+
+        ajustes_dir = _category_dir(raw_base, "Ajustes Manuais", folder)
+        if ajustes_dir.exists() and any(ajustes_dir.glob("*.parquet")):
+            glob = (ajustes_dir / "*.parquet").resolve().as_posix()
+            parts.append(
+                f"""
+                SELECT
+                  CAST(CHAPA AS VARCHAR) AS cadastro,
+                  CAST(NOME_COLABORADOR AS VARCHAR) AS nome,
+                  CAST(DATA_ACESSO AS VARCHAR) AS data_raw,
+                  CAST(TIPO_ACESSO AS VARCHAR) AS tipo_raw,
+                  CAST(CODIGO_PLANTA AS VARCHAR) AS planta_raw,
+                  '{cargo}' AS cargo_src,
+                  'Sim' AS {REGISTRO_MANUAL_COL}
+                FROM read_parquet('{glob}', union_by_name=true)
+                """
+            )
+    if not parts:
+        raise FileNotFoundError(f"Nenhum parquet de registros encontrado em: {raw_base}")
     return "\nUNION ALL\n".join(parts)
 
 
@@ -201,7 +231,8 @@ def _create_sqlite_contract_views(con: duckdb.DuckDBPyConnection) -> None:
         SELECT
           cadastro AS "Cadastro",
           planta AS "Planta",
-          data AS "Data"
+          data AS "Data",
+          registro_manual AS "registro_manual"
         FROM diarios_unico;
         """
     )
@@ -211,7 +242,8 @@ def _create_sqlite_contract_views(con: duckdb.DuckDBPyConnection) -> None:
         SELECT
           cadastro AS "Cadastro",
           planta AS "Planta",
-          data AS "Data"
+          data AS "Data",
+          registro_manual AS "registro_manual"
         FROM diarios_unico;
         """
     )
@@ -294,7 +326,8 @@ def rebuild_dw(raw_base: Path, out_dw: Path) -> dict[str, int]:
             ) AS data,
             TRIM(planta_raw) AS planta,
             TRIM(tipo_raw) AS tipo,
-            cargo_src
+            cargo_src,
+            COALESCE(NULLIF(TRIM({REGISTRO_MANUAL_COL}), ''), 'Não') AS registro_manual
           FROM logs
         )
         SELECT * FROM norm
@@ -335,7 +368,8 @@ def rebuild_dw(raw_base: Path, out_dw: Path) -> dict[str, int]:
         SELECT
           cadastro,
           MIN(planta) AS planta,
-          data
+          data,
+          MAX(CASE WHEN registro_manual = 'Sim' THEN 'Sim' ELSE 'Não' END) AS registro_manual
         FROM valid_logs
         GROUP BY cadastro, data;
         """
@@ -506,7 +540,8 @@ def rebuild_dw(raw_base: Path, out_dw: Path) -> dict[str, int]:
           CAST(NULL AS TEXT) AS dir,
           CAST(NULL AS TEXT) AS tipo,
           CAST(NULL AS TEXT) AS acesso,
-          CAST(NULL AS TEXT) AS uso_acesso
+          CAST(NULL AS TEXT) AS uso_acesso,
+          CAST(NULL AS TEXT) AS registro_manual
         WHERE 1=0;
         """
     )

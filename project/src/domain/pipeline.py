@@ -103,6 +103,14 @@ def _view_exists(conn: sqlite3.Connection, name: str) -> bool:
     return cur.fetchone() is not None
 
 
+def _column_exists(conn: sqlite3.Connection, table_name: str, column_name: str) -> bool:
+    try:
+        rows = conn.execute(f'PRAGMA table_info("{table_name}")').fetchall()
+    except sqlite3.Error:
+        return False
+    return any(str(row[1]).lower() == column_name.lower() for row in rows)
+
+
 def _resolve_first_existing(conn: sqlite3.Connection, names: Iterable[str]) -> str | None:
     for name in names:
         if name and _view_exists(conn, name):
@@ -217,7 +225,7 @@ def load_sources(config: Settings | None = None) -> dict[str, pd.DataFrame]:
         df_registros_semanais = _empty_semana_frame()
         df_semana_enriquecida = _empty_semana_frame()
 
-        df_diarios = pd.DataFrame(columns=["Cadastro", "Planta", "Data"])
+        df_diarios = pd.DataFrame(columns=["Cadastro", "Planta", "Data", "registro_manual"])
         df_almoco = pd.DataFrame(
             columns=[
                 "Cadastro",
@@ -573,6 +581,7 @@ def dw_fetch_diarios(
     dt_fim=None,
     settings: Settings | None = None,
 ) -> pd.DataFrame:
+    settings = settings or get_settings()
     where = []
     params: list[str] = []
     clause, clause_params = _sql_cadastro_clause('"Cadastro"', cadastros)
@@ -586,8 +595,15 @@ def dw_fetch_diarios(
                 pd.Timestamp(dt_fim).strftime("%Y-%m-%d"),
             ]
         )
+    conn = _get_conn(settings)
+    manual_select = (
+        ',"registro_manual"'
+        if _column_exists(conn, "vw_df_diarios_unico", "registro_manual")
+        else ""
+    )
     sql = (
-        'SELECT "Cadastro","Planta","Data" AS "Data" FROM vw_df_diarios_unico WHERE '
+        f'SELECT "Cadastro","Planta","Data" AS "Data"{manual_select} '
+        "FROM vw_df_diarios_unico WHERE "
         + " AND ".join(where)
         + ";"
     )
