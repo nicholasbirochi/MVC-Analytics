@@ -76,4 +76,4 @@ Base de Dados Original/
 - `parquet/Ajustes Manuais/`: mesmos ajustes em parquet e base consolidada
   `df_ajustes_manuais.parquet`.
 - Os ajustes manuais entram na base final `project/database/df_ronda.parquet`
-  pela coluna `Manual`: `Não` para registros originais e `Sim` para ajustes manuais.
+  pela coluna `registro_manual`: `Não` para registros originais e `Sim` para ajustes manuais.

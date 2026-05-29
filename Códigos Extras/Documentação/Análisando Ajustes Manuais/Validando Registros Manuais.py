@@ -16,6 +16,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parents[2]
 BASE = PROJECT_ROOT / "project" / "database" / "df_ronda.parquet"
 OUT_DIR = SCRIPT_DIR / "Ocorrências"
+REGISTRO_MANUAL_COL = "registro_manual"
 
 TOP_N = 10
 PERIOD_START = pd.Timestamp("2024-01-01")
@@ -177,7 +178,7 @@ def get_top_manual_people():
               MIN(CAST(data AS DATE)) AS primeira_data_manual,
               MAX(CAST(data AS DATE)) AS ultima_data_manual
             FROM read_parquet('{BASE.as_posix()}')
-            WHERE "Manual" = 'Sim'
+            WHERE "registro_manual" = 'Sim'
             GROUP BY cadastro
             ORDER BY registros_manuais_brutos DESC, registros_manuais_distintos DESC
             LIMIT {TOP_N}
@@ -203,7 +204,7 @@ def load_person(cadastro):
         "cargo",
         "area",
         "departamento",
-        "Manual",
+        REGISTRO_MANUAL_COL,
     ]
     df = pq.read_table(str(BASE), columns=cols, filters=[("cadastro", "==", str(cadastro))]).to_pandas()
     if df.empty:
@@ -217,7 +218,7 @@ def load_person(cadastro):
     if df.empty:
         raise RuntimeError(f"Sem registros no periodo para a chapa {cadastro}.")
 
-    df["manual_norm"] = df["Manual"].astype(str).str.strip().str.upper()
+    df["manual_norm"] = df[REGISTRO_MANUAL_COL].astype(str).str.strip().str.upper()
     df["dir_norm"] = df["dir"].astype(str).str.strip().str.upper()
     df["tipo_norm"] = df["tipo"].fillna("").astype(str).str.strip().str.upper()
     df["planta_norm"] = df["planta"].astype(str).str.strip()
@@ -327,7 +328,7 @@ def prepare_person_analysis(df, manual_cargo=None):
     """
     period_all = df.copy()
 
-    # Pontos manuais candidatos: Manual=Sim, tipo=Ponto e fora de home office.
+    # Pontos manuais candidatos: registro_manual=Sim, tipo=Ponto e fora de home office.
     manual_raw = period_all[
         period_all["manual_norm"].eq("SIM")
         & period_all["tipo_norm"].isin(PONTO_TIPO_VALUES)
@@ -652,7 +653,7 @@ def compute_manual_rankings():
 
     Critério de "ponto manual fora da fábrica":
       - tipo de registro = Ponto (não refeitório/acesso)
-      - Manual = Sim
+      - registro_manual = Sim
       - Sem indicação de home office em qualquer campo
       - Horário do registro está ANTES da primeira entrada física do dia, OU
         DEPOIS da última saída física do dia
@@ -684,7 +685,7 @@ def compute_manual_rankings():
                 FROM read_parquet('{BASE.as_posix()}')
                 WHERE CAST(data AS DATE)
                     BETWEEN DATE '{PERIOD_START:%Y-%m-%d}' AND DATE '{PERIOD_END:%Y-%m-%d}'
-                  AND upper(trim(CAST("Manual" AS VARCHAR))) = 'SIM'
+                  AND upper(trim(CAST("registro_manual" AS VARCHAR))) = 'SIM'
                   AND upper(trim(CAST(tipo AS VARCHAR))) IN ('1', 'PONTO')
             ),
             raw AS (
@@ -698,7 +699,7 @@ def compute_manual_rankings():
                         + date_part('minute', CAST(hora AS TIME))
                         + date_part('second', CAST(hora AS TIME)) / 60.0
                     ) AS minuto_dia,
-                    upper(trim(CAST("Manual" AS VARCHAR))) AS manual_norm,
+                    upper(trim(CAST("registro_manual" AS VARCHAR))) AS manual_norm,
                     upper(trim(CAST(dir AS VARCHAR))) AS dir_norm,
                     upper(trim(CAST(tipo AS VARCHAR))) AS tipo_norm,
                     trim(CAST(planta AS VARCHAR)) AS planta_norm,
@@ -2167,7 +2168,7 @@ def person_audit_tables(row, all_cargos=True):
         "portaria_ligada",
         "case_ids",
         "diferencas",
-        "Manual",
+        "registro_manual",
         "dir",
         "tipo",
         "planta",
@@ -2271,7 +2272,7 @@ def main():
             category_dir,
             f"Top {TOP_N} {folder}: ponto manual sem presenca fisica",
             f"00_top{TOP_N}_{folder.lower()}_manuais_fora_fabrica.pdf",
-            "Criterio: Manual=Sim tipo Ponto antes da entrada fisica ou apos a saida fisica, com tratamento para turno virado e exclusao de home office.",
+            "Criterio: registro_manual=Sim tipo Ponto antes da entrada fisica ou apos a saida fisica, com tratamento para turno virado e exclusao de home office.",
         )
         if ranking_pdf:
             generated.append(ranking_pdf)

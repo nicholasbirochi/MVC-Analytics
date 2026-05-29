@@ -103,7 +103,9 @@ BASE_FIELDS = [
     ("cargo_especifico", pa.string()),
 ]
 BASE_COLS = [name for name, _ in BASE_FIELDS]
-FULL_SCHEMA = pa.schema(BASE_FIELDS + [("Manual", pa.string())])
+REGISTRO_MANUAL_COL = "registro_manual"
+LEGACY_MANUAL_COL = "Manual"
+FULL_SCHEMA = pa.schema(BASE_FIELDS + [(REGISTRO_MANUAL_COL, pa.string())])
 
 
 def normalize_column_key(value):
@@ -260,8 +262,13 @@ def consolidate_adjustments():
     temp_path.replace(AJUSTES_PATH)
 
 
-def schema_has_manual(path):
-    return "Manual" in pq.ParquetFile(path).schema_arrow.names
+def manual_column_name(path):
+    names = pq.ParquetFile(path).schema_arrow.names
+    if REGISTRO_MANUAL_COL in names:
+        return REGISTRO_MANUAL_COL
+    if LEGACY_MANUAL_COL in names:
+        return LEGACY_MANUAL_COL
+    return None
 
 
 def sql_select_base_without_manual(source_path):
@@ -275,15 +282,16 @@ def sql_select_base_without_manual(source_path):
             fields.append(f"CAST({name} AS VARCHAR) AS {name}")
 
     where = ""
-    if schema_has_manual(source_path):
-        where = """
-        WHERE COALESCE(UPPER(TRIM(CAST("Manual" AS VARCHAR))), '') <> 'SIM'
+    source_manual_col = manual_column_name(source_path)
+    if source_manual_col:
+        where = f"""
+        WHERE COALESCE(UPPER(TRIM(CAST("{source_manual_col}" AS VARCHAR))), '') <> 'SIM'
         """
 
     return f"""
         SELECT
           {", ".join(fields)},
-          'Não' AS "Manual"
+          'Não' AS "{REGISTRO_MANUAL_COL}"
         FROM read_parquet('{source_path.resolve().as_posix()}', union_by_name=true)
         {where}
     """
@@ -302,7 +310,7 @@ def sql_select_manual_adjustments():
     return f"""
         SELECT
           {", ".join(fields)},
-          'Sim' AS "Manual"
+          'Sim' AS "{REGISTRO_MANUAL_COL}"
         FROM read_parquet('{AJUSTES_PATH.resolve().as_posix()}', union_by_name=true)
     """
 
@@ -335,8 +343,8 @@ def build_ronda_with_manual():
         original_rows, manual_rows = con.execute(
             f"""
             SELECT
-              SUM(CASE WHEN UPPER(TRIM(CAST("Manual" AS VARCHAR))) = 'SIM' THEN 0 ELSE 1 END),
-              SUM(CASE WHEN UPPER(TRIM(CAST("Manual" AS VARCHAR))) = 'SIM' THEN 1 ELSE 0 END)
+              SUM(CASE WHEN UPPER(TRIM(CAST("{REGISTRO_MANUAL_COL}" AS VARCHAR))) = 'SIM' THEN 0 ELSE 1 END),
+              SUM(CASE WHEN UPPER(TRIM(CAST("{REGISTRO_MANUAL_COL}" AS VARCHAR))) = 'SIM' THEN 1 ELSE 0 END)
             FROM read_parquet('{RONDA_FINAL_PATH.resolve().as_posix()}')
             """
         ).fetchone()
@@ -374,18 +382,18 @@ def validate_chapas():
             ).fetchdf().to_string(index=False)
         )
 
-        print("\nManual no df_ronda.parquet final:")
+        print("\nregistro_manual no df_ronda.parquet final:")
         print(
             con.execute(
                 f"""
-                SELECT cadastro, "Manual", any_value(nome) AS nome, any_value(cargo) AS cargo,
+                SELECT cadastro, "{REGISTRO_MANUAL_COL}", any_value(nome) AS nome, any_value(cargo) AS cargo,
                        count(*) AS linhas,
                        min(CAST(data AS DATE)) AS primeira_data,
                        max(CAST(data AS DATE)) AS ultima_data
                 FROM read_parquet('{RONDA_FINAL_PATH.resolve().as_posix()}')
                 WHERE CAST(cadastro AS VARCHAR) IN ({chapas_sql})
-                GROUP BY cadastro, "Manual"
-                ORDER BY cadastro, "Manual"
+                GROUP BY cadastro, "{REGISTRO_MANUAL_COL}"
+                ORDER BY cadastro, "{REGISTRO_MANUAL_COL}"
                 """
             ).fetchdf().to_string(index=False)
         )
@@ -409,10 +417,10 @@ def main():
     print("\nConsolidando Base de Dados Original/parquet/Ajustes Manuais/df_ajustes_manuais.parquet...")
     consolidate_adjustments()
 
-    print("Reconstruindo project/database/df_ronda.parquet com coluna Manual...")
+    print("Reconstruindo project/database/df_ronda.parquet com coluna registro_manual...")
     linhas_original, linhas_manual = build_ronda_with_manual()
-    print(f"- Original Manual=Nao: {linhas_original:,} linhas")
-    print(f"- Ajustes Manual=Sim: {linhas_manual:,} linhas")
+    print(f"- Original registro_manual=Nao: {linhas_original:,} linhas")
+    print(f"- Ajustes registro_manual=Sim: {linhas_manual:,} linhas")
 
     print("Sincronizando copias legadas da analise de ajustes manuais...")
     sync_legacy_outputs()

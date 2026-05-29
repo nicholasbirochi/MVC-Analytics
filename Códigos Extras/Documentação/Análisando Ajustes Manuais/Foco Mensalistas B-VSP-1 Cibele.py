@@ -20,6 +20,7 @@ OUT_DIR = SCRIPT_DIR / "Ocorrências" / "Foco_B-VSP_Cenarios_Beneficio"
 OUT_XLSX = OUT_DIR / "00_ranking_B-VSP_cenarios_beneficio.xlsx"
 OUT_PDF = OUT_DIR / "00_ranking_B-VSP_cenarios_beneficio.pdf"
 OUT_PEOPLE_DIR = OUT_DIR / "Colaboradores"
+REGISTRO_MANUAL_COL = "registro_manual"
 
 AREA_FOCO = "B-VSP"
 CARGO_FOCO = None
@@ -44,7 +45,7 @@ COLS_BASE = [
     "cargo",
     "area",
     "departamento",
-    "Manual",
+    REGISTRO_MANUAL_COL,
 ]
 
 PORTARIA_RE = re.compile(
@@ -156,7 +157,7 @@ def prepare_for_manual_module(df, manual_module):
     df["data_hora"] = df["data_corrigida"] + pd.to_timedelta(df["hora_min"], unit="m")
     df = df[(df["data_corrigida"] >= PERIOD_START) & (df["data_corrigida"] <= PERIOD_END)].copy()
 
-    df["manual_norm"] = df["Manual"].astype(str).str.strip().str.upper()
+    df["manual_norm"] = df[REGISTRO_MANUAL_COL].astype(str).str.strip().str.upper()
     df["dir_norm"] = df["dir"].astype(str).str.strip().str.upper()
     df["tipo_norm"] = df["tipo"].fillna("").astype(str).str.strip().str.upper()
     df["planta_norm"] = df["planta"].astype(str).str.strip()
@@ -307,7 +308,7 @@ def analyze_person_presence(person_rows, person):
     df = df.dropna(subset=["data_corrigida", "hora_min"]).copy()
     df = df[(df["data_corrigida"] >= PERIOD_START) & (df["data_corrigida"] <= PERIOD_END)].copy()
     df["data_hora"] = df["data_corrigida"] + pd.to_timedelta(df["hora_min"], unit="m")
-    df["manual_norm"] = df["Manual"].astype(str).str.strip().str.upper()
+    df["manual_norm"] = df[REGISTRO_MANUAL_COL].astype(str).str.strip().str.upper()
     df["dir_norm"] = df["dir"].astype(str).str.strip().str.upper()
     df["planta_norm"] = df["planta"].astype(str).str.strip()
     df["desc_ascii"] = df["descricao_coletor"].map(normalizar_texto)
@@ -447,7 +448,7 @@ def build_resumo(manual_summary, cibele_daily, cibele_points):
                 "leitura": "Recorte de cargo M e area dominante B-VSP-1.",
             },
             {
-                "item": "Cibele - registros Manual=Sim",
+                "item": "Cibele - registros registro_manual=Sim",
                 "valor": cibele_manual_official,
                 "leitura": "Na base de ajustes manuais, a Cibele nao aparece com ponto manual oficial.",
             },
@@ -457,19 +458,19 @@ def build_resumo(manual_summary, cibele_daily, cibele_points):
                 "leitura": "Pontos de relogio/captura que caem antes da entrada, depois da saida ou entre saida e reentrada.",
             },
             {
-                "item": "Cibele - desses, Manual=Sim",
+                "item": "Cibele - desses, registro_manual=Sim",
                 "valor": official_manual_out,
                 "leitura": "Confere se o ponto fora de presenca tambem foi ajuste manual oficial.",
             },
             {
                 "item": "Cibele - desses, planta 999",
                 "valor": points_999_out,
-                "leitura": "Indica captura digital/home office, separada de Manual=Sim.",
+                "leitura": "Indica captura digital/home office, separada de registro_manual=Sim.",
             },
             {
                 "item": "Cibele - dias com saida fisica mais de 1h apos ultimo ponto",
                 "valor": int(cibele_daily["gap_apos_ponto_maior_1h"].sum()) if not cibele_daily.empty else 0,
-                "leitura": "Esse e o mecanismo que explica as horas depois do ponto, sem depender de Manual=Sim.",
+                "leitura": "Esse e o mecanismo que explica as horas depois do ponto, sem depender de registro_manual=Sim.",
             },
             {
                 "item": "Cibele - horas fisicas apos ultimo ponto",
@@ -499,7 +500,7 @@ def registros_top_dias(cibele_raw, cibele_daily):
         "uso_acesso",
         "area",
         "cargo",
-        "Manual",
+        "registro_manual",
     ]
     return out[[c for c in cols if c in out.columns]].sort_values(["data_corrigida", "hora"])
 
@@ -869,7 +870,7 @@ def plot_person_scenarios(pdf, person_row, daily_scenarios, point_scenarios):
         ("Planta 999", int(person_row["pontos_fora_planta_999"])),
         ("Dias gap >1h", int(person_row["dias_gap_apos_ponto_1h"])),
         ("Horas gap", f"{float(person_row['horas_gap_apos_ponto']):.1f}h"),
-        ("Manual=Sim fora", int(person_row["pontos_fora_manual_sim"])),
+        ("registro_manual=Sim fora", int(person_row["pontos_fora_manual_sim"])),
     ]
     for label, value in metrics:
         axp.text(0.02, y, label, fontsize=8.4, color="#5b7088", va="top")
@@ -967,7 +968,7 @@ def main():
                     "cargo": CARGO_FOCO or "todos",
                     "periodo_inicio": PERIOD_START,
                     "periodo_fim": PERIOD_END,
-                    "criterio_manual_oficial": "Manual=Sim, tipo Ponto, fora de home office/remoto, antes da entrada fisica ou apos saida fisica.",
+                    "criterio_manual_oficial": "registro_manual=Sim, tipo Ponto, fora de home office/remoto, antes da entrada fisica ou apos saida fisica.",
                     "criterio_ponto_fora_presenca": "Descricao com PONTO/MARCA fora dos intervalos montados por portaria fisica real, excluindo planta 999 como presenca.",
                     "criterio_gap": f"Somente dias com mais de {GAP_MINIMO_MIN} minutos entre ultimo ponto e ultima saida fisica.",
                     "observacao": "Os graficos mostram apenas cenarios de aproveitamento; nao conectam dias com linhas.",
@@ -994,7 +995,7 @@ def main():
                     "uso_acesso",
                     "area",
                     "cargo",
-                    "Manual",
+                    "registro_manual",
                 ]
                 if c in raw_all.columns
             ]

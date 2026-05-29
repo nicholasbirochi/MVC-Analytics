@@ -454,8 +454,8 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 
 **Origem:** `Base de Dados Original/parquet/Registros/` + `Base de Dados Original/parquet/Ajustes Manuais/`.
 
-* `Manual = Não`: registros originais do Ronda.
-* `Manual = Sim`: ajustes manuais consolidados a partir dos CSVs em `Base de Dados Original/csv/Ajustes Manuais/`.
+* `registro_manual = Não`: registros originais do Ronda.
+* `registro_manual = Sim`: ajustes manuais consolidados a partir dos CSVs em `Base de Dados Original/csv/Ajustes Manuais/`.
 
 Essa coluna permite analisar os ajustes manuais dentro da mesma trajetória dos registros,
 sem separar uma base paralela para auditoria.
