@@ -28,20 +28,6 @@
     "
   />
 
-  <h1 style="
-    color:#fff;
-    margin:0;
-    font-size:clamp(18px, 2.2vw, 28px);
-    line-height:1.15;
-    letter-spacing:.2px;
-    padding-bottom:6px;
-    border-bottom:1px solid rgba(255,255,255,.75);
-    max-width:1100px;
-  ">
-    Dashboard sobre Monitoramento Comportamental — Volkswagen do Brasil
-  </h1>
-</div>
-
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.14.2-blue" />
   <img src="https://img.shields.io/badge/Dash-2.18-3EB489" />
@@ -55,30 +41,8 @@
 
 <div align="center">
 
-| [🧾 Resumo Técnico](#-resumo-tecnico) | 
-[💼 Sobre o Projeto](#-sobre-o-projeto) | 
-[✨ Funcionalidades Principais](#-funcionalidades-principais) | 
-[🏛️ Arquitetura (MVC + Camada de Serviços)](#-arquitetura-mvc-camada-de-servicos) | 
-[🗃️ Estrutura dos DataFrames](#-estrutura-dos-dataframes) | 
-[🔁 Lógica “Mesma Planta”](#-logica-mesma-planta) | 
-[⚙️ Configuração via .env](#-configuracao-via-env) | 
-[🧰 Dependências](#-dependencias) | 
-[🚀 Como rodar o projeto](#-como-rodar-o-projeto) | 
-[🧠 Cache & Performance](#-cache--performance) | 
-[🪄 Estilo Visual e UX](#-estilo-visual-e-ux) | 
-[🔍 Logs e Diagnóstico](#-logs-e-diagnostico) | 
-[🐍 Estrutura de Módulos Python](#-estrutura-de-modulos-python) | 
-[♻️ Convenções de Código](#-convencoes-de-codigo) | 
-[🧪 Testes e Validação](#-testes-e-validacao) | 
-[🛠️ Solução de Problemas](#-solucao-de-problemas) | 
-[🔐 Segurança e Acesso](#-seguranca-e-acesso) | 
-[💡 Boas Práticas](#-boas-praticas) | 
-[📄 Licença](#-licenca) | 
-[🖋️ Assinatura Profissional](#-assinatura-profissional) |
-
-</div>
-
 ## 🧾 Resumo Técnico
+
 - Linguagem: Python 3.14.2
 - Framework: Dash (Plotly + Flask)
 - Arquitetura: MVC + Camada de Serviços
@@ -93,29 +57,34 @@ Dashboard corporativo construído com **Dash (Plotly + Flask)** para monitorar a
 ## ✨ Funcionalidades Principais
 
 ### 📊 **Visão Geral**
+
 - Distribuição por faixas (0–1 … 6–7 dias/semana)
 - Dispersão e Boxplots por área
 - Indicadores automáticos (totais e médias por cargo)
 - Gráficos com **carregamento progressivo** para melhor desempenho e UX
 
 ### 🗂️ **Visão por Área/Subárea**
+
 - Heatmap **Mensalistas × Executivos** (encontros na **mesma planta** no mesmo dia)
 - Heatmap **Executivos × Executivos**
 - Mini-tabela **GPTW**, com comparativo de tendência e filtro dinâmico
 - Dropdown com bloqueio de subáreas já selecionadas
 
 ### 👤 **Relatório Individual**
+
 - Gauge / Termômetro de presença
 - Série temporal de presença semanal
 - Heatmaps pessoais por semana
 - Download direto em **JPG** e **PDF**
 
 ### ⚙️ **Filtros Dinâmicos**
+
 - Período (cenários + slider mensal)
 - Desligados / Viagem
 - Área/Subárea (com **Herança** e exclusões automáticas)
 
 ### ⚡ **Performance e Interatividade**
+
 - Sistema de **cache leve** (Flask-Caching)
 - Gráficos e dados renderizados em **etapas progressivas**
 - Navegação instantânea entre abas
@@ -123,7 +92,7 @@ Dashboard corporativo construído com **Dash (Plotly + Flask)** para monitorar a
 
 ## 🏛️ Arquitetura (MVC + Camada de Serviços)
 
-Estrutura modular para manter **baixo acoplamento** e **alta manutenibilidade**.  
+Estrutura modular para manter **baixo acoplamento** e **alta manutenibilidade**.
 Os arquivos estão organizados conforme o padrão **Model–View–Controller (MVC)**.
 
 ```plaintext
@@ -420,28 +389,27 @@ Os arquivos estão organizados conforme o padrão **Model–View–Controller (M
 └── 📦 requirements.txt
 ```
 
->*Certifique-se de que todas as pastas acima contenham `__init__.py`.*
+> *Certifique-se de que todas as pastas acima contenham `__init__.py`.*
 
 ### 🎨 Legenda de Ícones
 
-| **Ícone** | **Tipo de Arquivo** |                  **Descrição**                  |
-| :-------: | :-----------------: | :---------------------------------------------: |
-|     🧾    |        `.csv`       |      Dados tabulares separados por vírgulas     |
-|     📝    |        `.pdf`       | Documentos em PDF (relatórios, contratos, etc.) |
-|     🪶    |      `.parquet`     |      Formato colunar otimizado para análise     |
-|     💹    |       `.xlsx`       |                 Planilhas Excel                 |
-|     📓    |       `.ipynb`      |                Notebooks Jupyter                |
-|     🐍    |        `.py`        |                  Código Python                  |
-|     🧊    |        `.ico`       |                 Ícones/favicons                 |
-|     🖼️    |        `.png`       |                     Imagens                     |
-|     ⚡    |        `.js`        |                Scripts JavaScript               |
-|     🎨    |        `.css`       |                 Estilos visuais                 |
-|     🧱    |       `.html`       |                   ui/front-end                  |
-|     🗄️    |      `.sqlite`      |               Banco de Dados local              |
-|     ⚙️    |     `.gitignore`    |            Regras de ignorados do Git           |
-|     📖    |        `.md`        |              Documentação Markdown              |
-|     📦    |  `requirements.txt` |              Dependências do Python             |
-
+| **Ícone** | **Tipo de Arquivo** |              **Descrição**              |
+| :--------------: | :-----------------------: | :----------------------------------------------: |
+|        🧾        |         `.csv`         |     Dados tabulares separados por vírgulas     |
+|        📝        |         `.pdf`         | Documentos em PDF (relatórios, contratos, etc.) |
+|        🪶        |       `.parquet`       |     Formato colunar otimizado para análise     |
+|        💹        |         `.xlsx`         |                 Planilhas Excel                 |
+|        📓        |        `.ipynb`        |                Notebooks Jupyter                |
+|        🐍        |          `.py`          |                  Código Python                  |
+|        🧊        |         `.ico`         |                 Ícones/favicons                 |
+|       🖼️       |         `.png`         |                     Imagens                     |
+|        ⚡        |          `.js`          |                Scripts JavaScript                |
+|        🎨        |         `.css`         |                 Estilos visuais                 |
+|        🧱        |         `.html`         |                   ui/front-end                   |
+|       🗄️       |        `.sqlite`        |               Banco de Dados local               |
+|       ⚙️       |      `.gitignore`      |            Regras de ignorados do Git            |
+|        📖        |          `.md`          |             Documentação Markdown             |
+|        📦        |   `requirements.txt`   |             Dependências do Python             |
 
 ## 🗃️ Estrutura dos DataFrames (atualizado)
 
@@ -472,9 +440,11 @@ sem separar uma base paralela para auditoria.
 * `Data` (datetime)
 
   > *Data âncora da semana (recomendado: **segunda-feira** ou outro “anchor” fixo). Mantida para preservar comportamentos antigos (slider/range/plots).*
+  >
 * `Contagem Presença` (int)
 
   > *Contagem de dias de presença na semana (ex.: 0..7), conforme já era no app.*
+  >
 
 **Observações**
 
@@ -530,12 +500,14 @@ sem separar uma base paralela para auditoria.
 * `Cargo` (string)
 
   > **Regra:** `Cargo` == `SgEmp` (código vindo de ativos).
+  >
 * `Cargo Especifico` (string)
 * `Desligado` (string/bool, conforme já era)
 * `Data_Admissão` (datetime)
 * `Data_Demissão` (datetime)
 
   > *Vem de `df_desligados['Data_Dem']` renomeada (quando existir).*
+  >
 
 **Mapeamento opcional de categoria de Cargo (somente se necessário)**
 Se em algum lugar do app o “Cargo” era usado como **categoria** (Horista/Mensalista/Executivo), crie uma coluna extra (ex.: `Tipo_Cargo`) baseada na 1ª letra:
@@ -557,9 +529,11 @@ Se em algum lugar do app o “Cargo” era usado como **categoria** (Horista/Men
 * `Tipo da Movimentação` (string)
 
   > *Ex.: Admissão, Transferência, Promoção, Desligamento (depende do arquivo).*
+  >
 * `Data de alteração` (datetime)
 
   > *Data em que a mudança organizacional foi registrada.*
+  >
 * `Abreviação UO antiga` (string)
 * `Desc. UO antiga` (string)
 * `Desc. Cargo antigo` (string)
@@ -604,11 +578,12 @@ Se em algum lugar do app o “Cargo” era usado como **categoria** (Horista/Men
 ## 🔁 Lógica “Mesma Planta”
 
 Nos heatmaps:
+
 - Conta encontro **apenas** quando ambos estão **presentes no mesmo dia e na mesma `Planta`**.
 - Percentual = `encontros / presença_base * 100`.
 
-Implementação:  
-→ `domain/copresenca.py`  
+Implementação:
+→ `domain/copresenca.py`
 → Função principal: `calcular_copresenca(df_datas, area)`
 
 ## ⚙️ Configuração via `.env`
@@ -641,6 +616,7 @@ Sem `RONDA_DW_PATH`, o app tenta fallback parquet legado.
 ## 🧰 Dependências
 
 `requirements.txt` mínimo:
+
 ```text
 dash>=2.18
 flask>=3.0
@@ -694,6 +670,7 @@ py -3 -c "import project.src.main as m; m.create_app(); print('ok')"
 ```
 
 Ao reintroduzir testes automatizados, priorize equivalência entre notebook e MVC:
+
 - mesmas colunas/ordem
 - mesmos valores numéricos
 - delegacao dos builders para SQL canonica
@@ -706,6 +683,7 @@ Ao reintroduzir testes automatizados, priorize equivalência entre notebook e MV
 - O MVC agora lê `RONDA_DW_PATH` externamente para reproduzir o notebook sem copiar base para dentro do repo.
 
 ## 🧠 Cache & Performance
+
 - Cache leve (Flask-Caching) para DataFrames semanais
 - TTL configurável via `ND_CACHE_TTL` (padrão: 900 s)
 - Funções puras menores usam `functools.lru_cache` (ex.: normalização de `Cadastro` em `api/relacionamento.py`)
@@ -715,89 +693,97 @@ Ao reintroduzir testes automatizados, priorize equivalência entre notebook e MV
 - Renderização dos gráficos é progressiva (`dcc.Store` + `dcc.Interval`)
 
 ## 🪄 Estilo Visual e UX
-- Paleta Volkswagen Data Blue / Gray Neutral  
-- Inspiração em VS Code (cards, bordas e ícones coloridos)  
-- Layout fluido com Grid + Flexbox Dash  
-- Tags coloridas e pontilhadas com rótulos personalizados  
-- Hierarquia temporal no eixo X (Semana → Mês → Ano)  
+
+- Paleta Volkswagen Data Blue / Gray Neutral
+- Inspiração em VS Code (cards, bordas e ícones coloridos)
+- Layout fluido com Grid + Flexbox Dash
+- Tags coloridas e pontilhadas com rótulos personalizados
+- Hierarquia temporal no eixo X (Semana → Mês → Ano)
 - Suporte completo a pt_BR (meses, datas, labels)
 
 ## 🔍 Logs e Diagnóstico
-- Logs configurados em `config.py` (modo `ND_DEBUG`)  
-- Console exibe: tempo de carregamento por aba, cache hit/miss, eventos de filtro e seletores  
+
+- Logs configurados em `config.py` (modo `ND_DEBUG`)
+- Console exibe: tempo de carregamento por aba, cache hit/miss, eventos de filtro e seletores
 - Logs podem futuramente ser direcionados a arquivos `.log`
 
 ## 🐍 Estrutura de Módulos Python
 
 ### 🧩 **Controllers** (`controllers/*.py`) — Camada de controle e callbacks Dash
 
-| Arquivo | Função | Descrição |
-|:-------- |:--------|:-----------|
-| `general.py` | Aba inicial | KPIs, boxplots e indicadores gerais (meta semanal aplica regra vigente por período, com mudança em mai/2025) |
-| `area.py` | Aba por área | Heatmaps e filtros dinâmicos por departamento |
-| `relacionamento.py` | Aba de relacionamentos | Séries semanais, tags, modo Almoço, comparativos — com caches em `register(app)` para lookups pesados |
-| `individual.py` | Relatório individual | Termômetro (gauge), histórico, gradiente de severidade por semana (0/1/2 dias) e exportação PDF/JPG |
-| `router.py` | Roteamento Dash | Redireciona `dcc.Location` → layout correto |
+| Arquivo               | Função               | Descrição                                                                                                    |
+| :-------------------- | :--------------------- | :------------------------------------------------------------------------------------------------------------- |
+| `general.py`        | Aba inicial            | KPIs, boxplots e indicadores gerais (meta semanal aplica regra vigente por período, com mudança em mai/2025) |
+| `area.py`           | Aba por área          | Heatmaps e filtros dinâmicos por departamento                                                                 |
+| `relacionamento.py` | Aba de relacionamentos | Séries semanais, tags, modo Almoço, comparativos — com caches em`register(app)` para lookups pesados      |
+| `individual.py`     | Relatório individual  | Termômetro (gauge), histórico, gradiente de severidade por semana (0/1/2 dias) e exportação PDF/JPG        |
+| `router.py`         | Roteamento Dash        | Redireciona`dcc.Location` → layout correto                                                                  |
 
 ### 🛠️ **Services** (`services/*.py`) — Camada de lógica e regras de negócio
 
-| Arquivo | Função | Descrição |
-|:-------- |:--------|:-----------|
-| `builders.py` | Construtores de DataFrame | Une datasets brutos e normaliza colunas |
-| `copresenca.py` | Regra “Mesma Planta” | Calcula co-presença (Data, Cadastro, Planta) |
-| `cache_utils.py` | Cache e invalidação | Gerencia cache Flask e memória RAM |
-| `filters.py` | Filtros de dashboards | Filtragem por área, cargo, cenário, período |
-| `gptw.py` | GPTW mini table | Cálculo e tendência GPTW (ano a ano) |
-| `exports.py` | Exportações | Gera JPG e PDF via Matplotlib/ReportLab |
-| `periods.py` | Controle de períodos | Define cenários (Jan–Abr, Mai–Atual) e slider mensal |
-| `tenure.py` | Tempo de empresa | Calcula KPIs de permanência e senioridade |
+| Arquivo            | Função                  | Descrição                                             |
+| :----------------- | :------------------------ | :------------------------------------------------------ |
+| `builders.py`    | Construtores de DataFrame | Une datasets brutos e normaliza colunas                 |
+| `copresenca.py`  | Regra “Mesma Planta”    | Calcula co-presença (Data, Cadastro, Planta)           |
+| `cache_utils.py` | Cache e invalidação     | Gerencia cache Flask e memória RAM                     |
+| `filters.py`     | Filtros de dashboards     | Filtragem por área, cargo, cenário, período          |
+| `gptw.py`        | GPTW mini table           | Cálculo e tendência GPTW (ano a ano)                  |
+| `exports.py`     | Exportações             | Gera JPG e PDF via Matplotlib/ReportLab                 |
+| `periods.py`     | Controle de períodos     | Define cenários (Jan–Abr, Mai–Atual) e slider mensal |
+| `tenure.py`      | Tempo de empresa          | Calcula KPIs de permanência e senioridade              |
 
 ### 🎨 **ui** (`ui/*.py`) — Camada visual e geração de gráficos
 
-| Arquivo | Função | Descrição |
-|:-------- |:--------|:-----------|
-| `layout.py` | Layout principal | Estrutura base (Tabs, Cards, Containers) |
-| `figures.py` | Criação de gráficos | Heatmaps, Boxplots, Termômetros e Séries |
-| `tables.py` | Tabelas HTML | Geração de mini-tabelas e tabelas responsivas |
-| `theme.py` | Paleta e estilos | Define cores, gradientes, bordas e tipografia |
-| `gptw.py` | Módulo GPTW | Renderiza gráfico de tendência e notas por área |
+| Arquivo        | Função               | Descrição                                        |
+| :------------- | :--------------------- | :------------------------------------------------- |
+| `layout.py`  | Layout principal       | Estrutura base (Tabs, Cards, Containers)           |
+| `figures.py` | Criação de gráficos | Heatmaps, Boxplots, Termômetros e Séries         |
+| `tables.py`  | Tabelas HTML           | Geração de mini-tabelas e tabelas responsivas    |
+| `theme.py`   | Paleta e estilos       | Define cores, gradientes, bordas e tipografia      |
+| `gptw.py`    | Módulo GPTW           | Renderiza gráfico de tendência e notas por área |
 
 ## ♻️ Convenções de Código
+
 - PEP 8 e tipagem gradual: `from __future__ import annotations`
-- Prefixo `df_` para DataFrames<br>
-- Constantes em MAIÚSCULAS<br>
+- Prefixo `df_` para DataFrames
+- Constantes em MAIÚSCULAS
 - Comentários de seção em bloco: `# '''~~~~~~~~~~~~~~~~~~~~~~~ Seção ~~~~~~~~~~~~~~~~~~~~~~~'''`
 - IDs do Dash seguem o padrão: `grafico-aba-elemento`
 
 ## 🛠️ Solução de Problemas
 
-| Problema | Causa | Solução |
-|:----------|:--------|:--------|
-| `ModuleNotFoundError: 'src.api'` | Execução fora da raiz | Execute `python -m src.main` |
-| Meses não aparecem em pt-BR | Locale do SO | Usa `Timestamp.month_name(locale='pt_BR')` |
-| Nenhum dado no gráfico | Coluna ausente | Confirme `Planta` e `Data` em `df_datas` |
-| Tags não aparecem | Store vazio | Adicione tags via interface lateral |
-| Slider bugado | Coluna `Data` inválida | Verifique `df_datas['Data']` coerente |
-| `/relacionamento` "Updating..." infinito | Histórico longo + DW frio | Janela é capada em 12 meses; reinicie o servidor Dash para refletir as mudanças |
-| Cores no `Imprimir` saem em cinza | `print-color-adjust` ausente | `ui/theme.py` força `-webkit-print-color-adjust: exact` para Plotly/DataTable/SVG |
+| Problema                                   | Causa                          | Solução                                                                              |
+| :----------------------------------------- | :----------------------------- | :------------------------------------------------------------------------------------- |
+| `ModuleNotFoundError: 'src.api'`         | Execução fora da raiz        | Execute`python -m src.main`                                                          |
+| Meses não aparecem em pt-BR               | Locale do SO                   | Usa`Timestamp.month_name(locale='pt_BR')`                                            |
+| Nenhum dado no gráfico                    | Coluna ausente                 | Confirme`Planta` e `Data` em `df_datas`                                          |
+| Tags não aparecem                         | Store vazio                    | Adicione tags via interface lateral                                                    |
+| Slider bugado                              | Coluna`Data` inválida       | Verifique`df_datas['Data']` coerente                                                 |
+| `/relacionamento` "Updating..." infinito | Histórico longo + DW frio     | Janela é capada em 12 meses; reinicie o servidor Dash para refletir as mudanças      |
+| Cores no`Imprimir` saem em cinza         | `print-color-adjust` ausente | `ui/theme.py` força `-webkit-print-color-adjust: exact` para Plotly/DataTable/SVG |
 
 ## 🔐 Segurança e Acesso
+
 - Login controlado via SQLite + Flask Session
 - Rotas protegidas por autenticação simples (`login.py`)
 
 ## 💡 Boas Práticas
-- Evite *hardcodes* → use variáveis `ND_*`  
-- Normalize sempre as colunas (`Cadastro`, `Data`)  
-- Evite *joins* com tipos mistos  
-- Use `PreventUpdate` para callbacks sem mudança de estado  
+
+- Evite *hardcodes* → use variáveis `ND_*`
+- Normalize sempre as colunas (`Cadastro`, `Data`)
+- Evite *joins* com tipos mistos
+- Use `PreventUpdate` para callbacks sem mudança de estado
 - Prefira `@cache.memoize()` em cálculos pesados
 
 ## 📄 Licença
+
 Projeto interno — uso corporativo.
-<br>© 2025 Volkswagen do Brasil / Nicholas Birochi
+© 2025 Volkswagen do Brasil / Nicholas Birochi
 
 ## 🖋️ Assinatura Profissional
+
 <!-- Assinatura HTML -->
+
 <table style="font-family: 'Segoe UI', Arial, sans-serif; border: none; border-collapse: collapse;">
   <tr>
     <td style="padding-right: 0px; vertical-align: middle;">
@@ -811,9 +797,9 @@ Projeto interno — uso corporativo.
       <p style="margin: 2px 0; color: #444; font-size: 14px;">Estagiário de Análise de Dados | Data Analytics</p>
       <p style="margin: 2px 0; color: #444; font-size: 14px;">Volkswagen do Brasil</p>
       <p style="margin: 6px 0; font-size: 13px;">
-        <span style="color: #0055A5; font-weight: 500;">Email corporativo sob demanda</span> &nbsp;•&nbsp;
-        <a href="https://www.linkedin.com/in/nicholas-birochi/" style="color: #0A66C2; text-decoration: none; font-weight: 500;">LinkedIn</a> &nbsp;•&nbsp;
-        <a href="https://github.com/nicholasbirochi" style="color: #181717; text-decoration: none; font-weight: 500;">GitHub</a> &nbsp;•&nbsp;
+        <span style="color: #0055A5; font-weight: 500;">Email corporativo sob demanda</span>  • 
+        <a href="https://www.linkedin.com/in/nicholas-birochi/" style="color: #0A66C2; text-decoration: none; font-weight: 500;">LinkedIn</a>  • 
+        <a href="https://github.com/nicholasbirochi" style="color: #181717; text-decoration: none; font-weight: 500;">GitHub</a>  • 
         <a href="https://app.rocketseat.com.br/me/nicholas-birochi-1501" style="color: #8257E5; text-decoration: none; font-weight: 500;">Rocketseat</a>
       </p>
     </td>
